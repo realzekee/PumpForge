@@ -340,6 +340,10 @@ export default function App() {
             // Clean up the URL query parameters so page refreshes don't re-trigger OAuth session creation
             const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
             window.history.replaceState(null, '', cleanUrl);
+
+            // Immediately trigger a full context reload to dissolve cached states and initialize freshly
+            window.location.reload();
+            return;
           } catch (sessionErr: any) {
             console.error("Failed to create session from redirect parameters:", sessionErr);
             alert(`Appwrite OAuth Session Activation Error: ${sessionErr?.message || sessionErr}`);
@@ -538,7 +542,9 @@ export default function App() {
     setShowSignOutConfirm(false);
     try {
       await account.deleteSession('current');
-      
+    } catch (e) {
+      console.error('Appwrite Sign out error:', e);
+    } finally {
       // Fully clear session storage caches
       localStorage.removeItem('cached_appwrite_user');
       localStorage.removeItem('cached_appwrite_stats');
@@ -561,8 +567,8 @@ export default function App() {
       });
       setHoldings([]);
       onAddNotification('Signed Out', 'Returned to Guest Sandbox mode.', 'info');
-    } catch (e) {
-      console.error('Appwrite Sign out error:', e);
+      // Instantly trigger full layout refresh
+      window.location.reload();
     }
   };
 
