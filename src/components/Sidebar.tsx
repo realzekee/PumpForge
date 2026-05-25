@@ -141,7 +141,7 @@ export default function Sidebar({
   return (
     <>
       {/* Mobile Header */}
-      <header className="lg:hidden bg-zinc-950 border-b border-zinc-900 px-4 py-3 sticky top-0 z-40 flex items-center justify-between">
+      <header className="md:hidden bg-zinc-950 border-b border-zinc-900 px-4 py-3 sticky top-0 z-40 flex items-center justify-between">
         <div
           onClick={() => setActiveTab('home')}
           className="flex items-center gap-2 cursor-pointer select-none active:opacity-80 transition-opacity"
@@ -163,35 +163,35 @@ export default function Sidebar({
       {/* Sidebar Overlay for Mobile */}
       {isOpen && (
         <div
-          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-40 lg:hidden"
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-40 md:hidden"
           onClick={() => setIsOpen(false)}
         />
       )}
 
       {/* Sidebar Navigation */}
       <aside
-        className={`fixed inset-y-0 left-0 bg-zinc-950 border-r border-zinc-900 w-64 z-50 transform lg:transform-none lg:static transition-transform duration-300 flex flex-col justify-between ${
+        className={`fixed inset-y-0 left-0 bg-zinc-950 border-r border-zinc-900 w-64 z-50 transform md:transform-none md:sticky md:top-0 md:h-screen transition-transform duration-300 flex flex-col justify-between ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
         id="app-sidebar"
       >
-        <div className="flex flex-col flex-1 min-h-0">
-          {/* Logo Heading: crashPLAY */}
-          <div
-            onClick={() => setActiveTab('home')}
-            className="p-5 hidden lg:flex items-center gap-3 overflow-hidden select-none border-b border-zinc-900/60 cursor-pointer hover:opacity-95 active:opacity-80 transition-opacity"
-          >
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-rose-650 to-red-600 flex items-center justify-center text-white shadow-lg shadow-rose-950/30">
-              <Flame className="w-5 h-5 fill-rose-300/30 text-rose-105 animate-pulse" />
-            </div>
-            <div className="flex flex-col">
-              <span className="font-black text-white tracking-wider text-lg uppercase leading-tight">PumpForge</span>
-              <span className="text-[10px] text-zinc-500 font-mono tracking-widest uppercase">Simulation Engine</span>
-            </div>
+        {/* Logo Heading: crashPLAY */}
+        <div
+          onClick={() => setActiveTab('home')}
+          className="p-5 hidden md:flex items-center gap-3 overflow-hidden select-none border-b border-zinc-900/60 cursor-pointer hover:opacity-95 active:opacity-80 transition-opacity shrink-0"
+        >
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-rose-650 to-red-600 flex items-center justify-center text-white shadow-lg shadow-rose-950/30">
+            <Flame className="w-5 h-5 fill-rose-300/30 text-rose-105 animate-pulse" />
           </div>
+          <div className="flex flex-col">
+            <span className="font-black text-white tracking-wider text-lg uppercase leading-tight">PumpForge</span>
+            <span className="text-[10px] text-zinc-500 font-mono tracking-widest uppercase">Simulation Engine</span>
+          </div>
+        </div>
 
+        <div className="flex-1 overflow-y-auto w-full custom-scrollbar flex flex-col justify-between">
           {/* Navigation Items */}
-          <nav className="flex-1 overflow-y-auto px-3 py-4 flex flex-col gap-0.5 custom-scrollbar">
+          <nav className="px-3 py-4 flex flex-col gap-0.5 shrink-0">
             {menuItems.map((item) => {
               const IconComp = item.icon;
               const isSelected = activeTab === item.id;
@@ -230,10 +230,9 @@ export default function Sidebar({
               );
             })}
           </nav>
-        </div>
 
-        {/* BOTTOM SECTION OF SIDEBAR */}
-        <div className="p-3 bg-zinc-950 flex flex-col gap-3.5 border-t border-zinc-900/65">
+          {/* BOTTOM SECTION OF SIDEBAR */}
+          <div className="p-3 bg-zinc-950 flex flex-col gap-3.5 border-t border-zinc-900/65 shrink-0 mt-auto">
 
           {/* Daily Reward Button - Styled Pink/Red like the video */}
           <button
@@ -487,9 +486,9 @@ export default function Sidebar({
               </div>
             )}
           </div>
-
         </div>
-      </aside>
+      </div>
+    </aside>
 
       {/* Promo Voucher Code Modal */}
       {showPromoModal && (

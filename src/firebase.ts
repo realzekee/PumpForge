@@ -1,7 +1,17 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithRedirect, signOut } from 'firebase/auth';
 import { initializeFirestore, doc, getDocFromServer, setLogLevel } from 'firebase/firestore';
-import firebaseConfig from '../firebase-applet-config.json';
+
+const firebaseConfig = {
+  projectId: "grandmaster-chess-8xev6",
+  appId: "1:460660435436:web:1ec615034ada46c89778c9",
+  apiKey: "AIzaSyANlI4CB4RCofpsCPv-qIBKVNHmHosItB4",
+  authDomain: "grandmaster-chess-8xev6.firebaseapp.com",
+  firestoreDatabaseId: "ai-studio-f0a1a58e-8e8e-4a8f-a5d1-99bfa0f33c9c",
+  storageBucket: "grandmaster-chess-8xev6.firebasestorage.app",
+  messagingSenderId: "460660435436",
+  measurementId: ""
+};
 
 const app = initializeApp(firebaseConfig);
 

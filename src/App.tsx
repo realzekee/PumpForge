@@ -38,7 +38,7 @@ import { Award, Gift, Sparkles, X, ChevronRight, Check, Gamepad2, ShoppingBag, P
 
 // Firebase imports
 import { auth, db, googleProvider, OperationType, handleFirestoreError } from './firebase';
-import { onAuthStateChanged, signInWithPopup, signOut, User } from 'firebase/auth';
+import { onAuthStateChanged, signInWithRedirect, signOut, User } from 'firebase/auth';
 import {
   collection,
   doc,
@@ -73,19 +73,16 @@ export default function App() {
   // Authentication Callbacks
   const handleGoogleSignIn = async () => {
     try {
-      await signInWithPopup(auth, googleProvider);
-      onAddNotification('Signed In', `Loaded your Cloud Profile successfully!`, 'info');
+      await signInWithRedirect(auth, googleProvider);
     } catch (e: any) {
-      console.error('Google sign-in popup failed or aborted:', e);
-      let errorMsg = 'Google authentication failed or cancelled. Please try again!';
+      console.error('Google sign-in redirect failed:', e);
       
-      if (e?.code === 'auth/unauthorized-domain') {
-        errorMsg = 'Sign in failed: This domain is not authorized. If you are running on Vercel, please add your Vercel URL to the Firebase Console Authorized Domains list.';
-      } else if (e?.message && e.message.toLowerCase().includes('cross-origin')) {
-         errorMsg = 'Sign in failed due to cross-origin popup restrictions. Please ensure your Vercel domain matches your Firebase setup or try a different browser.';
-      }
+      const errorCode = e?.code || 'unknown-error';
+      const errorMessage = e?.message || 'An unknown error occurred';
+      const exactError = `Firebase Auth Error [${errorCode}]: ${errorMessage}`;
 
-      alert(errorMsg);
+      console.error(exactError);
+      alert(exactError);
     }
   };
 
@@ -1894,43 +1891,8 @@ export default function App() {
         onOpenBugReportModal={() => setShowBugReportModal(true)}
       />
 
-      <main className="flex-1 p-5 md:p-8 max-w-7xl mx-auto w-full flex flex-col gap-6 overflow-x-hidden">
-        {isOfflineDevice && (
-          <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-amber-500 transition-all">
-            <div className="flex items-start sm:items-center gap-3">
-              <span className="flex h-3 w-3 relative shrink-0 mt-1 sm:mt-0">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
-              </span>
-              <div className="flex flex-col">
-                <span className="font-extrabold text-sm tracking-wide uppercase">Offline Sandbox Active</span>
-                <span className="text-xs text-zinc-400">Could not connect to Cloud Firestore. State saving fallback to client-side localStorage is active, letting you play uninterrupted!</span>
-              </div>
-            </div>
-            <button 
-              onClick={async () => {
-                try {
-                  const testRef = doc(db, 'test', 'connection');
-                  await getDocFromServer(testRef);
-                  setIsOfflineDevice(false);
-                  onAddNotification('Connection Resumed', 'Successfully connected to backend Firestore database!', 'info');
-                } catch (e: any) {
-                  const errMsg = e?.message || '';
-                  if (errMsg.includes('offline') || errMsg.includes('unavailable') || errMsg.includes('Could not reach')) {
-                    onAddNotification('Still Offline', 'Cloud Firestore is still unreachable. Remaining in offline backup mode.', 'info');
-                  } else {
-                    // Any permission-denied indicates they ARE online and successfully queried the server!
-                    setIsOfflineDevice(false);
-                    onAddNotification('Connection Resumed', 'Connected to backend Firestore database!', 'info');
-                  }
-                }
-              }}
-              className="bg-amber-500/10 hover:bg-amber-500/25 active:bg-amber-500/35 text-amber-500 border border-amber-500/30 text-xs font-extrabold px-3 py-1.5 rounded-xl shrink-0 cursor-pointer transition-colors w-max"
-            >
-              Retry Connection
-            </button>
-          </div>
-        )}
+      <main className="flex-1 min-w-0 p-5 md:p-8 max-w-7xl mx-auto flex flex-col gap-6 overflow-x-hidden">
+        {/* Offline banner removed */}
 
         {/* Real-time Synced Broadcast Banners */}
         {broadcasts
