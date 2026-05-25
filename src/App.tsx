@@ -357,10 +357,13 @@ export default function App() {
             if (isNotFound) {
               console.log("Creating brand new Appwrite database profile for user:", user.$id);
               profileDoc = await databases.createDocument("pumpforge", "users", user.$id, {
-                total_value: 0,
+                total_value: 0.0,
                 cash: 5000.00, // Initialize new users with the standard 5000 cash balance
                 coins: 0,
-                gems: 90
+                gems: 90,
+                prestigeLevel: 0,
+                tradesCount: 0,
+                lastDailyRewardClaim: ""
               });
             } else {
               throw err;
@@ -390,7 +393,7 @@ export default function App() {
             totalProfit: profileDoc.total_value ?? 0,
             coinsCreatedCount: profileDoc.coins ?? 0,
             tradesCount: profileDoc.tradesCount ?? 0,
-            lastDailyRewardClaim: profileDoc.lastDailyRewardClaim ?? null,
+            lastDailyRewardClaim: profileDoc.lastDailyRewardClaim || null,
             createdAt: user.$createdAt || new Date().toISOString()
           };
 
@@ -482,10 +485,13 @@ export default function App() {
     const syncToAppwrite = async () => {
       try {
         await databases.updateDocument("pumpforge", "users", currentUser.uid || currentUser.$id, {
-          total_value: userStats.totalProfit || 0,
-          cash: userStats.cash || 0,
+          total_value: userStats.totalProfit || 0.0,
+          cash: userStats.cash || 0.0,
           coins: userStats.coinsCreatedCount || 0,
-          gems: userStats.gems || 0
+          gems: userStats.gems || 0,
+          prestigeLevel: userStats.prestigeLevel || 0,
+          tradesCount: userStats.tradesCount || 0,
+          lastDailyRewardClaim: userStats.lastDailyRewardClaim || ""
         });
         
         // Also keep stats storage cache up-to-date with current state modifications
@@ -497,7 +503,17 @@ export default function App() {
 
     const handler = setTimeout(syncToAppwrite, 1500);
     return () => clearTimeout(handler);
-  }, [userStats.totalProfit, userStats.cash, userStats.coinsCreatedCount, userStats.gems, currentUser, isStatsLoaded]);
+  }, [
+    userStats.totalProfit,
+    userStats.cash,
+    userStats.coinsCreatedCount,
+    userStats.gems,
+    userStats.prestigeLevel,
+    userStats.tradesCount,
+    userStats.lastDailyRewardClaim,
+    currentUser,
+    isStatsLoaded
+  ]);
 
   // Authentication Callbacks
   const handleGoogleSignIn = async () => {
