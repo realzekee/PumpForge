@@ -78,21 +78,27 @@ export default function Sidebar({
   const [promoError, setPromoError] = useState('');
   const [promoSuccess, setPromoSuccess] = useState('');
   const [isDarkModeText, setIsDarkModeText] = useState('Light Mode');
-  const [isMobile, setIsMobile] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return window.innerWidth < 768;
-    }
-    return false;
-  });
+  const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const handleResize = () => {
-      setIsMobile(window.innerWidth < 768);
+    const media = window.matchMedia("(max-width: 767px)");
+    const checkMobile = () => {
+      setIsMobile(media.matches);
     };
-    handleResize(); // trigger initial layout set
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    checkMobile();
+    if (media.addEventListener) {
+      media.addEventListener("change", checkMobile);
+    } else {
+      media.addListener(checkMobile);
+    }
+    return () => {
+      if (media.removeEventListener) {
+        media.removeEventListener("change", checkMobile);
+      } else {
+        media.removeListener(checkMobile);
+      }
+    };
   }, []);
 
   const isOwnerEmail = currentUser?.email === 'realzekeee@gmail.com' || currentUser?.email === 'realzekee@gmail.com';
@@ -102,7 +108,7 @@ export default function Sidebar({
   const menuItems = [
     { id: 'home', label: 'Home', icon: Home },
     { id: 'market', label: 'Market', icon: TrendingUp },
-    { id: 'hopium', label: 'Hopium', icon: Brain },
+    { id: 'polymarket', label: 'Polymarket', icon: Brain },
     { id: 'arcade', label: 'Arcade', icon: Gamepad2 },
     { id: 'leaderboard', label: 'Leaderboard', icon: Trophy },
     { id: 'shop', label: 'Shop', icon: ShoppingBag },
@@ -157,7 +163,7 @@ export default function Sidebar({
   return (
     <>
       {/* Mobile Header */}
-      <header className={`${isMobile ? 'flex' : 'hidden md:hidden'} bg-zinc-950 border-b border-zinc-900 px-4 py-3 sticky top-0 z-40 items-center justify-between`}>
+      <header className="flex md:hidden bg-zinc-950 border-b border-zinc-900 px-4 py-3 sticky top-0 z-40 items-center justify-between">
         <div
           onClick={() => setActiveTab('home')}
           className="flex items-center gap-2 cursor-pointer select-none active:opacity-80 transition-opacity"
@@ -177,26 +183,24 @@ export default function Sidebar({
       </header>
 
       {/* Sidebar Overlay for Mobile */}
-      {isOpen && isMobile && (
+      {isOpen && (
         <div
-          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-40"
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-40 md:hidden"
           onClick={() => setIsOpen(false)}
         />
       )}
 
       {/* Sidebar Navigation */}
       <aside
-        className={`bg-zinc-950 border-r border-zinc-900 w-64 flex flex-col justify-between transition-transform duration-300 ${
-          isMobile
-            ? `fixed inset-y-0 left-0 z-50 transform ${isOpen ? 'translate-x-0' : '-translate-x-full'}`
-            : 'sticky top-0 h-screen translate-x-0'
+        className={`bg-zinc-950 border-r border-zinc-900 w-64 flex flex-col justify-between transition-transform duration-300 fixed inset-y-0 left-0 z-50 transform md:sticky md:top-0 md:h-screen md:translate-x-0 ${
+          isOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
         id="app-sidebar"
       >
         {/* Logo Heading: crashPLAY */}
         <div
           onClick={() => setActiveTab('home')}
-          className={`p-5 ${isMobile ? 'hidden' : 'hidden md:flex'} items-center gap-3 overflow-hidden select-none border-b border-zinc-900/60 cursor-pointer hover:opacity-95 active:opacity-80 transition-opacity shrink-0`}
+          className="p-5 hidden md:flex items-center gap-3 overflow-hidden select-none border-b border-zinc-900/60 cursor-pointer hover:opacity-95 active:opacity-80 transition-opacity shrink-0 animate-fade-in"
         >
           <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-rose-650 to-red-600 flex items-center justify-center text-white shadow-lg shadow-rose-950/30">
             <Flame className="w-5 h-5 fill-rose-300/30 text-rose-105 animate-pulse" />
@@ -229,7 +233,7 @@ export default function Sidebar({
                 >
                   <IconComp className={`w-4 h-4 transition-transform duration-250 ${isSelected ? 'scale-110' : ''}`} />
                   <span className="flex-1 text-left truncate">{item.label}</span>
-                  {item.id === 'hopium' && (
+                  {item.id === 'polymarket' && (
                     <span className="text-[9px] bg-orange-950 border border-orange-900/60 text-orange-400 px-1 py-0.2 rounded font-mono font-bold tracking-widest uppercase">
                     </span>
                   )}

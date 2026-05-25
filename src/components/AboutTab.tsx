@@ -37,7 +37,7 @@ export default function AboutTab() {
             </li>
             <li className="flex gap-2">
               <span className="text-cyan-400 shrink-0 font-bold">2.</span>
-              <span>Leverage the Hopium forecast models to predict price actions and claim gems.</span>
+              <span>Leverage the Polymarket forecast models to predict price actions and claim gems.</span>
             </li>
             <li className="flex gap-2">
               <span className="text-cyan-400 shrink-0 font-bold">3.</span>

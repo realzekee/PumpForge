@@ -15,7 +15,8 @@ import {
   Shield,
   Skull,
   Lock,
-  Play
+  Play,
+  X
 } from 'lucide-react';
 import { UserStats } from '../types';
 
@@ -29,6 +30,19 @@ type MenuGameType = 'coinflip' | 'slots' | 'mines' | 'dice' | 'tower';
 
 export default function ArcadeTab({ userStats, onUpdateStats, onAddNotification }: ArcadeTabProps) {
   const [selectedGame, setSelectedGame] = useState<MenuGameType>('coinflip');
+  const [localNotice, setLocalNotice] = useState<{ title: string; message: string; isError?: boolean } | null>(null);
+
+  const triggerLocalNotice = (title: string, message: string, isError = false) => {
+    setLocalNotice({ title, message, isError });
+    setTimeout(() => {
+      setLocalNotice(current => {
+        if (current?.title === title && current?.message === message) {
+          return null;
+        }
+        return current;
+      });
+    }, 4500);
+  };
 
   const formatCash = (val: number) => {
     if (val >= 1000000) {
@@ -109,7 +123,7 @@ export default function ArcadeTab({ userStats, onUpdateStats, onAddNotification 
   // 1. Coinflip
   const playCoinflip = () => {
     if (userStats.cash < coinBet) {
-      alert('You do not have enough cash to place this bet!');
+      triggerLocalNotice('Insufficient Funds', 'You do not have enough cash to place this Coinflip bet!', true);
       return;
     }
 
@@ -146,7 +160,7 @@ export default function ArcadeTab({ userStats, onUpdateStats, onAddNotification 
   // 2. Slots
   const playSlots = () => {
     if (userStats.cash < slotBet) {
-      alert('You do not have enough cash to spin the reels!');
+      triggerLocalNotice('Insufficient Funds', 'You do not have enough cash to spin the Slots reels!', true);
       return;
     }
 
@@ -213,7 +227,7 @@ export default function ArcadeTab({ userStats, onUpdateStats, onAddNotification 
   // 3. Mines
   const startMinesGame = () => {
     if (userStats.cash < minesBet) {
-      alert('Insufficient funds to place the Mines bet!');
+      triggerLocalNotice('Insufficient Funds', 'You do not have enough cash to place a Mines bet!', true);
       return;
     }
 
@@ -253,7 +267,7 @@ export default function ArcadeTab({ userStats, onUpdateStats, onAddNotification 
       });
       setMinesGrid(nextGrid);
       setMinesActive(false);
-      alert('🔥 BOOM! You clicked on a direct crash mine! Bet lost.');
+      triggerLocalNotice('KABOOM! Mine Hit!', 'You clicked on a direct crash mine! Bet lost.', true);
     } else {
       // Safe selection
       nextGrid[cellIdx] = 'revealed-gem';
@@ -290,7 +304,7 @@ export default function ArcadeTab({ userStats, onUpdateStats, onAddNotification 
     setMinesGrid(nextGrid);
     setMinesActive(false);
 
-    alert(`💎 CASHOUT! You successfully cashed out $${winnings.toLocaleString()} at ${currentMult}x multiplier!`);
+    triggerLocalNotice('Mines Cashout!', `You successfully cashed out $${winnings.toLocaleString()} at ${currentMult}x multiplier!`);
   };
 
   // 4. Dice Betting (1-6 choice with amazing 3D animation rollout!)
@@ -333,7 +347,7 @@ export default function ArcadeTab({ userStats, onUpdateStats, onAddNotification 
 
   const playDiceRoll = () => {
     if (userStats.cash < diceBet) {
-      alert('You need additional cash to execute the Dice Roll!');
+      triggerLocalNotice('Insufficient Funds', 'You need additional cash to execute the Dice Roll!', true);
       return;
     }
     if (diceIsRollingState) return;
@@ -382,7 +396,7 @@ export default function ArcadeTab({ userStats, onUpdateStats, onAddNotification 
   // 5. Tower Climb
   const startTowerGame = () => {
     if (userStats.cash < towerBet) {
-      alert('Not enough cash to start Tower Climb!');
+      triggerLocalNotice('Insufficient Funds', 'Not enough cash to start Tower Climb!', true);
       return;
     }
 
@@ -434,7 +448,7 @@ export default function ArcadeTab({ userStats, onUpdateStats, onAddNotification 
       // Boom skull
       setTowerActive(false);
       setTowerReveal(true);
-      alert('💀 TOWER OVER! You hit a trap. Everything of this climb was lost.');
+      triggerLocalNotice('TOWER OVER!', '💀 You hit a trap block. Your climb bet has been lost.', true);
     } else {
       // Safe step upward!
       const nextLvl = towerLevel + 1;
@@ -476,7 +490,7 @@ export default function ArcadeTab({ userStats, onUpdateStats, onAddNotification 
 
     setTowerActive(false);
     setTowerReveal(true);
-    alert(`🗼 TOWER CLAIMED! Cashed out floor ${lvl} successfully for a return of $${payout.toLocaleString()} (${mult}x)!`);
+    triggerLocalNotice('Tower Claim Complete!', `🗼 Cashed out floor ${lvl} successfully for a return of $${payout.toLocaleString()} (${mult}x)!`);
   };
 
   const abortTowerBet = () => {
@@ -490,6 +504,27 @@ export default function ArcadeTab({ userStats, onUpdateStats, onAddNotification 
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 animate-fade-in select-none">
+      {/* Universal in-game localNotice toast notifications */}
+      {localNotice && (
+        <div className={`fixed bottom-4 right-4 left-4 sm:left-auto sm:max-w-md bg-zinc-950 border-2 ${
+          localNotice.isError ? 'border-rose-500/80' : 'border-emerald-500/80'
+        } p-4 rounded-xl shadow-2xl flex items-center justify-between gap-4 z-50 animate-fade-in`}>
+          <div className="flex items-start gap-2.5">
+            <span className="text-xl leading-none">{localNotice.isError ? '⚠️' : '🎉'}</span>
+            <div className="flex flex-col">
+              <span className="text-xs font-black text-white">{localNotice.title}</span>
+              <span className="text-[10px] text-zinc-400 mt-0.5">{localNotice.message}</span>
+            </div>
+          </div>
+          <button
+            onClick={() => setLocalNotice(null)}
+            className="text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Side selection column */}
       <div className="flex flex-col gap-2.5">
         <h2 className="text-xs font-extrabold text-zinc-400 font-mono tracking-widest uppercase flex items-center gap-1.5 mb-1.5 leading-none">

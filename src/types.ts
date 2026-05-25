@@ -19,6 +19,7 @@ export interface UserStats {
   username: string;
   handle: string;
   title: string;
+  email?: string;
   isPremium: boolean;
   nameColor: string; // Tailwind color class or hex
   cash: number;
@@ -111,7 +112,7 @@ export interface NotificationItem {
 export type ActiveTab =
   | 'home'
   | 'market'
-  | 'hopium'
+  | 'polymarket'
   | 'arcade'
   | 'leaderboard'
   | 'shop'

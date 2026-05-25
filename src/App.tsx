@@ -7,7 +7,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import Sidebar from './components/Sidebar';
 import HomeTab from './components/HomeTab';
 import MarketTab from './components/MarketTab';
-import HopiumTab from './components/HopiumTab';
+import PolymarketTab from './components/PolymarketTab';
 import ArcadeTab from './components/ArcadeTab';
 import LeaderboardTab from './components/LeaderboardTab';
 import ShopTab from './components/ShopTab';
@@ -122,6 +122,7 @@ export default function App() {
   const [holdings, setHoldings] = useState<PortfolioHolding[]>([]);
   const [liveTrades, setLiveTrades] = useState<LiveTrade[]>([]);
   const [markets, setMarkets] = useState<PredictionMarket[]>([]);
+  const [userBets, setUserBets] = useState<{ [marketId: string]: { side: 'YES' | 'NO'; amount: number } }>({});
   const [achievements, setAchievements] = useState<Achievement[]>([]);
   const [registeredUsers, setRegisteredUsers] = useState<(UserStats & { uid: string })[]>([]);
   const [simulatedPlayers, setSimulatedPlayers] = useState<SimulatedPlayer[]>(() => {
@@ -243,7 +244,7 @@ export default function App() {
         isAdmin: false,
         createdAt: '2026-02-28T22:11:44Z',
         activityLog: [
-          { id: 'al1', timestamp: '2026-05-24T01:10:00Z', action: 'Published live shill message trigger in Hopium Lobby', category: 'system' },
+          { id: 'al1', timestamp: '2026-05-24T01:10:00Z', action: 'Published live shill message trigger in Polymarket Lobby', category: 'system' },
           { id: 'al2', timestamp: '2026-05-24T05:44:00Z', action: 'Withdrew $120,000 cash balance into offline wallet vault', category: 'trade' }
         ]
       },
@@ -307,6 +308,20 @@ export default function App() {
   });
 
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [customToast, setCustomToast] = useState<{ title: string; message: string; isError?: boolean } | null>(null);
+
+  const triggerToast = (title: string, message: string, isError = false) => {
+    setCustomToast({ title, message, isError });
+    setTimeout(() => {
+      setCustomToast((current) => {
+        if (current?.title === title && current?.message === message) {
+          return null;
+        }
+        return current;
+      });
+    }, 4500);
+  };
+
   const [showDailyToast, setShowDailyToast] = useState(false);
   const [showSignInModal, setShowSignInModal] = useState(false);
   const [signInReason, setSignInReason] = useState('');
@@ -350,9 +365,12 @@ export default function App() {
               // Clean up the URL parameters so they don't bloat the URL or trigger loops
               const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
               window.history.replaceState(null, '', cleanUrl);
+              console.log("⚡ Auto-Refresh: Session established, reloading to refresh context cache.");
+              window.location.reload();
+              return;
             } catch (sessionErr: any) {
               console.error("Forced manual session activation from URL failed:", sessionErr);
-              alert(`Appwrite Session Activation Error: ${sessionErr?.message || sessionErr}`);
+              triggerToast('Session Activation Error', sessionErr?.message || String(sessionErr), true);
             }
           }
         }
@@ -395,6 +413,7 @@ export default function App() {
             username: finalUsername,
             handle: finalHandle,
             title: isOwnerEmail ? 'Owner' : 'Member',
+            email: user.email || '',
             isPremium: isOwnerEmail,
             nameColor: isOwnerEmail ? 'text-rose-500 font-extrabold text-glow tracking-wider' : 'text-zinc-400 font-bold',
             cash: profileDoc.cash ?? 5000.00,
@@ -414,6 +433,28 @@ export default function App() {
           setCurrentUser(mappedUser);
           setUserStats(finalUserStats);
           setIsStatsLoaded(true);
+
+          // Force-sync latest profile metadata including email representation to cloud Firestore
+          try {
+            await setDoc(doc(db, 'users', user.$id), {
+              username: finalUsername,
+              handle: finalHandle,
+              email: user.email || '',
+              title: isOwnerEmail ? 'Owner' : 'Member',
+              isPremium: isOwnerEmail,
+              nameColor: isOwnerEmail ? 'text-rose-500 font-extrabold text-glow tracking-wider' : 'text-zinc-400 font-bold',
+              cash: profileDoc.cash ?? 5000.00,
+              gems: profileDoc.gems ?? 90,
+              prestigeLevel: profileDoc.prestigeLevel ?? 0,
+              totalProfit: profileDoc.total_value ?? 0,
+              coinsCreatedCount: profileDoc.coins ?? 0,
+              tradesCount: profileDoc.tradesCount ?? 0,
+              lastDailyRewardClaim: profileDoc.lastDailyRewardClaim || null,
+              createdAt: user.$createdAt || new Date().toISOString()
+            }, { merge: true });
+          } catch (fsSyncErr) {
+            console.error("Firestore user profile sync error:", fsSyncErr);
+          }
 
           // Pre-populate holdings and achievements from localStorage mapped by user ID for pragmatic local persistence
           const cachedHoldings = localStorage.getItem(`memex_holdings_${user.$id}`);
@@ -470,7 +511,7 @@ export default function App() {
         // but alert all other unexpected system/network/database errors or oauth failures.
         const isNormalUnauthenticated = err?.code === 401 || err?.message?.includes('unauthorized') || String(err).includes('401') || err?.message?.includes('No active session found');
         if (!isNormalUnauthenticated) {
-          alert(`Appwrite Diagnostic Error: Failed to load user profile or databases schema.\nMessage: ${err?.message || err}`);
+          triggerToast('Diagnostic Error', err?.message || String(err), true);
         }
 
         // Clean up session caches on standard session failures
@@ -579,6 +620,14 @@ export default function App() {
       // Fully clear session storage caches
       localStorage.removeItem('cached_appwrite_user');
       localStorage.removeItem('cached_appwrite_stats');
+      const keysToClear = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.includes('memex_') || key.includes('cached_appwrite_'))) {
+          keysToClear.push(key);
+        }
+      }
+      keysToClear.forEach(k => localStorage.removeItem(k));
       
       setCurrentUser(null);
       setIsStatsLoaded(false);
@@ -603,9 +652,28 @@ export default function App() {
     }
   };
 
-  // 1. GUEST USER LOCAL STORAGE LOADERS (ONLY IF UN-AUTHENTICATED)
+  // 1. GLOBAL USER BETS LISTENER (REAL-TIME SYNCED FROM FIRESTORE)
   useEffect(() => {
-    if (currentUser) return; // Skip if signed in to Firebase
+    if (!currentUser) {
+      setUserBets({});
+      return;
+    }
+    const uid = currentUser.uid || currentUser.$id;
+    const betsRef = collection(db, 'users', uid, 'bets');
+    const unsub = onSnapshot(betsRef, (snap) => {
+      const betsMap: { [marketId: string]: { side: 'YES' | 'NO'; amount: number } } = {};
+      snap.forEach((doc) => {
+        const d = doc.data();
+        betsMap[doc.id] = {
+          side: d.side as 'YES' | 'NO',
+          amount: Number(d.amount || 0)
+        };
+      });
+      setUserBets(betsMap);
+    }, (err) => {
+      console.warn("User bets subcollection listener failed:", err);
+    });
+    return () => unsub();
   }, [currentUser]);
 
   // 2. FIRESTORE AUTHENTICATION & MULTI-USER REAL-TIME SUBSCRIPTIONS
@@ -838,6 +906,9 @@ export default function App() {
       type
     };
     setNotifications((prev) => [newItem, ...prev.slice(0, 5)]);
+
+    // Trigger universal toast popup system (marked as error type if it is a black swan / crash)
+    triggerToast(title, msg, type === 'crash');
   }
 
   function handleDismissBroadcast(id: string) {
@@ -902,7 +973,7 @@ export default function App() {
       }
 
       if (userStats.cash < totalUsdVal) {
-        alert('Insufficient funds to buy this asset!');
+        triggerToast('Transaction Failed', 'Insufficient cash balance to purchase this asset!', true);
         return;
       }
 
@@ -988,7 +1059,7 @@ export default function App() {
     } else {
       const existingHolding = holdings.find((h) => h.coinId === coinId);
       if (!existingHolding || existingHolding.amount < amountCoins) {
-        alert('You do not own that amount of coin holdings!');
+        triggerToast('Transaction Failed', 'You do not own that many tokens to sell!', true);
         return;
       }
 
@@ -1209,7 +1280,7 @@ export default function App() {
     onAddNotification('COIN DELETED', `Permanently removed *${coin.symbol} from listing records.`, 'info');
   };
 
-  const handlePlaceHopiumBet = async (marketId: string, side: 'YES' | 'NO', amount: number) => {
+  const handlePlacePolymarketBet = async (marketId: string, side: 'YES' | 'NO', amount: number) => {
     if (!currentUser) {
       setSignInReason('place speculation bets and earn money');
       setShowSignInModal(true);
@@ -1246,7 +1317,7 @@ export default function App() {
 
         await batch.commit();
       } catch (e) {
-        handleFirestoreError(e, OperationType.WRITE, `handlePlaceHopiumBet/${marketId}`);
+        handleFirestoreError(e, OperationType.WRITE, `handlePlacePolymarketBet/${marketId}`);
       }
     } else {
       setMarkets((prev) => {
@@ -1278,8 +1349,23 @@ export default function App() {
   const handleCreatePredictionLocal = async (
     question: string,
     description: string,
-    category: 'trading' | 'general' | 'arcade'
+    category: 'trading' | 'general' | 'arcade',
+    presetDuration?: '1 Day' | '1 Week' | '1 Month (Max)'
   ) => {
+    let calculatedEndTime = 'Within 24 hours';
+    const now = new Date();
+    const duration = presetDuration || '1 Day';
+    if (duration === '1 Day') {
+      const target = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+      calculatedEndTime = `In 1 Day (${target.toLocaleDateString()})`;
+    } else if (duration === '1 Week') {
+      const target = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+      calculatedEndTime = `In 1 Week (${target.toLocaleDateString()})`;
+    } else if (duration === '1 Month (Max)') {
+      const target = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+      calculatedEndTime = `In 1 Month (${target.toLocaleDateString()})`;
+    }
+
     const marketId = 'm-' + Math.random().toString(36).substring(3);
     const newMarket: PredictionMarket = {
       id: marketId,
@@ -1292,7 +1378,7 @@ export default function App() {
       userBetSide: null,
       resolved: false,
       resolvedOutcome: null,
-      endTime: 'Within 24 hours',
+      endTime: calculatedEndTime,
       category
     };
 
@@ -1313,7 +1399,7 @@ export default function App() {
           yesPercentage: 50,
           resolved: false,
           resolvedOutcome: null,
-          endTime: 'Within 24 hours',
+          endTime: calculatedEndTime,
           category
         });
         batch.update(userRef, {
@@ -1332,7 +1418,7 @@ export default function App() {
       }));
     }
 
-    onAddNotification('Market Created', `Launched local prediction question for $500 fee.`, 'info');
+    onAddNotification('Market Created', `Launched global prediction question for $500 fee.`, 'info');
   };
 
   const claimAchievement = async (id: string) => {
@@ -1444,7 +1530,7 @@ export default function App() {
       `Claimed ${claimable.length} rewards: $${totalCash.toLocaleString()} and 💎 ${totalGems}!`,
       'info'
     );
-    alert(`👑 BATCH CLAIMED!\n\nYou gathered +$${totalCash.toLocaleString()} cash and +${totalGems} Gems!`);
+    triggerToast('Bulk Claim Complete', `Gathered +$${totalCash.toLocaleString()} Cash and +${totalGems} Gems!`);
   };
 
   const handlePrestigeSystem = async () => {
@@ -1455,7 +1541,7 @@ export default function App() {
     }
 
     if (userStats.cash < 100000.0) {
-      alert(`⚠️ Requirement not met!\n\nYou must accumulate at least $100.00K in simulated Cash Reserves. (Current: $${userStats.cash.toLocaleString()})`);
+      triggerToast('Requirement Not Met', `You must accumulate at least $100.00K in Cash Reserves. (Current: $${userStats.cash.toLocaleString()})`, true);
       return;
     }
 
@@ -1487,6 +1573,17 @@ export default function App() {
         });
 
         await batch.commit();
+        setUserStats((prev) => ({
+          ...prev,
+          cash: 5000.0,
+          gems: prev.gems + 500,
+          prestigeLevel: nextLvl,
+          title,
+          totalProfit: 0,
+          tradesCount: 0,
+          coinsCreatedCount: 0
+        }));
+        setHoldings([]);
         setShowPrestigeModal(false);
       } catch (e) {
         handleFirestoreError(e, OperationType.WRITE, `handlePrestigeSystem`);
@@ -1513,7 +1610,7 @@ export default function App() {
     }
 
     onAddNotification('PRESTIGE ACQUIRED', `Advanced to ${title}! Daily reward multiplier active!`, 'achievement');
-    alert(`🔥 PRESTIGE ACCOMPLISHED! 🔥\n\nYou leveled up to Prestige Level ${nextLvl}! Your cash reserves and holdings have reset, but you gained permanent daily rewards bonuses!`);
+    triggerToast('Prestige Completed!', `Leveled up to Prestige Level ${nextLvl}! Your cash and holdings have reset with bonuses.`);
   };
 
   const handleSubmitBug = async (title: string, description: string, category: string): Promise<boolean> => {
@@ -1531,7 +1628,7 @@ export default function App() {
       const limitMs = 30 * 1000; // 30 seconds limit to avoid spam or accidental double submissions
       if (elapsed < limitMs) {
         const remaining = Math.ceil((limitMs - elapsed) / 1000);
-        alert(`⚠️ Please wait ${remaining}s before reporting another issue.`);
+        triggerToast('Rate Limit Active', `Please wait ${remaining}s before reporting another issue.`, true);
         return false;
       }
     }
@@ -1558,7 +1655,7 @@ export default function App() {
       return true;
     } catch (e: any) {
       handleFirestoreError(e, OperationType.WRITE, `handleSubmitBug/${bugId}`);
-      alert('Could not submit bug. Connection might be offline or Firestore security rules rejected save: ' + e?.message);
+      triggerToast('Submission Error', `Could not submit bug. Connection might be offline or rules rejected: ${e?.message}`, true);
       return false;
     }
   };
@@ -1585,7 +1682,7 @@ export default function App() {
           });
 
           await batch.commit();
-          alert('🔄 Database Arena profile reset successfully!');
+          triggerToast('Profile Reset Complete', 'Database Arena profile reset successfully!');
         } catch (e) {
           handleFirestoreError(e, OperationType.WRITE, 'hardReset');
         }
@@ -1639,7 +1736,7 @@ export default function App() {
           category: 'arcade'
         }
       ]);
-      alert('🔄 Game simulator reset to initial default baseline successfully!');
+      triggerToast('Simulator Reset Complete', 'Game simulator reset to initial default baseline successfully!');
     }
   };
 
@@ -1821,6 +1918,18 @@ export default function App() {
     );
   }
 
+  const mergedMarkets = markets.map(m => {
+    const userBet = userBets[m.id];
+    if (userBet) {
+      return {
+        ...m,
+        userBetAmount: userBet.amount,
+        userBetSide: userBet.side
+      };
+    }
+    return m;
+  });
+
   return (
     <div className="flex min-h-screen bg-zinc-950 text-zinc-100 flex-col md:flex-row">
       <Sidebar
@@ -1939,11 +2048,11 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'hopium' && (
-          <HopiumTab
-            markets={markets}
+        {activeTab === 'polymarket' && (
+          <PolymarketTab
+            markets={mergedMarkets}
             userStats={userStats}
-            onPlaceBet={handlePlaceHopiumBet}
+            onPlaceBet={handlePlacePolymarketBet}
             onCreateMarket={handleCreatePredictionLocal}
           />
         )}
@@ -2105,6 +2214,7 @@ export default function App() {
                 setSimulatedPlayers={setSimulatedPlayers}
                 liveTrades={liveTrades}
                 registeredUsers={registeredUsers}
+                currentUserEmail={currentUser?.email}
               />
             );
           })()
@@ -2188,6 +2298,27 @@ export default function App() {
             className="bg-white hover:bg-zinc-200 text-zinc-950 px-3 py-1.5 rounded-lg text-xs font-bold leading-none shrink-0"
           >
             View Portfolio
+          </button>
+        </div>
+      )}
+
+      {/* Universal customToast notifications */}
+      {customToast && (
+        <div className={`fixed bottom-4 right-4 left-4 sm:left-auto sm:max-w-md bg-zinc-950 border-2 ${
+          customToast.isError ? 'border-rose-500/80' : 'border-sky-500/80'
+        } p-4 rounded-xl shadow-2xl flex items-center justify-between gap-4 z-50 animate-fade-in`}>
+          <div className="flex items-start gap-2.5">
+            <span className="text-xl leading-none">{customToast.isError ? '❌' : '🔔'}</span>
+            <div className="flex flex-col">
+              <span className="text-xs font-black text-white">{customToast.title}</span>
+              <span className="text-[10px] text-zinc-400 mt-0.5">{customToast.message}</span>
+            </div>
+          </div>
+          <button
+            onClick={() => setCustomToast(null)}
+            className="text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
+          >
+            <X className="w-4 h-4" />
           </button>
         </div>
       )}

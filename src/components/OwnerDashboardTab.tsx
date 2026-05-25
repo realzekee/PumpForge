@@ -40,6 +40,7 @@ interface OwnerDashboardProps {
   setSimulatedPlayers?: React.Dispatch<React.SetStateAction<SimulatedPlayer[]>>;
   liveTrades?: LiveTrade[];
   registeredUsers?: any[];
+  currentUserEmail?: string;
 }
 
 export default function OwnerDashboardTab({ 
@@ -52,7 +53,8 @@ export default function OwnerDashboardTab({
   simulatedPlayers = [],
   setSimulatedPlayers,
   liveTrades = [],
-  registeredUsers = []
+  registeredUsers = [],
+  currentUserEmail
 }: OwnerDashboardProps) {
   // Local state for creator controls
   const [customCash, setCustomCash] = useState<number>(50000);
@@ -221,7 +223,7 @@ export default function OwnerDashboardTab({
           isAdmin: false,
           createdAt: '2026-02-28T22:11:44Z',
           activityLog: [
-            { id: 'al1', timestamp: '2026-05-24T01:10:00Z', action: 'Published live shill message trigger in Hopium Lobby', category: 'system' },
+            { id: 'al1', timestamp: '2026-05-24T01:10:00Z', action: 'Published live shill message trigger in Polymarket Lobby', category: 'system' },
             { id: 'al2', timestamp: '2026-05-24T05:44:00Z', action: 'Withdrew $120,000 cash balance into offline wallet vault', category: 'trade' }
           ]
         },
@@ -1078,6 +1080,7 @@ export default function OwnerDashboardTab({
     {
       name: `${userStats.username} (You)`,
       handle: userStats.handle,
+      email: currentUserEmail || userStats.email || '',
       profit: userStats.totalProfit + (userStats.cash - 5000),
       cash: userStats.cash,
       gems: userStats.gems,
@@ -1108,6 +1111,7 @@ export default function OwnerDashboardTab({
         uid: r.uid,
         name: r.username,
         handle: r.handle,
+        email: r.email || '',
         profit: (r.totalProfit ?? 0) + ((r.cash ?? 5000) - 5000),
         cash: r.cash ?? 5000,
         gems: r.gems ?? 250,
@@ -1156,7 +1160,8 @@ export default function OwnerDashboardTab({
   const filteredUsers = systemUsersList.filter(u => 
     u.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
     u.handle.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    u.title.toLowerCase().includes(searchQuery.toLowerCase())
+    u.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (u.email && u.email.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
   return (
@@ -1279,6 +1284,12 @@ export default function OwnerDashboardTab({
                         )}
                       </div>
                       <span className="text-[10px] text-zinc-500 font-mono tracking-tight">{user.handle} • Rank role: <span className="font-bold text-zinc-400">{user.title}</span></span>
+                      {user.email && (
+                        <div className="text-[9px] text-zinc-400/80 font-mono tracking-tight mt-1 bg-zinc-950/60 border border-zinc-900 rounded px-1.5 py-0.5 w-fit flex items-center gap-1">
+                          <span className="opacity-70 text-[10px]">📧</span>
+                          <span className="select-all text-sky-400 font-bold text-[9px]">{user.email}</span>
+                        </div>
+                      )}
                     </div>
 
                     <div className="text-right shrink-0">
