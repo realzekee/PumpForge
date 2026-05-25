@@ -2009,8 +2009,13 @@ export default function OwnerDashboardTab({
                         {bug.title}
                       </span>
                     </div>
-                    <div className="text-[10px] text-zinc-505 mt-1 font-mono">
-                      Reported by <span className="text-zinc-400 font-bold">{bug.userHandle || 'Anonymous'}</span> • {new Date(bug.timestamp).toLocaleString()}
+                    <div className="text-[10px] text-zinc-500 mt-1 font-mono flex flex-col gap-0.5">
+                      <div>
+                        Reported by: <span className="text-zinc-300 font-bold">{bug.reportedBy || `${bug.userName || 'Anonymous'} (${bug.userHandle || '@anonymous'})`}</span>
+                      </div>
+                      <div>
+                        Date: <span className="text-zinc-400">{new Date(bug.timestamp).toLocaleString()}</span>
+                      </div>
                     </div>
                   </div>
 

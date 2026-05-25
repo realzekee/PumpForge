@@ -322,35 +322,41 @@ export default function App() {
     const initSession = async () => {
       setIsCheckingRedirect(true);
       try {
-        // 1. Explicitly check for and handle incoming OAuth redirect query parameters (userId & secret)
-        const urlParams = new URLSearchParams(window.location.search);
-        const userId = urlParams.get('userId');
-        const secret = urlParams.get('secret');
+        let user: any = null;
+        let isCookieOrNetworkBlock = false;
 
-        if (userId && secret) {
-          try {
-            console.log("⚡ Found OAuth redirect parameters. Creating manual session for userId:", userId);
-            
-            // Clean local caches first to avoid any stale session override
-            localStorage.removeItem('cached_appwrite_user');
-            localStorage.removeItem('cached_appwrite_stats');
-            
-            await account.createSession(userId, secret);
-            
-            // Clean up the URL query parameters so page refreshes don't re-trigger OAuth session creation
-            const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
-            window.history.replaceState(null, '', cleanUrl);
+        try {
+          user = await account.get();
+        } catch (getErr: any) {
+          console.warn("Standard account.get() failed. Checking alternatives...", getErr);
+          isCookieOrNetworkBlock = true;
 
-            // Immediately trigger a full context reload to dissolve cached states and initialize freshly
-            window.location.reload();
-            return;
-          } catch (sessionErr: any) {
-            console.error("Failed to create session from redirect parameters:", sessionErr);
-            alert(`Appwrite OAuth Session Activation Error: ${sessionErr?.message || sessionErr}`);
+          // 1. If standard account.get() fails, check for userId and secret parameters inside the URL
+          const urlParams = new URLSearchParams(window.location.search);
+          const urlUserId = urlParams.get('userId');
+          const urlSecret = urlParams.get('secret');
+
+          if (urlUserId && urlSecret) {
+            try {
+              console.log("⚡ Found OAuth URL parameters on standard session failure. Forcing manual session creation...");
+              
+              // 2. Explicitly force a manual session creation using await account.createSession(urlUserId, urlSecret)
+              await account.createSession(urlUserId, urlSecret);
+              
+              // Fetch user again with active session
+              user = await account.get();
+              isCookieOrNetworkBlock = false;
+
+              // Clean up the URL parameters so they don't bloat the URL or trigger loops
+              const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+              window.history.replaceState(null, '', cleanUrl);
+            } catch (sessionErr: any) {
+              console.error("Forced manual session activation from URL failed:", sessionErr);
+              alert(`Appwrite Session Activation Error: ${sessionErr?.message || sessionErr}`);
+            }
           }
         }
 
-        const user = await account.get();
         if (user) {
           // Immediately fetch game data from Appwrite databases if exists or create document
           let profileDoc: any;
@@ -432,13 +438,37 @@ export default function App() {
               { id: 'a8', title: 'Prestige Elite V', description: 'Advance to Prestige level 5.', category: 'prestige', target: 5, current: 0, claimed: false, cashReward: 100000, gemReward: 1500 }
             ]);
           }
+        } else {
+          // If search for standard session failed, but we ALREADY have a valid localStorage cached session,
+          // trust this cached state as a recovery fallback so cookie block does not break login state.
+          const cachedUserStr = localStorage.getItem('cached_appwrite_user');
+          const cachedStatsStr = localStorage.getItem('cached_appwrite_stats');
+
+          if (cachedUserStr && cachedStatsStr) {
+            console.log("⚡ Standard session blocked, but utilizing valid cached user session state in localStorage as fallback.");
+            const parsedUser = JSON.parse(cachedUserStr);
+            const parsedStats = JSON.parse(cachedStatsStr);
+            
+            setCurrentUser(parsedUser);
+            setUserStats(parsedStats);
+            setIsStatsLoaded(true);
+
+            // Pre-populate from localStorage caches for this user
+            const cachedHoldings = localStorage.getItem(`memex_holdings_${parsedUser.uid || parsedUser.$id}`);
+            if (cachedHoldings) setHoldings(JSON.parse(cachedHoldings));
+            const cachedAchs = localStorage.getItem(`memex_achievements_${parsedUser.uid || parsedUser.$id}`);
+            if (cachedAchs) setAchievements(JSON.parse(cachedAchs));
+          } else {
+            // Throw error to trigger unauthenticated clean states
+            throw new Error("No active session found and no localStorage cache is available.");
+          }
         }
       } catch (err: any) {
         console.log('No Appwrite session found or failed to fetch session:', err);
         
         // Exclude generic 401 unauthenticated signals to avoid popping up alerts on regular guest players,
         // but alert all other unexpected system/network/database errors or oauth failures.
-        const isNormalUnauthenticated = err?.code === 401 || err?.message?.includes('unauthorized') || String(err).includes('401');
+        const isNormalUnauthenticated = err?.code === 401 || err?.message?.includes('unauthorized') || String(err).includes('401') || err?.message?.includes('No active session found');
         if (!isNormalUnauthenticated) {
           alert(`Appwrite Diagnostic Error: Failed to load user profile or databases schema.\nMessage: ${err?.message || err}`);
         }
@@ -461,7 +491,8 @@ export default function App() {
           totalProfit: 0,
           coinsCreatedCount: 0,
           tradesCount: 0,
-          lastDailyRewardClaim: null
+          lastDailyRewardClaim: null,
+          createdAt: new Date().toISOString()
         });
         setHoldings([]);
         setAchievements([
@@ -1511,8 +1542,11 @@ export default function App() {
       title,
       description,
       category,
-      userId: currentUser.uid,
+      userId: currentUser.uid || currentUser.$id,
       userHandle: userStats.handle,
+      userName: currentUser.displayName || userStats.username || 'Appwrite Player',
+      userEmail: currentUser.email || '',
+      reportedBy: `${currentUser.displayName || userStats.username || 'Appwrite Player'} (${currentUser.email || 'No Email'}) [${userStats.handle || '@guest'}]`,
       timestamp: new Date().toISOString(),
       status: 'open'
     };
