@@ -1,0 +1,244 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdminUser() {
+      return isSignedIn() && (
+        ("email" in request.auth.token && (request.auth.token.email == 'realzekeee@gmail.com' || request.auth.token.email == 'realzekee@gmail.com')) ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('title', '') == 'Owner' ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('title', '') == 'Admin' ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isAdmin', false) == true))
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Entity validator: User Profile
+    function isValidUser(data) {
+      return data.username is string && data.username.size() > 0 && data.username.size() <= 50
+        && data.handle is string && data.handle.size() > 0 && data.handle.size() <= 30
+        && data.title is string && data.title.size() <= 100
+        && data.isPremium is bool
+        && data.nameColor is string && data.nameColor.size() <= 100
+        && data.cash is number && data.cash >= 0
+        && data.gems is number && data.gems >= 0
+        && data.prestigeLevel is number && data.prestigeLevel >= 0
+        && data.totalProfit is number
+        && data.coinsCreatedCount is number && data.coinsCreatedCount >= 0
+        && data.tradesCount is number && data.tradesCount >= 0
+        && (!("isSuspended" in data) || data.isSuspended is bool)
+        && (!("isAdmin" in data) || data.isAdmin is bool)
+        && (!("isBanned" in data) || data.isBanned is bool)
+        && (!("suspendedUntil" in data) || data.suspendedUntil == null || data.suspendedUntil is number || data.suspendedUntil is string)
+        && (!("activityLog" in data) || data.activityLog is list)
+        && (!("createdAt" in data) || data.createdAt is string)
+        && (!("lastDailyRewardClaim" in data) || data.lastDailyRewardClaim == null || data.lastDailyRewardClaim is string);
+    }
+
+    function isSafeUserUpdate(prev, next) {
+      let isAutoUnsuspend = ("isSuspended" in prev) && prev.isSuspended == true 
+        && ("isSuspended" in next) && next.isSuspended == false 
+        && ("suspendedUntil" in prev) && prev.suspendedUntil != null && request.time.toMillis() >= prev.suspendedUntil
+        && (!("suspendedUntil" in next) || next.suspendedUntil == null);
+
+      let unchangedSuspension = (!("isSuspended" in next) || next.isSuspended == (("isSuspended" in prev) ? prev.isSuspended : false))
+        && (!("suspendedUntil" in next) || next.suspendedUntil == (("suspendedUntil" in prev) ? prev.suspendedUntil : null));
+
+      // Prevent normal users from escalating privileges or escaping bans
+      return (!("isAdmin" in next) || next.isAdmin == (("isAdmin" in prev) ? prev.isAdmin : false))
+        && next.title == prev.title // Disallow title change directly (admin/owner titles)
+        && (!("isBanned" in next) || next.isBanned == (("isBanned" in prev) ? prev.isBanned : false))
+        && (unchangedSuspension || isAutoUnsuspend);
+    }
+
+    // Entity validator: Meme Coin
+    function isValidCoin(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 50
+        && data.symbol is string && data.symbol.size() > 0 && data.symbol.size() <= 15
+        && data.creator is string && data.creator.size() <= 50
+        && data.description is string && data.description.size() <= 500
+        && data.avatarEmoji is string && data.avatarEmoji.size() <= 10
+        && data.avatarBg is string && data.avatarBg.size() <= 100
+        && data.price is number && data.price >= 0
+        && data.marketCap is number && data.marketCap >= 0
+        && data.supply is number && data.supply >= 0
+        && data.volume24h is number && data.volume24h >= 0
+        && data.change24h is number
+        && data.history is list
+        && (!("isRugpulled" in data) || data.isRugpulled is bool)
+        && (!("isUserCreated" in data) || data.isUserCreated is bool);
+    }
+
+    // Entity validator: Trade Action
+    function isValidTrade(data) {
+      return data.id is string
+        && data.timestamp is string
+        && data.type is string
+        && data.coinId is string
+        && data.coinSymbol is string
+        && data.coinName is string
+        && data.amountUsd is number
+        && data.userHandle is string;
+    }
+
+    // Entity validator: Prediction Market
+    function isValidMarket(data) {
+      return data.id is string
+        && data.question is string && data.question.size() <= 300
+        && data.description is string && data.description.size() <= 500
+        && data.yesPool is number && data.yesPool >= 0
+        && data.noPool is number && data.noPool >= 0
+        && data.yesPercentage is number
+        && data.resolved is bool
+        && data.endTime is string && data.endTime.size() <= 100
+        && data.category is string;
+    }
+
+    // Entity validator: Bug Report
+    function isValidBug(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 200
+        && data.description is string && data.description.size() > 0 && data.description.size() <= 2000
+        && data.category is string && data.category.size() <= 100
+        && data.userId is string && data.userId.size() <= 128
+        && data.userHandle is string && data.userHandle.size() <= 100
+        && data.timestamp is string && data.timestamp.size() <= 100
+        && data.status is string && data.status.size() <= 50;
+    }
+
+    // Entity validator: Broadcast
+    function isValidBroadcast(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 200
+        && data.message is string && data.message.size() > 0 && data.message.size() <= 2000
+        && data.type is string && (data.type == 'info' || data.type == 'trade' || data.type == 'achievement' || data.type == 'crash')
+        && data.timestamp is string && data.timestamp.size() <= 100;
+    }
+
+    // Users Collection rules
+    match /users/{userId} {
+      allow read: if true; // Allow any viewer to see stats/leaderboards, but restrict writes to owner
+      allow create: if isOwner(userId) && isValidUser(incoming()) && (
+        isAdminUser() || 
+        (!incoming().isAdmin && incoming().title != 'Owner' && incoming().title != 'Admin')
+      );
+      allow update: if isValidUser(incoming()) && (
+        (isAdminUser() && !(existing().handle == '@zeke' && (!("isAdmin" in incoming()) || incoming().isAdmin == false || incoming().title != 'Owner'))) || 
+        (isOwner(userId) && isSafeUserUpdate(existing(), incoming())) ||
+        // Allow anyone to securely send money to another user by only incrementing their cash or gems
+        (isSignedIn() && !isOwner(userId) && 
+        (
+          (incoming().diff(existing()).affectedKeys().hasOnly(['cash']) && incoming().cash > existing().cash) ||
+          (incoming().diff(existing()).affectedKeys().hasOnly(['gems']) && incoming().gems > existing().gems) ||
+          (incoming().diff(existing()).affectedKeys().hasOnly(['cash', 'gems']) && incoming().cash >= existing().cash && incoming().gems >= existing().gems)
+        ))
+      );
+      allow delete: if isAdminUser() && existing().handle != '@zeke';
+
+      // Subcollection: holdings
+      match /holdings/{coinId} {
+        allow read: if isSignedIn();
+        allow create, update: if (isOwner(userId)
+          && incoming().coinId is string
+          && incoming().amount is number && incoming().amount >= 0)
+          || (isSignedIn() && !isOwner(userId)
+              && incoming().coinId is string
+              && incoming().amount is number && incoming().amount >= 0);
+        allow delete: if isOwner(userId);
+      }
+
+      // Subcollection: bets
+      match /bets/{marketId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId)
+          && incoming().marketId is string
+          && incoming().amount is number && incoming().amount >= 0
+          && incoming().side is string;
+        allow delete: if isOwner(userId);
+      }
+
+      // Subcollection: achievements
+      match /achievements/{achievementId} {
+        allow read: if isSignedIn();
+        allow create, update: if isOwner(userId)
+          && incoming().id is string
+          && incoming().title is string
+          && incoming().description is string
+          && incoming().category is string
+          && incoming().target is number
+          && incoming().current is number
+          && incoming().claimed is bool;
+        allow delete: if false;
+      }
+    }
+
+    // Global Coins Collection rules
+    match /coins/{coinId} {
+      allow read: if true;
+      allow create: if isSignedIn() && isValidCoin(incoming()) && isValidId(coinId);
+      // Let active users update simulated price ticks or change status
+      allow update: if isSignedIn() && isValidCoin(incoming());
+      allow delete: if isSignedIn() && (
+        isAdminUser() || 
+        resource.data.creator == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.handle
+      );
+    }
+
+    // Global Live Trades Feed rules
+    match /trades/{tradeId} {
+      allow read: if true;
+      allow create: if isSignedIn() && isValidTrade(incoming()) && isValidId(tradeId);
+      allow update: if false;
+      allow delete: if isAdminUser();
+    }
+
+    // Global Prediction Markets list
+    match /markets/{marketId} {
+      allow read: if true;
+      allow create: if isSignedIn() && isValidMarket(incoming()) && isValidId(marketId);
+      allow update: if isSignedIn() && isValidMarket(incoming()) && isValidId(marketId);
+      allow delete: if isAdminUser();
+    }
+
+    // Global Bug Reports rules
+    match /bugs/{bugId} {
+      allow read: if isAdminUser();
+      allow create: if isSignedIn() && incoming().userId == request.auth.uid && isValidBug(incoming()) && isValidId(bugId);
+      allow update: if isAdminUser() && incoming().status is string;
+      allow delete: if isAdminUser();
+    }
+
+    // Global Broadcast System rules
+    match /broadcasts/{broadcastId} {
+      allow read: if true;
+      allow create, update: if isAdminUser() && isValidBroadcast(incoming()) && isValidId(broadcastId);
+      allow delete: if isAdminUser();
+    }
+  }
+}

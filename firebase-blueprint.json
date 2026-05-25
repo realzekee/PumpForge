@@ -1,0 +1,191 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile statistics and configurations",
+      "type": "object",
+      "properties": {
+        "username": { "type": "string" },
+        "handle": { "type": "string" },
+        "title": { "type": "string" },
+        "isPremium": { "type": "boolean" },
+        "nameColor": { "type": "string" },
+        "cash": { "type": "number" },
+        "gems": { "type": "number" },
+        "prestigeLevel": { "type": "number" },
+        "totalProfit": { "type": "number" },
+        "coinsCreatedCount": { "type": "number" },
+        "tradesCount": { "type": "number" },
+        "lastDailyRewardClaim": { "type": "string" }
+      },
+      "required": ["username", "handle", "title", "isPremium", "nameColor", "cash", "gems", "prestigeLevel", "totalProfit", "coinsCreatedCount", "tradesCount"]
+    },
+    "Holding": {
+      "title": "Holding",
+      "description": "Meme coin tokens held in user portfolio",
+      "type": "object",
+      "properties": {
+        "coinId": { "type": "string" },
+        "amount": { "type": "number" },
+        "avgBuyPrice": { "type": "number" }
+      },
+      "required": ["coinId", "amount", "avgBuyPrice"]
+    },
+    "Coin": {
+      "title": "Coin",
+      "description": "Simulated meme coin list and price metrics",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "symbol": { "type": "string" },
+        "creator": { "type": "string" },
+        "description": { "type": "string" },
+        "avatarEmoji": { "type": "string" },
+        "avatarBg": { "type": "string" },
+        "price": { "type": "number" },
+        "marketCap": { "type": "number" },
+        "supply": { "type": "number" },
+        "volume24h": { "type": "number" },
+        "change24h": { "type": "number" },
+        "history": {
+          "type": "array"
+        },
+        "isRugpulled": { "type": "boolean" },
+        "isUserCreated": { "type": "boolean" }
+      },
+      "required": ["id", "name", "symbol", "creator", "description", "avatarEmoji", "avatarBg", "price", "marketCap", "supply", "volume24h", "change24h", "history", "isRugpulled"]
+    },
+    "Trade": {
+      "title": "Trade",
+      "description": "Global log of trades and creation actions",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "type": { "type": "string", "enum": ["BUY", "SELL", "CREATE", "RUG"] },
+        "coinId": { "type": "string" },
+        "coinSymbol": { "type": "string" },
+        "coinName": { "type": "string" },
+        "amountUsd": { "type": "number" },
+        "amountTokens": { "type": "number" },
+        "userHandle": { "type": "string" },
+        "message": { "type": "string" }
+      },
+      "required": ["id", "timestamp", "type", "coinId", "coinSymbol", "coinName", "amountUsd", "userHandle"]
+    },
+    "Market": {
+      "title": "Market",
+      "description": "Global prediction market question card",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "question": { "type": "string" },
+        "description": { "type": "string" },
+        "yesPool": { "type": "number" },
+        "noPool": { "type": "number" },
+        "yesPercentage": { "type": "number" },
+        "resolved": { "type": "boolean" },
+        "resolvedOutcome": { "type": "string" },
+        "endTime": { "type": "string" },
+        "category": { "type": "string" }
+      },
+      "required": ["id", "question", "description", "yesPool", "noPool", "yesPercentage", "resolved", "endTime", "category"]
+    },
+    "UserBet": {
+      "title": "UserBet",
+      "description": "User's bet placement details on a prediction market",
+      "type": "object",
+      "properties": {
+        "marketId": { "type": "string" },
+        "amount": { "type": "number" },
+        "side": { "type": "string", "enum": ["YES", "NO"] }
+      },
+      "required": ["marketId", "amount", "side"]
+    },
+    "BugReport": {
+      "title": "BugReport",
+      "description": "User submitted issue reports for diagnostics",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "category": { "type": "string" },
+        "userId": { "type": "string" },
+        "userHandle": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "title", "description", "category", "userId", "userHandle", "timestamp", "status"]
+    },
+    "Broadcast": {
+      "title": "Broadcast",
+      "description": "Administrative announcement sent to all online participants",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "type": { "type": "string" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["id", "title", "message", "type", "timestamp"]
+    },
+    "Achievement": {
+      "title": "Achievement",
+      "description": "User's accomplishment milestones progress",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "category": { "type": "string" },
+        "target": { "type": "number" },
+        "current": { "type": "number" },
+        "claimed": { "type": "boolean" },
+        "cashReward": { "type": "number" },
+        "gemReward": { "type": "number" }
+      },
+      "required": ["id", "title", "description", "category", "target", "current", "claimed", "cashReward", "gemReward"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Profiles and stats of signed-in degens"
+    },
+    "/users/{userId}/holdings/{coinId}": {
+      "schema": "Holding",
+      "description": "Token portfolio holdings per degen"
+    },
+    "/users/{userId}/bets/{marketId}": {
+      "schema": "UserBet",
+      "description": "Market betting details placed by the degen"
+    },
+    "/users/{userId}/achievements/{achievementId}": {
+      "schema": "Achievement",
+      "description": "In-game milestones unlocked by the degen"
+    },
+    "/coins/{coinId}": {
+      "schema": "Coin",
+      "description": "Global listing of mock crypto coins"
+    },
+    "/trades/{tradeId}": {
+      "schema": "Trade",
+      "description": "Simulated and real player trades ticker log"
+    },
+    "/markets/{marketId}": {
+      "schema": "Market",
+      "description": "Simulated global prediction sports betting cards"
+    },
+    "/bugs/{bugId}": {
+      "schema": "BugReport",
+      "description": "Bug reports submitted by participants"
+    },
+    "/broadcasts/{broadcastId}": {
+      "schema": "Broadcast",
+      "description": "Global broadcasts sent by the owner/admin"
+    }
+  }
+}
