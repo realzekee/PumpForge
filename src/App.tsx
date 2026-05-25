@@ -71,28 +71,53 @@ const PRESTIGE_NAMES = [
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('home');
   const [selectedCoinIdForMarket, setSelectedCoinIdForMarket] = useState<string | null>(null);
-  const [currentUser, setCurrentUser] = useState<any | null>(null);
+  const [currentUser, setCurrentUser] = useState<any | null>(() => {
+    try {
+      const cached = localStorage.getItem('cached_appwrite_user');
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  });
   const [isCheckingRedirect, setIsCheckingRedirect] = useState(true);
+  const [isStatsLoaded, setIsStatsLoaded] = useState<boolean>(() => {
+    try {
+      return !!localStorage.getItem('cached_appwrite_stats');
+    } catch {
+      return false;
+    }
+  });
 
 
 
 
   // Core local states (fallbacks/synced depending on auth)
   const [coins, setCoins] = useState<MemeCoin[]>(INITIAL_COINS);
-  const [userStats, setUserStats] = useState<UserStats>({
-    username: 'Guest Player',
-    handle: '@guest_degen',
-    title: 'Member',
-    isPremium: false,
-    nameColor: 'text-zinc-400 font-extrabold',
-    cash: 0.00,
-    gems: 90,
-    prestigeLevel: 0,
-    totalProfit: 0,
-    coinsCreatedCount: 0,
-    tradesCount: 0,
-    lastDailyRewardClaim: null,
-    createdAt: '2026-05-24T06:40:00Z'
+  const [userStats, setUserStats] = useState<UserStats>(() => {
+    try {
+      const cachedUser = localStorage.getItem('cached_appwrite_user');
+      const cachedStats = localStorage.getItem('cached_appwrite_stats');
+      if (cachedUser && cachedStats) {
+        return JSON.parse(cachedStats);
+      }
+    } catch (e) {
+      console.error('Error loading fallback userStats cache:', e);
+    }
+    return {
+      username: 'Guest Player',
+      handle: '@guest_degen',
+      title: 'Member',
+      isPremium: false,
+      nameColor: 'text-zinc-400 font-extrabold',
+      cash: 5000.00,
+      gems: 90,
+      prestigeLevel: 0,
+      totalProfit: 0,
+      coinsCreatedCount: 0,
+      tradesCount: 0,
+      lastDailyRewardClaim: null,
+      createdAt: '2026-05-24T06:40:00Z'
+    };
   });
   const [holdings, setHoldings] = useState<PortfolioHolding[]>([]);
   const [liveTrades, setLiveTrades] = useState<LiveTrade[]>([]);
@@ -297,6 +322,30 @@ export default function App() {
     const initSession = async () => {
       setIsCheckingRedirect(true);
       try {
+        // 1. Explicitly check for and handle incoming OAuth redirect query parameters (userId & secret)
+        const urlParams = new URLSearchParams(window.location.search);
+        const userId = urlParams.get('userId');
+        const secret = urlParams.get('secret');
+
+        if (userId && secret) {
+          try {
+            console.log("⚡ Found OAuth redirect parameters. Creating manual session for userId:", userId);
+            
+            // Clean local caches first to avoid any stale session override
+            localStorage.removeItem('cached_appwrite_user');
+            localStorage.removeItem('cached_appwrite_stats');
+            
+            await account.createSession(userId, secret);
+            
+            // Clean up the URL query parameters so page refreshes don't re-trigger OAuth session creation
+            const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+            window.history.replaceState(null, '', cleanUrl);
+          } catch (sessionErr: any) {
+            console.error("Failed to create session from redirect parameters:", sessionErr);
+            alert(`Appwrite OAuth Session Activation Error: ${sessionErr?.message || sessionErr}`);
+          }
+        }
+
         const user = await account.get();
         if (user) {
           // Immediately fetch game data from Appwrite databases if exists or create document
@@ -304,12 +353,14 @@ export default function App() {
           try {
             profileDoc = await databases.getDocument("pumpforge", "users", user.$id);
           } catch (err: any) {
-            if (err?.code === 404 || String(err).includes('404') || err?.message?.includes('not found')) {
+            const isNotFound = err?.code === 404 || String(err).includes('404') || err?.message?.includes('not found');
+            if (isNotFound) {
+              console.log("Creating brand new Appwrite database profile for user:", user.$id);
               profileDoc = await databases.createDocument("pumpforge", "users", user.$id, {
                 total_value: 0,
-                cash: 0,
+                cash: 5000.00, // Initialize new users with the standard 5000 cash balance
                 coins: 0,
-                gems: 0
+                gems: 90
               });
             } else {
               throw err;
@@ -322,27 +373,34 @@ export default function App() {
             uid: user.$id,
             displayName: user.name || user.email.split('@')[0] || 'Appwrite Player'
           };
-          setCurrentUser(mappedUser);
-
+          
           const isOwnerEmail = (user.email === 'realzekeee@gmail.com' || user.email === 'realzekee@gmail.com');
           const finalUsername = user.name || user.email.split('@')[0] || 'Appwrite Player';
           const finalHandle = '@' + finalUsername.toLowerCase().replace(/[^a-z0-9]/g, '');
 
-          setUserStats({
+          const finalUserStats = {
             username: finalUsername,
             handle: finalHandle,
             title: isOwnerEmail ? 'Owner' : 'Member',
             isPremium: isOwnerEmail,
             nameColor: isOwnerEmail ? 'text-rose-500 font-extrabold text-glow tracking-wider' : 'text-zinc-400 font-bold',
-            cash: profileDoc.cash ?? 0,
-            gems: profileDoc.gems ?? 0,
+            cash: profileDoc.cash ?? 5000.00,
+            gems: profileDoc.gems ?? 90,
             prestigeLevel: profileDoc.prestigeLevel ?? 0,
             totalProfit: profileDoc.total_value ?? 0,
             coinsCreatedCount: profileDoc.coins ?? 0,
             tradesCount: profileDoc.tradesCount ?? 0,
             lastDailyRewardClaim: profileDoc.lastDailyRewardClaim ?? null,
             createdAt: user.$createdAt || new Date().toISOString()
-          });
+          };
+
+          // Cache the states immediately inside localStorage to prevent flashes or resets on asset rerenders
+          localStorage.setItem('cached_appwrite_user', JSON.stringify(mappedUser));
+          localStorage.setItem('cached_appwrite_stats', JSON.stringify(finalUserStats));
+
+          setCurrentUser(mappedUser);
+          setUserStats(finalUserStats);
+          setIsStatsLoaded(true);
 
           // Pre-populate holdings and achievements from localStorage mapped by user ID for pragmatic local persistence
           const cachedHoldings = localStorage.getItem(`memex_holdings_${user.$id}`);
@@ -368,9 +426,22 @@ export default function App() {
             ]);
           }
         }
-      } catch (err) {
+      } catch (err: any) {
         console.log('No Appwrite session found or failed to fetch session:', err);
+        
+        // Exclude generic 401 unauthenticated signals to avoid popping up alerts on regular guest players,
+        // but alert all other unexpected system/network/database errors or oauth failures.
+        const isNormalUnauthenticated = err?.code === 401 || err?.message?.includes('unauthorized') || String(err).includes('401');
+        if (!isNormalUnauthenticated) {
+          alert(`Appwrite Diagnostic Error: Failed to load user profile or databases schema.\nMessage: ${err?.message || err}`);
+        }
+
+        // Clean up session caches on standard session failures
+        localStorage.removeItem('cached_appwrite_user');
+        localStorage.removeItem('cached_appwrite_stats');
+        
         setCurrentUser(null);
+        setIsStatsLoaded(false);
         setUserStats({
           username: 'Guest Player',
           handle: '@guest_degen',
@@ -404,9 +475,9 @@ export default function App() {
     initSession();
   }, []);
 
-  // Sync state changes back to Appwrite Database if user is logged in
+  // Sync state changes back to Appwrite Database if user stats are fully loaded
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser || !isStatsLoaded) return;
     
     const syncToAppwrite = async () => {
       try {
@@ -416,6 +487,9 @@ export default function App() {
           coins: userStats.coinsCreatedCount || 0,
           gems: userStats.gems || 0
         });
+        
+        // Also keep stats storage cache up-to-date with current state modifications
+        localStorage.setItem('cached_appwrite_stats', JSON.stringify(userStats));
       } catch (e) {
         console.error('Failed to sync state to Appwrite databases:', e);
       }
@@ -423,12 +497,15 @@ export default function App() {
 
     const handler = setTimeout(syncToAppwrite, 1500);
     return () => clearTimeout(handler);
-  }, [userStats.totalProfit, userStats.cash, userStats.coinsCreatedCount, userStats.gems, currentUser]);
+  }, [userStats.totalProfit, userStats.cash, userStats.coinsCreatedCount, userStats.gems, currentUser, isStatsLoaded]);
 
   // Authentication Callbacks
   const handleGoogleSignIn = async () => {
     setIsCheckingRedirect(true);
     try {
+      // Clear legacy storage cache to guarantee fresh login
+      localStorage.removeItem('cached_appwrite_user');
+      localStorage.removeItem('cached_appwrite_stats');
       account.createOAuth2Session("google" as any, "https://pump-forge-zeke.vercel.app");
     } catch (e: any) {
       console.error('Appwrite Google sign-in failed:', e);
@@ -445,14 +522,20 @@ export default function App() {
     setShowSignOutConfirm(false);
     try {
       await account.deleteSession('current');
+      
+      // Fully clear session storage caches
+      localStorage.removeItem('cached_appwrite_user');
+      localStorage.removeItem('cached_appwrite_stats');
+      
       setCurrentUser(null);
+      setIsStatsLoaded(false);
       setUserStats({
         username: 'Guest Player',
         handle: '@guest_degen',
         title: 'Member',
         isPremium: false,
         nameColor: 'text-zinc-400 font-extrabold',
-        cash: 0.00,
+        cash: 5000.00,
         gems: 90,
         prestigeLevel: 0,
         totalProfit: 0,
