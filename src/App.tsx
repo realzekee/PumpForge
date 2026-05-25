@@ -38,7 +38,7 @@ import { Award, Gift, Sparkles, X, ChevronRight, Check, Gamepad2, ShoppingBag, P
 
 // Firebase imports
 import { auth, db, googleProvider, OperationType, handleFirestoreError } from './firebase';
-import { onAuthStateChanged, signInWithRedirect, getRedirectResult, signOut, User } from 'firebase/auth';
+import { onAuthStateChanged, signInWithRedirect, signInWithPopup, getRedirectResult, signOut, User } from 'firebase/auth';
 import {
   collection,
   doc,
@@ -71,28 +71,60 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isCheckingRedirect, setIsCheckingRedirect] = useState(true);
 
+  const [redirectResolved, setRedirectResolved] = useState(false);
+  const [authStateResolved, setAuthStateResolved] = useState(false);
+
   useEffect(() => {
     getRedirectResult(auth).then((result) => {
-      setIsCheckingRedirect(false);
+      setRedirectResolved(true);
     }).catch(error => {
       console.error('Redirect result error:', error);
-      setIsCheckingRedirect(false);
+      setRedirectResolved(true);
     });
+
+    const unsub = onAuthStateChanged(auth, () => {
+      setAuthStateResolved(true);
+    });
+
+    // Failsafe exit
+    const timeout = setTimeout(() => {
+      setIsCheckingRedirect(false);
+    }, 10000);
+
+    return () => {
+      unsub();
+      clearTimeout(timeout);
+    };
   }, []);
+
+  useEffect(() => {
+    if (redirectResolved && authStateResolved) {
+      setIsCheckingRedirect(false);
+    }
+  }, [redirectResolved, authStateResolved]);
 
   // Authentication Callbacks
   const handleGoogleSignIn = async () => {
+    setIsCheckingRedirect(true);
     try {
-      await signInWithRedirect(auth, googleProvider);
-    } catch (e: any) {
-      console.error('Google sign-in redirect failed:', e);
+      signInWithRedirect(auth, googleProvider).catch((e) => {
+        console.warn('Redirect exception:', e);
+      });
+
+      // 5-second fallback: If the browser blocks the redirect and prevents the page from unloading,
+      // we catch it here and present a popup explicitly. This provides a bulletproof route for mobile.
+      await new Promise(resolve => setTimeout(resolve, 5000));
       
+      console.log('Redirect failed to navigate after 5s. Falling back to popup.');
+      await signInWithPopup(auth, googleProvider);
+      
+    } catch (e: any) {
+      console.error('Google sign-in fallback failed:', e);
       const errorCode = e?.code || 'unknown-error';
       const errorMessage = e?.message || 'An unknown error occurred';
-      const exactError = `Firebase Auth Error [${errorCode}]: ${errorMessage}`;
-
-      console.error(exactError);
-      alert(exactError);
+      alert(`Firebase Auth Error [${errorCode}]: ${errorMessage}`);
+    } finally {
+      setIsCheckingRedirect(false);
     }
   };
 

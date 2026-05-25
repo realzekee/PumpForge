@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithRedirect, signOut } from 'firebase/auth';
+import { initializeAuth, browserPopupRedirectResolver, GoogleAuthProvider, signInWithRedirect, signOut } from 'firebase/auth';
 import { initializeFirestore, doc, getDocFromServer, setLogLevel } from 'firebase/firestore';
 
 const firebaseConfig = {
@@ -25,7 +25,10 @@ try {
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
 }, firebaseConfig.firestoreDatabaseId);
-export const auth = getAuth(app);
+
+export const auth = initializeAuth(app, {
+  popupRedirectResolver: browserPopupRedirectResolver
+});
 export const googleProvider = new GoogleAuthProvider();
 
 export enum OperationType {
