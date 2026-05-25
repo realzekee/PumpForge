@@ -36,9 +36,12 @@ import {
 import { INITIAL_COINS } from './data/memeCoins';
 import { Award, Gift, Sparkles, X, ChevronRight, Check, Gamepad2, ShoppingBag, PlusCircle, Lock, LogIn, TrendingUp, Crown, Skull, BellRing } from 'lucide-react';
 
+// Appwrite imports
+import { account, databases } from './appwrite';
+
 // Firebase imports
 import { auth, db, googleProvider, OperationType, handleFirestoreError } from './firebase';
-import { onAuthStateChanged, signInWithRedirect, getRedirectResult, signOut, User } from 'firebase/auth';
+import { onAuthStateChanged, signInWithRedirect, getRedirectResult, signOut } from 'firebase/auth';
 import {
   collection,
   doc,
@@ -68,68 +71,11 @@ const PRESTIGE_NAMES = [
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('home');
   const [selectedCoinIdForMarket, setSelectedCoinIdForMarket] = useState<string | null>(null);
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [currentUser, setCurrentUser] = useState<any | null>(null);
   const [isCheckingRedirect, setIsCheckingRedirect] = useState(true);
 
-  const [redirectResolved, setRedirectResolved] = useState(false);
-  const [authStateResolved, setAuthStateResolved] = useState(false);
 
-  useEffect(() => {
-    getRedirectResult(auth).then((result) => {
-      setRedirectResolved(true);
-    }).catch(error => {
-      console.error('Redirect result error:', error);
-      setRedirectResolved(true);
-    });
 
-    const unsub = onAuthStateChanged(auth, () => {
-      setAuthStateResolved(true);
-    });
-
-    // Failsafe exit
-    const timeout = setTimeout(() => {
-      setIsCheckingRedirect(false);
-    }, 10000);
-
-    return () => {
-      unsub();
-      clearTimeout(timeout);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (redirectResolved && authStateResolved) {
-      setIsCheckingRedirect(false);
-    }
-  }, [redirectResolved, authStateResolved]);
-
-  // Authentication Callbacks
-  const handleGoogleSignIn = async () => {
-    setIsCheckingRedirect(true);
-    try {
-      await signInWithRedirect(auth, googleProvider);
-    } catch (e: any) {
-      console.error('Google sign-in redirect failed:', e);
-      const errorCode = e?.code || 'unknown-error';
-      const errorMessage = e?.message || 'An unknown error occurred';
-      alert(`Firebase Auth Error [${errorCode}]: ${errorMessage}`);
-      setIsCheckingRedirect(false);
-    }
-  };
-
-  const handleSignOut = async () => {
-    setShowSignOutConfirm(true);
-  };
-
-  const handleConfirmSignOut = async () => {
-    setShowSignOutConfirm(false);
-    try {
-      await signOut(auth);
-      onAddNotification('Signed Out', 'Returned to Guest Sandbox mode.', 'info');
-    } catch (e) {
-      console.error('Sign out error:', e);
-    }
-  };
 
   // Core local states (fallbacks/synced depending on auth)
   const [coins, setCoins] = useState<MemeCoin[]>(INITIAL_COINS);
@@ -346,254 +292,71 @@ export default function App() {
   const [isDailyRewardAvailable, setIsDailyRewardAvailable] = useState(true);
   const [dailyRewardTimer, setDailyRewardTimer] = useState('Claim Available!');
 
-  // 1. GUEST USER LOCAL STORAGE LOADERS (ONLY IF UN-AUTHENTICATED)
+  // Appwrite Session initializer and handler functions (located below all state declarations)
   useEffect(() => {
-    if (currentUser) return; // Skip if signed in to Firebase
-  }, [currentUser]);
-
-  // 2. FIRESTORE AUTHENTICATION & MULTI-USER REAL-TIME SUBSCRIPTIONS
-  useEffect(() => {
-    let holdingsUnsub = () => {};
-    let achUnsub = () => {};
-    let betsUnsub = () => {};
-    let statsUnsub = () => {};
-
-    const unsubAuth = onAuthStateChanged(auth, async (user) => {
-      // Clean up previous listeners when user changes
-      holdingsUnsub();
-      achUnsub();
-      betsUnsub();
-      statsUnsub();
-      holdingsUnsub = () => {};
-      achUnsub = () => {};
-      betsUnsub = () => {};
-      statsUnsub = () => {};
-
-      if (user) {
-        setCurrentUser(user);
-
-        // Proactive background bootstrapping of global collections if empty on server
-        (async () => {
+    const initSession = async () => {
+      setIsCheckingRedirect(true);
+      try {
+        const user = await account.get();
+        if (user) {
+          // Immediately fetch game data from Appwrite databases if exists or create document
+          let profileDoc: any;
           try {
-            const coinsSnap = await getDocs(collection(db, 'coins'));
-            if (coinsSnap.empty) {
-              console.info('⚡ Firestore: Coins collection empty, bootstrapping default coins...');
-              for (const coin of INITIAL_COINS) {
-                try {
-                  await setDoc(doc(db, 'coins', coin.id), coin);
-                } catch (e) {
-                  console.error('Bootstrapping coin doc failed:', e);
-                }
-              }
-            }
-          } catch (e) {
-            console.error('Bootstrapping coins check failed. This is fine if offline:', e);
-          }
-
-          try {
-            const marketsSnap = await getDocs(collection(db, 'markets'));
-            if (marketsSnap.empty) {
-              console.info('⚡ Firestore: Markets collection empty, bootstrapping default prediction markets...');
-              const DEFAULT_MARKETS = [
-                { id: 'm1', question: 'Will *ROAD hit a $150K valuation by Friday?', description: 'Based on shill room hype, ROAD represents the premium culture asset.', yesPool: 4500, noPool: 3200, yesPercentage: 58, resolved: false, resolvedOutcome: null, endTime: 'Next Friday', category: 'trading' },
-                { id: 'm2', question: 'Will Slots simulation return a grand Jackpot win on next 10 attempts?', description: 'Based on virtual slot payouts and variance.', yesPool: 150, noPool: 6400, yesPercentage: 2, resolved: false, resolvedOutcome: null, endTime: 'Within 2 hours', category: 'arcade' },
-                { id: 'm3', question: 'Will Zeke reach Prestige I status inside the next 12 hours?', description: 'Requires $100K liquid cash balance to trigger Prestige system.', yesPool: 8500, noPool: 1000, yesPercentage: 89, resolved: true, resolvedOutcome: 'YES', endTime: 'Completed', category: 'general' }
-              ];
-              for (const m of DEFAULT_MARKETS) {
-                try {
-                  await setDoc(doc(db, 'markets', m.id), m);
-                } catch (e) {
-                  console.error('Bootstrapping market doc failed:', e);
-                }
-              }
-            }
-          } catch (e) {
-            console.error('Bootstrapping markets check failed. This is fine if offline:', e);
-          }
-        })();
-
-        // Fetch User profile stats
-        const userRef = doc(db, 'users', user.uid);
-        let userSnap;
-        let isOffline = false;
-        try {
-          userSnap = await getDoc(userRef);
-        } catch (e: any) {
-          const errMsg = e?.message || (e && typeof e.toString === 'function' ? e.toString() : String(e));
-          console.error('Handling Firestore startup getDoc connection error gracefully. Activating offline local storage fallback. Error details:', errMsg);
-          isOffline = true;
-        }
-
-        let initialStats: UserStats;
-        const cleanUserEmail = (user.email || '').trim().toLowerCase();
-        const isOwnerEmail = cleanUserEmail === 'realzekeee@gmail.com' || cleanUserEmail === 'realzekee@gmail.com';
-        
-        let targetUsername: string;
-        let targetHandle: string;
-        let targetTitle: string;
-        let targetColor: string;
-
-        if (isOwnerEmail) {
-          targetUsername = 'zeke';
-          targetHandle = '@zeke';
-          targetTitle = 'Owner';
-          targetColor = 'text-rose-500 font-extrabold text-glow tracking-wider';
-        } else {
-          const googleDisplayName = user.displayName || '';
-          const emailPrefix = user.email ? user.email.split('@')[0] : '';
-          targetUsername = googleDisplayName || emailPrefix || 'Google Player';
-          let targetHandleSeed = targetUsername.toLowerCase().replace(/[^a-z0-9]/g, '');
-          if (!targetHandleSeed) {
-            targetHandleSeed = emailPrefix.toLowerCase().replace(/[^a-z0-9]/g, '') || 'degen';
-          }
-          targetHandle = '@' + targetHandleSeed;
-          targetTitle = 'Member';
-          targetColor = 'text-zinc-400 font-bold';
-        }
-
-        if (isOffline) {
-          // Robust Local storage backup retrieval for offline scenario
-          const savedStats = localStorage.getItem(`memex_stats_${user.uid}`) || localStorage.getItem('memex_stats');
-          const savedHoldings = localStorage.getItem(`memex_holdings_${user.uid}`) || localStorage.getItem('memex_holdings');
-          const savedAchievements = localStorage.getItem(`memex_achievements_${user.uid}`) || localStorage.getItem('memex_achievements');
-          
-          if (savedStats) {
-            initialStats = JSON.parse(savedStats);
-          } else {
-            initialStats = {
-              username: targetUsername,
-              handle: targetHandle,
-              title: targetTitle,
-              isPremium: isOwnerEmail,
-              nameColor: targetColor,
-              cash: 5000.00,
-              gems: 250,
-              prestigeLevel: 0,
-              totalProfit: 0,
-              coinsCreatedCount: 0,
-              tradesCount: 0,
-              lastDailyRewardClaim: null
-            };
-          }
-          
-          setUserStats(initialStats);
-          setIsOfflineDevice(true);
-          
-          if (savedHoldings) {
-            setHoldings(JSON.parse(savedHoldings));
-          }
-          if (savedAchievements) {
-            setAchievements(JSON.parse(savedAchievements));
-          }
-          
-          onAddNotification('Connection Offline', 'Operational sandbox loaded from cached local storage profile.', 'info');
-        } else if (!userSnap || !userSnap.exists()) {
-          initialStats = {
-            username: targetUsername,
-            handle: targetHandle,
-            title: targetTitle,
-            isPremium: isOwnerEmail,
-            nameColor: targetColor,
-            cash: 5000.00,
-            gems: 250,
-            prestigeLevel: 0,
-            totalProfit: 0,
-            coinsCreatedCount: 0,
-            tradesCount: 0,
-            lastDailyRewardClaim: null,
-            createdAt: new Date().toISOString(),
-            isSuspended: false,
-            isAdmin: isOwnerEmail,
-            activityLog: []
-          };
-          try {
-            await setDoc(userRef, initialStats);
-          } catch (e) {
-            handleFirestoreError(e, OperationType.CREATE, `users/${user.uid}`);
-          }
-        } else {
-          const data = userSnap.data() as UserStats;
-          
-          let cleanUsername = data.username;
-          let cleanHandle = data.handle;
-          let cleanTitle = data.title;
-          let cleanColor = data.nameColor;
-
-          if (!isOwnerEmail) {
-            if (data.username === 'zeke' || data.username === 'Zeke' || !data.username) {
-              cleanUsername = targetUsername;
-            }
-            if (data.handle === '@zeke' || data.handle === '@zekee' || !data.handle) {
-              cleanHandle = targetHandle;
-            }
-            if (data.title === 'Owner') {
-              cleanTitle = 'Member';
-            }
-            if (data.nameColor === 'text-rose-500 font-extrabold text-glow tracking-wider') {
-              cleanColor = 'text-zinc-400 font-bold';
-            }
-          } else {
-            cleanUsername = 'zeke';
-            cleanHandle = '@zeke';
-            cleanTitle = 'Owner';
-            cleanColor = 'text-rose-500 font-extrabold text-glow tracking-wider';
-          }
-
-          initialStats = {
-            ...data,
-            username: cleanUsername,
-            handle: cleanHandle,
-            title: cleanTitle,
-            nameColor: cleanColor,
-            isPremium: isOwnerEmail || cleanTitle === 'Owner' || !!data.isPremium,
-            isAdmin: isOwnerEmail || !!data.isAdmin,
-            gems: userSnap.get('gems') ?? 250,
-            cash: userSnap.get('cash') ?? 5000.00
-          };
-
-          // Automatically repair fields in Firestore if they are modified or outdated
-          if (
-            data.username !== cleanUsername ||
-            data.handle !== cleanHandle ||
-            data.title !== cleanTitle ||
-            data.nameColor !== cleanColor ||
-            data.isPremium !== initialStats.isPremium ||
-            data.isAdmin !== initialStats.isAdmin
-          ) {
-            try {
-              await updateDoc(userRef, {
-                username: cleanUsername,
-                handle: cleanHandle,
-                title: cleanTitle,
-                nameColor: cleanColor,
-                isPremium: initialStats.isPremium,
-                isAdmin: initialStats.isAdmin
+            profileDoc = await databases.getDocument("pumpforge", "users", user.$id);
+          } catch (err: any) {
+            if (err?.code === 404 || String(err).includes('404') || err?.message?.includes('not found')) {
+              profileDoc = await databases.createDocument("pumpforge", "users", user.$id, {
+                total_value: 0,
+                cash: 0,
+                coins: 0,
+                gems: 0
               });
-            } catch (e) {
-              console.error('Syncing current profile details to Firestore doc failed:', e);
+            } else {
+              throw err;
             }
           }
-        }
-        if (!isOffline) {
-          setUserStats(initialStats);
-        }
 
-        // REAL-TIME INSTANT FEED LIFELINE BINDINGS
-        // A. holdings subcollection listener
-        const holdingsRef = collection(db, 'users', user.uid, 'holdings');
-        holdingsUnsub = onSnapshot(holdingsRef, (snap) => {
-          const list: PortfolioHolding[] = [];
-          snap.forEach((doc) => list.push(doc.data() as PortfolioHolding));
-          setHoldings(list);
-        }, (error) => {
-          console.error('Holdings snapshot reading error:', error);
-        });
+          // Map user and document data to states
+          const mappedUser = {
+            ...user,
+            uid: user.$id,
+            displayName: user.name || user.email.split('@')[0] || 'Appwrite Player'
+          };
+          setCurrentUser(mappedUser);
 
-        // B. achievements subcollection listener
-        const achRef = collection(db, 'users', user.uid, 'achievements');
-        achUnsub = onSnapshot(achRef, (snap) => {
-          if (snap.empty) {
-            const DEFAULT_ACHS = [
+          const isOwnerEmail = (user.email === 'realzekeee@gmail.com' || user.email === 'realzekee@gmail.com');
+          const finalUsername = user.name || user.email.split('@')[0] || 'Appwrite Player';
+          const finalHandle = '@' + finalUsername.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+          setUserStats({
+            username: finalUsername,
+            handle: finalHandle,
+            title: isOwnerEmail ? 'Owner' : 'Member',
+            isPremium: isOwnerEmail,
+            nameColor: isOwnerEmail ? 'text-rose-500 font-extrabold text-glow tracking-wider' : 'text-zinc-400 font-bold',
+            cash: profileDoc.cash ?? 0,
+            gems: profileDoc.gems ?? 0,
+            prestigeLevel: profileDoc.prestigeLevel ?? 0,
+            totalProfit: profileDoc.total_value ?? 0,
+            coinsCreatedCount: profileDoc.coins ?? 0,
+            tradesCount: profileDoc.tradesCount ?? 0,
+            lastDailyRewardClaim: profileDoc.lastDailyRewardClaim ?? null,
+            createdAt: user.$createdAt || new Date().toISOString()
+          });
+
+          // Pre-populate holdings and achievements from localStorage mapped by user ID for pragmatic local persistence
+          const cachedHoldings = localStorage.getItem(`memex_holdings_${user.$id}`);
+          if (cachedHoldings) {
+            setHoldings(JSON.parse(cachedHoldings));
+          } else {
+            setHoldings([]);
+          }
+
+          const cachedAchs = localStorage.getItem(`memex_achievements_${user.$id}`);
+          if (cachedAchs) {
+            setAchievements(JSON.parse(cachedAchs));
+          } else {
+            setAchievements([
               { id: 'a1', title: "Baby's First Buy", description: 'Procure your first simulated meme coin.', category: 'trading', target: 1, current: 0, claimed: false, cashReward: 200, gemReward: 15 },
               { id: 'a2', title: 'Paper Hands', description: 'Dump an asset for simulated losses.', category: 'trading', target: 1, current: 0, claimed: false, cashReward: 100, gemReward: 10 },
               { id: 'a3', title: 'Swaps Accumulator', description: 'Execute 10 successful coin purchases.', category: 'trading', target: 10, current: 0, claimed: false, cashReward: 1200, gemReward: 40 },
@@ -602,53 +365,11 @@ export default function App() {
               { id: 'a6', title: 'Cash Hoarder I', description: 'Accumulate $50,000 cash balance reserves.', category: 'wealth', target: 50000, current: 10000, claimed: false, cashReward: 3500, gemReward: 75 },
               { id: 'a7', title: 'Prestige Pioneer', description: 'Reset status to activate permanent Prestige Level I.', category: 'prestige', target: 1, current: 0, claimed: false, cashReward: 10000, gemReward: 250 },
               { id: 'a8', title: 'Prestige Elite V', description: 'Advance to Prestige level 5.', category: 'prestige', target: 5, current: 0, claimed: false, cashReward: 100000, gemReward: 1500 }
-            ];
-            setAchievements(DEFAULT_ACHS);
-            DEFAULT_ACHS.forEach(async (ach) => {
-              try {
-                await setDoc(doc(db, 'users', user.uid, 'achievements', ach.id), ach);
-              } catch (e) {
-                console.error('Failed to set initial achievements doc:', e);
-              }
-            });
-          } else {
-            const list: Achievement[] = [];
-            snap.forEach((doc) => list.push(doc.data() as Achievement));
-            setAchievements(list);
+            ]);
           }
-        }, (error) => {
-          console.error('Achievements snapshot reading error:', error);
-        });
-
-        // C. Bets bindings
-        const betsRef = collection(db, 'users', user.uid, 'bets');
-        betsUnsub = onSnapshot(betsRef, (snap) => {
-          setMarkets((prev) =>
-            prev.map((m) => {
-              const matchedBet = snap.docs.find((doc) => doc.id === m.id);
-              if (matchedBet) {
-                const b = matchedBet.data();
-                return { ...m, userBetAmount: b.amount, userBetSide: b.side };
-              }
-              return m;
-            })
-          );
-        }, (error) => {
-          console.error('Bets snapshot reading error:', error);
-        });
-
-        // D. stats list
-        statsUnsub = onSnapshot(userRef, (docSnap) => {
-          if (docSnap.exists()) {
-            setUserStats(docSnap.data() as UserStats);
-          }
-        }, (error) => {
-          console.error('UserStats snapshot reading error:', error);
-        });
-
-
-        // Cleanup is handled by the outer useEffect return now
-      } else {
+        }
+      } catch (err) {
+        console.log('No Appwrite session found or failed to fetch session:', err);
         setCurrentUser(null);
         setUserStats({
           username: 'Guest Player',
@@ -656,7 +377,7 @@ export default function App() {
           title: 'Member',
           isPremium: false,
           nameColor: 'text-zinc-400 font-extrabold',
-          cash: 0.00,
+          cash: 5000.00,
           gems: 90,
           prestigeLevel: 0,
           totalProfit: 0,
@@ -665,28 +386,6 @@ export default function App() {
           lastDailyRewardClaim: null
         });
         setHoldings([]);
-        setLiveTrades([
-          {
-            id: 'init-1',
-            timestamp: new Date().toLocaleTimeString(),
-            type: 'BUY',
-            coinId: 'roadrev',
-            coinSymbol: 'ROAD',
-            coinName: 'Roadman Revival',
-            amountUsd: 1470,
-            userHandle: '@cryptoking'
-          },
-          {
-            id: 'init-2',
-            timestamp: new Date().toLocaleTimeString(),
-            type: 'SELL',
-            coinId: 'asstor',
-            coinSymbol: 'ATI',
-            coinName: 'Asstor Inc.',
-            amountUsd: 890,
-            userHandle: '@stonks'
-          }
-        ]);
         setAchievements([
           { id: 'a1', title: "Baby's First Buy", description: 'Procure your first simulated meme coin.', category: 'trading', target: 1, current: 0, claimed: false, cashReward: 200, gemReward: 15 },
           { id: 'a2', title: 'Paper Hands', description: 'Dump an asset for simulated losses.', category: 'trading', target: 1, current: 0, claimed: false, cashReward: 100, gemReward: 10 },
@@ -697,16 +396,86 @@ export default function App() {
           { id: 'a7', title: 'Prestige Pioneer', description: 'Reset status to activate permanent Prestige Level I.', category: 'prestige', target: 1, current: 0, claimed: false, cashReward: 10000, gemReward: 250 },
           { id: 'a8', title: 'Prestige Elite V', description: 'Advance to Prestige level 5.', category: 'prestige', target: 5, current: 0, claimed: false, cashReward: 100000, gemReward: 1500 }
         ]);
+      } finally {
+        setIsCheckingRedirect(false);
       }
-    });
-
-    return () => {
-      unsubAuth();
-      holdingsUnsub();
-      achUnsub();
-      betsUnsub();
-      statsUnsub();
     };
+
+    initSession();
+  }, []);
+
+  // Sync state changes back to Appwrite Database if user is logged in
+  useEffect(() => {
+    if (!currentUser) return;
+    
+    const syncToAppwrite = async () => {
+      try {
+        await databases.updateDocument("pumpforge", "users", currentUser.uid || currentUser.$id, {
+          total_value: userStats.totalProfit || 0,
+          cash: userStats.cash || 0,
+          coins: userStats.coinsCreatedCount || 0,
+          gems: userStats.gems || 0
+        });
+      } catch (e) {
+        console.error('Failed to sync state to Appwrite databases:', e);
+      }
+    };
+
+    const handler = setTimeout(syncToAppwrite, 1500);
+    return () => clearTimeout(handler);
+  }, [userStats.totalProfit, userStats.cash, userStats.coinsCreatedCount, userStats.gems, currentUser]);
+
+  // Authentication Callbacks
+  const handleGoogleSignIn = async () => {
+    setIsCheckingRedirect(true);
+    try {
+      account.createOAuth2Session("google" as any, "https://pump-forge-zeke.vercel.app");
+    } catch (e: any) {
+      console.error('Appwrite Google sign-in failed:', e);
+      alert(`Appwrite Auth Error: ${e?.message || 'Failed to start OAuth session'}`);
+      setIsCheckingRedirect(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    setShowSignOutConfirm(true);
+  };
+
+  const handleConfirmSignOut = async () => {
+    setShowSignOutConfirm(false);
+    try {
+      await account.deleteSession('current');
+      setCurrentUser(null);
+      setUserStats({
+        username: 'Guest Player',
+        handle: '@guest_degen',
+        title: 'Member',
+        isPremium: false,
+        nameColor: 'text-zinc-400 font-extrabold',
+        cash: 0.00,
+        gems: 90,
+        prestigeLevel: 0,
+        totalProfit: 0,
+        coinsCreatedCount: 0,
+        tradesCount: 0,
+        lastDailyRewardClaim: null
+      });
+      setHoldings([]);
+      onAddNotification('Signed Out', 'Returned to Guest Sandbox mode.', 'info');
+    } catch (e) {
+      console.error('Appwrite Sign out error:', e);
+    }
+  };
+
+  // 1. GUEST USER LOCAL STORAGE LOADERS (ONLY IF UN-AUTHENTICATED)
+  useEffect(() => {
+    if (currentUser) return; // Skip if signed in to Firebase
+  }, [currentUser]);
+
+  // 2. FIRESTORE AUTHENTICATION & MULTI-USER REAL-TIME SUBSCRIPTIONS
+  // permanently migrated to Appwrite account.get() & databases.getDocument() on start
+  useEffect(() => {
+    // Session states are handled via Appwrite in the main initializer
   }, []);
 
   // 3. GLOBAL SHARED COINS, TRADES FEED & MARKETS SYNC
