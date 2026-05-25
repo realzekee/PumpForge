@@ -213,7 +213,6 @@ export default function Sidebar({
                   <span className="flex-1 text-left truncate">{item.label}</span>
                   {item.id === 'hopium' && (
                     <span className="text-[9px] bg-orange-950 border border-orange-900/60 text-orange-400 px-1 py-0.2 rounded font-mono font-bold tracking-widest uppercase">
-                      AI
                     </span>
                   )}
                   {item.id === 'create-coin' && (

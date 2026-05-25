@@ -75,14 +75,11 @@ export default function HopiumTab({
     setShowCreateModal(false);
   };
 
-  // Optional AI integration using local simulation or backend fetch
   const handleGenerateMarketAi = async () => {
     if (!aiPromptTopic.trim()) return;
     setAiGenerating(true);
 
     try {
-      // Fetch dynamic content from local backend api which uses Gemini,
-      // fallback to humorous AI generation after 1.5 seconds.
       const response = await fetch('/api/generate-hopium', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -316,19 +313,15 @@ export default function HopiumTab({
               <QuestionIcon className="w-4 h-4 rotate-45" />
             </button>
 
-            {/* Title tabs for local manual vs AI creation */}
             <h3 className="text-sm font-extrabold text-white uppercase tracking-wider mb-2 flex items-center gap-1.5 text-orange-400">
               <Brain className="w-4 h-4" /> Launch Prediction Market
             </h3>
             <p className="text-xs text-zinc-400 mb-4 font-medium">
-              Create questions using standard fields, or brainstorm AI-powered predictions with Gemini! (Requires $500 creation fee).
             </p>
 
             <div className="flex flex-col gap-4">
-              {/* Option A: AI generator Topic prompt */}
               <div className="bg-zinc-950/80 p-3 rounded-xl border border-zinc-850 flex flex-col gap-2">
                 <span className="text-[9.5px] uppercase font-mono tracking-widest font-extrabold text-cyan-400 flex items-center gap-1">
-                  <Sparkles className="w-3.5 h-3.5 animate-pulse" /> Brainstorm with Gemini
                 </span>
                 <div className="flex gap-2">
                   <input
@@ -344,7 +337,6 @@ export default function HopiumTab({
                     disabled={aiGenerating || !aiPromptTopic.trim()}
                     className="bg-cyan-600 hover:bg-cyan-500 disabled:bg-zinc-800 disabled:text-zinc-650 cursor-pointer disabled:cursor-not-allowed font-bold text-white px-3 rounded-xl text-xs flex items-center gap-1 shrink-0"
                   >
-                    {aiGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Ask AI'}
                   </button>
                 </div>
               </div>
