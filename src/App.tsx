@@ -38,7 +38,7 @@ import { Award, Gift, Sparkles, X, ChevronRight, Check, Gamepad2, ShoppingBag, P
 
 // Firebase imports
 import { auth, db, googleProvider, OperationType, handleFirestoreError } from './firebase';
-import { onAuthStateChanged, signInWithRedirect, signOut, User } from 'firebase/auth';
+import { onAuthStateChanged, signInWithRedirect, getRedirectResult, signOut, User } from 'firebase/auth';
 import {
   collection,
   doc,
@@ -69,6 +69,16 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('home');
   const [selectedCoinIdForMarket, setSelectedCoinIdForMarket] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isCheckingRedirect, setIsCheckingRedirect] = useState(true);
+
+  useEffect(() => {
+    getRedirectResult(auth).then((result) => {
+      setIsCheckingRedirect(false);
+    }).catch(error => {
+      console.error('Redirect result error:', error);
+      setIsCheckingRedirect(false);
+    });
+  }, []);
 
   // Authentication Callbacks
   const handleGoogleSignIn = async () => {
@@ -1812,6 +1822,17 @@ export default function App() {
       return clone;
     });
   };
+
+  if (isCheckingRedirect) {
+    return (
+      <div className="min-h-screen bg-black text-white flex items-center justify-center font-mono">
+        <div className="flex flex-col items-center gap-4 animate-pulse">
+           <div className="w-12 h-12 border-4 border-rose-500 border-t-transparent rounded-full animate-spin"></div>
+           <div>Loading User Session...</div>
+        </div>
+      </div>
+    );
+  }
 
   if (userStats?.isSuspended || userStats?.isBanned) {
     const isBannedObj = !!userStats?.isBanned;
