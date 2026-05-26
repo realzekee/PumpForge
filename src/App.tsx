@@ -117,7 +117,14 @@ export default function App() {
     const cached = safeStorage.getItem('cached_appwrite_user');
     return cached ? JSON.parse(cached) : null;
   });
-  const [isCheckingRedirect, setIsCheckingRedirect] = useState(true);
+  const [isCheckingRedirect, setIsCheckingRedirect] = useState<boolean>(() => {
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      return !!(urlParams.get('userId') && urlParams.get('secret'));
+    } catch (e) {
+      return false;
+    }
+  });
   const [isLoading, setIsLoading] = useState(true);
   const [isStatsLoaded, setIsStatsLoaded] = useState<boolean>(() => {
     return !!safeStorage.getItem('cached_appwrite_stats');
@@ -403,7 +410,9 @@ export default function App() {
         }
       }
 
-      setIsCheckingRedirect(true);
+      if (urlUserId && urlSecret) {
+        setIsCheckingRedirect(true);
+      }
       setIsLoading(true);
 
       // Secure Firebase Auth credentials to satisfy firestore.rules requirements for global writing
@@ -847,6 +856,67 @@ export default function App() {
       broadcastsUnsub();
     };
   }, []);
+
+  // 3b. ACTIVE QUERY TO SYNC USER-CREATED POLLS FROM APPWRITE "MARKETS" COLLECTION
+  useEffect(() => {
+    if (activeTab === 'polymarket') {
+      const loadAppwriteMarkets = async () => {
+        try {
+          const res = await databases.listDocuments("pumpforge", "markets");
+          console.log("Appwrite prediction markets documents pulled:", res.documents);
+          
+          if (res.documents && res.documents.length > 0) {
+            const appwriteMarkets: PredictionMarket[] = res.documents.map((doc: any) => {
+              let resolvedOutcome = doc.resolvedOutcome;
+              if (resolvedOutcome === 'null' || resolvedOutcome === '') {
+                resolvedOutcome = null;
+              }
+              const yesPool = Number(doc.yesPool ?? 50);
+              const noPool = Number(doc.noPool ?? 50);
+              const totalPool = yesPool + noPool;
+              const yesPercentage = totalPool > 0 ? Math.round((yesPool / totalPool) * 100) : 50;
+
+              return {
+                id: doc.id || doc.$id,
+                question: doc.question,
+                description: doc.description,
+                yesPool,
+                noPool,
+                yesPercentage,
+                resolved: !!doc.resolved,
+                resolvedOutcome,
+                endTime: doc.endTime,
+                category: doc.category || 'general',
+                userBetAmount: 0,
+                userBetSide: null
+              } as PredictionMarket;
+            });
+
+            // Merge Appwrite markets together with local markets, avoiding duplicates
+            setMarkets((prev) => {
+              const merged = [...prev];
+              appwriteMarkets.forEach((am) => {
+                const idx = merged.findIndex((m) => m.id === am.id);
+                if (idx > -1) {
+                  merged[idx] = {
+                    ...merged[idx],
+                    ...am
+                  };
+                } else {
+                  merged.unshift(am);
+                }
+              });
+              return merged;
+            });
+          }
+        } catch (err) {
+          console.warn("Could not load prediction markets from Appwrite (collection might not be populated or created):", err);
+        }
+      };
+
+      loadAppwriteMarkets();
+    }
+  }, [activeTab]);
 
   // 4. WORKER INTERVALS
   // DAILY COOLDOWN INTERVAL WORKER
@@ -1316,6 +1386,28 @@ export default function App() {
 
     if (currentUser) {
       try {
+        // Appwrite persistent coin cache document initialization
+        try {
+          await databases.createDocument("pumpforge", "coins", coinId, {
+            id: coinId,
+            name,
+            symbol,
+            creator: userStats.handle,
+            description: desc,
+            avatarEmoji: emoji,
+            avatarBg: 'bg-emerald-950 text-emerald-300 border-emerald-500',
+            price: listPrice,
+            marketCap: 1000,
+            supply: 200000,
+            volume24h: 300,
+            change24h: 0,
+            isUserCreated: true
+          });
+          console.log("Appwrite: Successfully cached coin document.");
+        } catch (appwriteCoinErr) {
+          console.warn("Appwrite: Could not write coin, proceeding:", appwriteCoinErr);
+        }
+
         const batch = writeBatch(db);
         const userRef = doc(db, 'users', currentUser.uid);
         const coinRef = doc(db, 'coins', coinId);
@@ -1365,6 +1457,7 @@ export default function App() {
 
 
 
+
   const handleDeleteOwnCoin = (coinId: string) => {
     setCoinToDelete(coinId);
   };
@@ -1385,6 +1478,15 @@ export default function App() {
 
     if (currentUser) {
       try {
+        // Delete document from Appwrite databases coins collection as requested
+        try {
+          await databases.deleteDocument("pumpforge", "coins", coinId);
+          console.log(`Success deleting coin ${coinId} from Appwrite.`);
+        } catch (appwriteDelErr) {
+          console.warn(`Could not delete coin from Appwrite databases:`, appwriteDelErr);
+        }
+
+        // Delete document from Firestore
         const coinRef = doc(db, 'coins', coinId);
         await deleteDoc(coinRef);
       } catch (e) {
@@ -1392,6 +1494,7 @@ export default function App() {
       }
     }
 
+    // Immediately filter the local React state array to remove the item from the marketplace list dynamically
     setCoins((prev) => prev.filter((c) => c.id !== coinId));
     onAddNotification('COIN DELETED', `Permanently removed *${coin.symbol} from listing records.`, 'info');
   };
@@ -1507,6 +1610,34 @@ export default function App() {
 
     if (currentUser) {
       try {
+        // Create prediction document inside Appwrite explicit database collection as requested
+        try {
+          await databases.createDocument("pumpforge", "markets", marketId, {
+            id: marketId,
+            question,
+            description,
+            yesPool: 50,
+            noPool: 50,
+            yesPercentage: 50,
+            resolved: false,
+            resolvedOutcome: 'null', // default unresolved outcome
+            endTime: calculatedEndTime,
+            category
+          });
+          console.log("Appwrite: Created prediction market successfully in collections.");
+        } catch (appwriteMarketErr) {
+          console.warn("Could not write prediction market to Appwrite databases:", appwriteMarketErr);
+        }
+
+        // Also update cash in Appwrite
+        try {
+          await databases.updateDocument("pumpforge", "users", currentUser.uid || currentUser.$id, {
+            cash: Number(nextCash.toFixed(2))
+          });
+        } catch (appwriteUserErr) {
+          console.warn("Could not update cash in Appwrite databases user profile:", appwriteUserErr);
+        }
+
         const batch = writeBatch(db);
         const marketRef = doc(db, 'markets', marketId);
         const userRef = doc(db, 'users', currentUser.uid);
@@ -1529,6 +1660,7 @@ export default function App() {
 
         await batch.commit();
 
+        setMarkets((p) => [newMarket, ...p]);
         setUserStats((prev) => ({
           ...prev,
           cash: nextCash
@@ -1684,31 +1816,52 @@ export default function App() {
     const nextLvl = userStats.prestigeLevel + 1;
     const title = PRESTIGE_NAMES[nextLvl - 1] || 'Galactic Legend';
 
-    if (currentUser) {
-      try {
-        const batch = writeBatch(db);
-        const userRef = doc(db, 'users', currentUser.uid);
-        const achRef = doc(db, 'users', currentUser.uid, 'achievements', 'a7');
+    try {
+      if (currentUser) {
+        // Increment the user's prestigeLevel, reset cash, and reset total_value attributes inside the Appwrite databases users collection as requested
+        try {
+          await databases.updateDocument("pumpforge", "users", currentUser.uid || currentUser.$id, {
+            prestigeLevel: nextLvl,
+            cash: 5000.0,
+            gems: userStats.gems + 500,
+            total_value: 0.0,
+            tradesCount: 0,
+            coins: 0
+          });
+          console.log("Appwrite: Prestige Reset saved successfully.");
+        } catch (appwritePrestigeErr) {
+          console.error("Appwrite: Could not write prestige progress update:", appwritePrestigeErr);
+        }
 
-        batch.update(userRef, {
-          cash: 5000.0,
-          gems: userStats.gems + 500,
-          prestigeLevel: nextLvl,
-          title,
-          totalProfit: 0,
-          tradesCount: 0,
-          coinsCreatedCount: 0
-        });
+        // Firebase Firestore update
+        try {
+          const batch = writeBatch(db);
+          const userRef = doc(db, 'users', currentUser.uid);
+          const achRef = doc(db, 'users', currentUser.uid, 'achievements', 'a7');
 
-        batch.update(achRef, { current: 1 });
+          batch.update(userRef, {
+            cash: 5000.0,
+            gems: userStats.gems + 500,
+            prestigeLevel: nextLvl,
+            title,
+            totalProfit: 0,
+            tradesCount: 0,
+            coinsCreatedCount: 0
+          });
 
-        // Delete holdings subcollection contents
-        holdings.forEach((h) => {
-          const hRef = doc(db, 'users', currentUser.uid, 'holdings', h.coinId);
-          batch.delete(hRef);
-        });
+          batch.update(achRef, { current: 1 });
 
-        await batch.commit();
+          // Delete holdings subcollection contents
+          holdings.forEach((h) => {
+            const hRef = doc(db, 'users', currentUser.uid, 'holdings', h.coinId);
+            batch.delete(hRef);
+          });
+
+          await batch.commit();
+        } catch (fiErr) {
+          console.warn("Firestore prestige sync batch commit issue:", fiErr);
+        }
+
         setUserStats((prev) => ({
           ...prev,
           cash: 5000.0,
@@ -1720,33 +1873,35 @@ export default function App() {
           coinsCreatedCount: 0
         }));
         setHoldings([]);
-        setShowPrestigeModal(false);
-      } catch (e) {
-        handleFirestoreError(e, OperationType.WRITE, `handlePrestigeSystem`);
+      } else {
+        setUserStats((prev) => ({
+          ...prev,
+          cash: 5000.0,
+          gems: prev.gems + 500,
+          prestigeLevel: nextLvl,
+          title,
+          totalProfit: 0,
+          tradesCount: 0,
+          coinsCreatedCount: 0
+        }));
+
+        setHoldings([]);
+        setCoins(INITIAL_COINS);
+
+        setAchievements((prev) =>
+          prev.map((ach) => (ach.id === 'a7' ? { ...ach, current: 1 } : ach))
+        );
       }
-    } else {
-      setUserStats((prev) => ({
-        ...prev,
-        cash: 5000.0,
-        gems: prev.gems + 500,
-        prestigeLevel: nextLvl,
-        title,
-        totalProfit: 0,
-        tradesCount: 0,
-        coinsCreatedCount: 0
-      }));
 
-      setHoldings([]);
-      setCoins(INITIAL_COINS);
+      onAddNotification('PRESTIGE ACQUIRED', `Advanced to ${title}! Daily reward multiplier active!`, 'achievement');
+      triggerToast('Prestige Completed!', `Leveled up to Prestige Level ${nextLvl}! Your cash and holdings have reset with bonuses.`);
+    } catch (e) {
+      console.error("Critical Prestige system execution error:", e);
+      triggerToast('Prestige Error', 'Failed to complete prestige pipeline successfully.', true);
+    } finally {
+      // Completely close the prestige modal context cleanly without freezing the screen layout
       setShowPrestigeModal(false);
-
-      setAchievements((prev) =>
-        prev.map((ach) => (ach.id === 'a7' ? { ...ach, current: 1 } : ach))
-      );
     }
-
-    onAddNotification('PRESTIGE ACQUIRED', `Advanced to ${title}! Daily reward multiplier active!`, 'achievement');
-    triggerToast('Prestige Completed!', `Leveled up to Prestige Level ${nextLvl}! Your cash and holdings have reset with bonuses.`);
   };
 
   const handleSubmitBug = async (title: string, description: string, category: string): Promise<boolean> => {
