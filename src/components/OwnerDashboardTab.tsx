@@ -1075,24 +1075,24 @@ export default function OwnerDashboardTab({
     }
   };
 
-  // Combine database of active profile + simulated ones for admin list
+  // Combine database of active profile + other registered ones for admin list (omits simulated bot non-users)
   const rawSystemUsersList = [
     {
-      name: `${userStats.username} (You)`,
-      handle: userStats.handle,
+      name: `${userStats.username || 'You'} (You)`,
+      handle: userStats.handle || '@you',
       email: currentUserEmail || userStats.email || '',
-      profit: userStats.totalProfit + (userStats.cash - 5000),
-      cash: userStats.cash,
-      gems: userStats.gems,
-      prestige: userStats.prestigeLevel,
-      title: userStats.title,
+      profit: (userStats.totalProfit ?? 0) + ((userStats.cash ?? 5000) - 5000),
+      cash: userStats.cash ?? 5000,
+      gems: userStats.gems ?? 90,
+      prestige: userStats.prestigeLevel ?? 0,
+      title: userStats.title || 'Owner',
       isUser: true,
       isSuspended: !!userStats.isSuspended,
       isBanned: !!userStats.isBanned,
-      isAdmin: userStats.title.toLowerCase() === 'owner' || userStats.title.toLowerCase() === 'admin',
+      isAdmin: userStats.title?.toLowerCase() === 'owner' || userStats.title?.toLowerCase() === 'admin',
       createdAt: userStats.createdAt || '2026-05-24T06:40:00Z',
       activityLog: [
-        ...localUserLogs,
+        ...(localUserLogs || []),
         ...(liveTrades
           ? liveTrades
               .filter(t => t.userHandle === userStats.handle)
@@ -1106,11 +1106,15 @@ export default function OwnerDashboardTab({
       ]
     },
     ...registeredUsers
-      .filter(r => r.handle !== userStats.handle)
+      .filter(r => {
+        const rHandle = r.handle || '';
+        const curHandle = userStats.handle || '';
+        return rHandle.toLowerCase() !== curHandle.toLowerCase();
+      })
       .map(r => ({
         uid: r.uid,
-        name: r.username,
-        handle: r.handle,
+        name: r.username || 'Registered Player',
+        handle: r.handle || `@user_${r.uid?.substring(0, 5) || 'temp'}`,
         email: r.email || '',
         profit: (r.totalProfit ?? 0) + ((r.cash ?? 5000) - 5000),
         cash: r.cash ?? 5000,
@@ -1120,27 +1124,10 @@ export default function OwnerDashboardTab({
         isUser: false,
         isSuspended: !!r.isSuspended,
         isBanned: !!r.isBanned,
-        isAdmin: !!r.isAdmin,
+        isAdmin: !!r.isAdmin || r.title?.toLowerCase() === 'owner' || r.title?.toLowerCase() === 'admin',
         createdAt: r.createdAt || '2026-05-24T06:40:00Z',
         activityLog: r.activityLog || []
-      })),
-    ...simulatedPlayers
-      .filter(p => p.handle !== userStats.handle)
-      .map(p => ({
-      name: p.name,
-      handle: p.handle,
-      profit: p.profit,
-      cash: p.profit + 5000,
-      gems: 250,
-      prestige: p.prestige,
-      title: p.isAdmin ? 'Admin' : p.title,
-      isUser: false,
-      isSuspended: p.isSuspended,
-      isBanned: !!p.isBanned,
-      isAdmin: p.isAdmin,
-      createdAt: p.createdAt || '2026-05-18T10:12:00Z',
-      activityLog: p.activityLog || []
-    }))
+      }))
   ];
 
   // Deduplicate rawSystemUsersList by handle
@@ -1148,8 +1135,8 @@ export default function OwnerDashboardTab({
   const systemUsersList = [];
   for (const u of rawSystemUsersList) {
     if (u.handle) {
-      if (!seenSystemHandles.has(u.handle)) {
-        seenSystemHandles.add(u.handle);
+      if (!seenSystemHandles.has(u.handle.toLowerCase())) {
+        seenSystemHandles.add(u.handle.toLowerCase());
         systemUsersList.push(u);
       }
     } else {
@@ -1157,12 +1144,18 @@ export default function OwnerDashboardTab({
     }
   }
 
-  const filteredUsers = systemUsersList.filter(u => 
-    u.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    u.handle.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    u.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (u.email && u.email.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+  const filteredUsers = systemUsersList.filter(u => {
+    const name = u.name || '';
+    const handle = u.handle || '';
+    const title = u.title || '';
+    const email = u.email || '';
+    return (
+      name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+      handle.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      email.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  });
 
   return (
     <div className="flex-1 flex flex-col gap-6 animate-fade-in text-zinc-100 font-mono">

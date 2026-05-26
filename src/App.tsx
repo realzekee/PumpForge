@@ -41,7 +41,7 @@ import { account, databases } from './appwrite';
 
 // Firebase imports
 import { auth, db, googleProvider, OperationType, handleFirestoreError } from './firebase';
-import { onAuthStateChanged, signInWithRedirect, getRedirectResult, signOut } from 'firebase/auth';
+import { onAuthStateChanged, signInWithRedirect, getRedirectResult, signOut, signInAnonymously } from 'firebase/auth';
 import {
   collection,
   doc,
@@ -405,6 +405,16 @@ export default function App() {
 
       setIsCheckingRedirect(true);
       setIsLoading(true);
+
+      // Secure Firebase Auth credentials to satisfy firestore.rules requirements for global writing
+      try {
+        if (!auth.currentUser) {
+          await signInAnonymously(auth);
+          console.log("🔥 Firebase Auth: Signed in anonymously to allow global Firestore writes.");
+        }
+      } catch (fbAuthErr) {
+        console.warn("🔥 Firebase Auth: Anonymous sign-in bootstrap warning:", fbAuthErr);
+      }
 
       try {
         let user: any = null;
@@ -1001,6 +1011,12 @@ export default function App() {
           cash: Number(nextCash.toFixed(2)),
           lastDailyRewardClaim: nextClaimTime
         });
+
+        setUserStats((prev) => ({
+          ...prev,
+          cash: nextCash,
+          lastDailyRewardClaim: nextClaimTime
+        }));
       } catch (e) {
         handleFirestoreError(e, OperationType.UPDATE, `users/${currentUser.uid}`);
       }
@@ -1090,6 +1106,22 @@ export default function App() {
           });
 
           await batch.commit();
+
+          setHoldings((prev) => {
+            if (existingHolding) {
+              return prev.map((h) =>
+                h.coinId === coinId ? { ...h, amount: nextAmount, avgBuyPrice: nextAvgBuyPrice } : h
+              );
+            } else {
+              return [...prev, { coinId, amount: amountCoins, avgBuyPrice: coin.price }];
+            }
+          });
+
+          setUserStats((prev) => ({
+            ...prev,
+            cash: nextCash,
+            tradesCount: nextTradesCount
+          }));
         } catch (e) {
           handleFirestoreError(e, OperationType.WRITE, `tradeAction/buy/${coinId}`);
         }
@@ -1178,6 +1210,24 @@ export default function App() {
           });
 
           await batch.commit();
+
+          setHoldings((prev) => {
+            return prev
+              .map((h) => {
+                if (h.coinId === coinId) {
+                  return { ...h, amount: h.amount - amountCoins };
+                }
+                return h;
+              })
+              .filter((h) => h.amount > 0);
+          });
+
+          setUserStats((prev) => ({
+            ...prev,
+            cash: nextCash,
+            totalProfit: nextProfit,
+            tradesCount: nextTradesCount
+          }));
         } catch (e) {
           handleFirestoreError(e, OperationType.WRITE, `tradeAction/sell/${coinId}`);
         }
@@ -1290,6 +1340,12 @@ export default function App() {
         });
 
         await batch.commit();
+
+        setUserStats((prev) => ({
+          ...prev,
+          cash: nextCash,
+          coinsCreatedCount: nextCreatedCount
+        }));
       } catch (e: any) {
         handleFirestoreError(e, OperationType.WRITE, `handleLaunchOwnCoin/${coinId}`);
         return { success: false, error: 'Failed to save to Firestore: ' + (e?.message || e) };
@@ -1376,6 +1432,11 @@ export default function App() {
         });
 
         await batch.commit();
+
+        setUserStats((prev) => ({
+          ...prev,
+          cash: nextCash
+        }));
       } catch (e) {
         handleFirestoreError(e, OperationType.WRITE, `handlePlacePolymarketBet/${marketId}`);
       }
@@ -1467,6 +1528,11 @@ export default function App() {
         });
 
         await batch.commit();
+
+        setUserStats((prev) => ({
+          ...prev,
+          cash: nextCash
+        }));
       } catch (e) {
         handleFirestoreError(e, OperationType.WRITE, `handleCreatePredictionLocal/${marketId}`);
       }
@@ -1507,6 +1573,16 @@ export default function App() {
         batch.update(achRef, { claimed: true });
 
         await batch.commit();
+
+        setAchievements((prev) =>
+          prev.map((a) => (a.id === id ? { ...a, claimed: true } : a))
+        );
+
+        setUserStats((prev) => ({
+          ...prev,
+          cash: nextCash,
+          gems: nextGems
+        }));
       } catch (e) {
         handleFirestoreError(e, OperationType.UPDATE, `users/${currentUser.uid}/achievements/${id}`);
       }

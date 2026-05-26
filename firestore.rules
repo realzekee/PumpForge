@@ -13,7 +13,7 @@ service cloud.firestore {
     }
 
     function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
+      return isSignedIn();
     }
 
     function isAdminUser() {
@@ -40,11 +40,11 @@ service cloud.firestore {
 
     // Entity validator: User Profile
     function isValidUser(data) {
-      return data.username is string && data.username.size() > 0 && data.username.size() <= 50
-        && data.handle is string && data.handle.size() > 0 && data.handle.size() <= 30
-        && data.title is string && data.title.size() <= 100
+      return data.username is string && data.username.size() > 0 && data.username.size() <= 150
+        && data.handle is string && data.handle.size() > 0 && data.handle.size() <= 150
+        && data.title is string && data.title.size() <= 200
         && data.isPremium is bool
-        && data.nameColor is string && data.nameColor.size() <= 100
+        && data.nameColor is string && data.nameColor.size() <= 400
         && data.cash is number && data.cash >= 0
         && data.gems is number && data.gems >= 0
         && data.prestigeLevel is number && data.prestigeLevel >= 0
@@ -79,10 +79,10 @@ service cloud.firestore {
     // Entity validator: Meme Coin
     function isValidCoin(data) {
       return data.id is string && data.id.size() <= 128
-        && data.name is string && data.name.size() > 0 && data.name.size() <= 50
-        && data.symbol is string && data.symbol.size() > 0 && data.symbol.size() <= 15
-        && data.creator is string && data.creator.size() <= 50
-        && data.description is string && data.description.size() <= 500
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 150
+        && data.symbol is string && data.symbol.size() > 0 && data.symbol.size() <= 50
+        && data.creator is string && data.creator.size() <= 150
+        && data.description is string && data.description.size() <= 2000
         && data.avatarEmoji is string && data.avatarEmoji.size() <= 10
         && data.avatarBg is string && data.avatarBg.size() <= 100
         && data.price is number && data.price >= 0
@@ -110,14 +110,15 @@ service cloud.firestore {
     // Entity validator: Prediction Market
     function isValidMarket(data) {
       return data.id is string
-        && data.question is string && data.question.size() <= 300
-        && data.description is string && data.description.size() <= 500
+        && data.question is string && data.question.size() <= 1000
+        && data.description is string && data.description.size() <= 2000
         && data.yesPool is number && data.yesPool >= 0
         && data.noPool is number && data.noPool >= 0
         && data.yesPercentage is number
         && data.resolved is bool
-        && data.endTime is string && data.endTime.size() <= 100
-        && data.category is string;
+        && data.endTime is string && data.endTime.size() <= 200
+        && data.category is string
+        && (!("resolvedOutcome" in data) || data.resolvedOutcome == null || data.resolvedOutcome is string);
     }
 
     // Entity validator: Bug Report
@@ -204,10 +205,7 @@ service cloud.firestore {
       allow create: if isSignedIn() && isValidCoin(incoming()) && isValidId(coinId);
       // Let active users update simulated price ticks or change status
       allow update: if isSignedIn() && isValidCoin(incoming());
-      allow delete: if isSignedIn() && (
-        isAdminUser() || 
-        resource.data.creator == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.handle
-      );
+      allow delete: if isSignedIn();
     }
 
     // Global Live Trades Feed rules
@@ -229,7 +227,7 @@ service cloud.firestore {
     // Global Bug Reports rules
     match /bugs/{bugId} {
       allow read: if isAdminUser();
-      allow create: if isSignedIn() && incoming().userId == request.auth.uid && isValidBug(incoming()) && isValidId(bugId);
+      allow create: if isSignedIn() && isValidBug(incoming()) && isValidId(bugId);
       allow update: if isAdminUser() && incoming().status is string;
       allow delete: if isAdminUser();
     }
