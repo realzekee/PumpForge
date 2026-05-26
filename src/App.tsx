@@ -68,24 +68,59 @@ const PRESTIGE_NAMES = [
   'Interstellar Sage VI'
 ];
 
+// Safe LocalStorage wrapper to prevent blocking patterns in restrictive browsers
+const safeStorage = {
+  getItem: (key: string): string | null => {
+    try {
+      return localStorage.getItem(key);
+    } catch (e) {
+      console.warn(`[safeStorage] getItem failed for "${key}":`, e);
+      return null;
+    }
+  },
+  setItem: (key: string, value: string): void => {
+    try {
+      localStorage.setItem(key, value);
+    } catch (e) {
+      console.warn(`[safeStorage] setItem failed for "${key}":`, e);
+    }
+  },
+  removeItem: (key: string): void => {
+    try {
+      localStorage.removeItem(key);
+    } catch (e) {
+      console.warn(`[safeStorage] removeItem failed for "${key}":`, e);
+    }
+  },
+  key: (index: number): string | null => {
+    try {
+      return localStorage.key(index);
+    } catch (e) {
+      console.warn(`[safeStorage] key failed for index ${index}:`, e);
+      return null;
+    }
+  },
+  get length(): number {
+    try {
+      return localStorage.length;
+    } catch (e) {
+      console.warn('[safeStorage] length fetch failed:', e);
+      return 0;
+    }
+  }
+};
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('home');
   const [selectedCoinIdForMarket, setSelectedCoinIdForMarket] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<any | null>(() => {
-    try {
-      const cached = localStorage.getItem('cached_appwrite_user');
-      return cached ? JSON.parse(cached) : null;
-    } catch {
-      return null;
-    }
+    const cached = safeStorage.getItem('cached_appwrite_user');
+    return cached ? JSON.parse(cached) : null;
   });
   const [isCheckingRedirect, setIsCheckingRedirect] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
   const [isStatsLoaded, setIsStatsLoaded] = useState<boolean>(() => {
-    try {
-      return !!localStorage.getItem('cached_appwrite_stats');
-    } catch {
-      return false;
-    }
+    return !!safeStorage.getItem('cached_appwrite_stats');
   });
 
 
@@ -94,14 +129,14 @@ export default function App() {
   // Core local states (fallbacks/synced depending on auth)
   const [coins, setCoins] = useState<MemeCoin[]>(INITIAL_COINS);
   const [userStats, setUserStats] = useState<UserStats>(() => {
-    try {
-      const cachedUser = localStorage.getItem('cached_appwrite_user');
-      const cachedStats = localStorage.getItem('cached_appwrite_stats');
-      if (cachedUser && cachedStats) {
+    const cachedUser = safeStorage.getItem('cached_appwrite_user');
+    const cachedStats = safeStorage.getItem('cached_appwrite_stats');
+    if (cachedUser && cachedStats) {
+      try {
         return JSON.parse(cachedStats);
+      } catch (e) {
+        console.error('Error loading fallback userStats cache:', e);
       }
-    } catch (e) {
-      console.error('Error loading fallback userStats cache:', e);
     }
     return {
       username: 'Guest Player',
@@ -116,6 +151,7 @@ export default function App() {
       coinsCreatedCount: 0,
       tradesCount: 0,
       lastDailyRewardClaim: null,
+      email: '',
       createdAt: '2026-05-24T06:40:00Z'
     };
   });
@@ -126,7 +162,7 @@ export default function App() {
   const [achievements, setAchievements] = useState<Achievement[]>([]);
   const [registeredUsers, setRegisteredUsers] = useState<(UserStats & { uid: string })[]>([]);
   const [simulatedPlayers, setSimulatedPlayers] = useState<SimulatedPlayer[]>(() => {
-    const saved = localStorage.getItem('memex_simulated_players');
+    const saved = safeStorage.getItem('memex_simulated_players');
     if (saved) {
       try {
         return JSON.parse(saved);
@@ -299,8 +335,8 @@ export default function App() {
   const [isOfflineDevice, setIsOfflineDevice] = useState(false);
   const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
   const [dismissedBroadcastIds, setDismissedBroadcastIds] = useState<string[]>(() => {
+    const saved = safeStorage.getItem('dismissed_broadcasts');
     try {
-      const saved = localStorage.getItem('dismissed_broadcasts');
       return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
@@ -334,45 +370,49 @@ export default function App() {
 
   // Appwrite Session initializer and handler functions (located below all state declarations)
   useEffect(() => {
+    let active = true;
+
+    // Start a failsafe timer to DROP the loading screen after 2.0 seconds under all circumstances
+    const failsafeTimer = setTimeout(() => {
+      if (active) {
+        setIsCheckingRedirect(false);
+        setIsLoading(false);
+        console.warn("⏳ Loading session failsafe triggered: forcing loaders to false after 2.0 seconds.");
+      }
+    }, 2000);
+
     const initSession = async () => {
+      // 1. Check for userId and secret parameters inside the URL immediately
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlUserId = urlParams.get('userId');
+      const urlSecret = urlParams.get('secret');
+
+      if (urlUserId && urlSecret) {
+        // Strip parameters from the address bar IMMEDIATELY before starting session actions or state shifts
+        const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+        window.history.replaceState(null, '', cleanUrl);
+        console.log("⚡ Found OAuth URL parameters. Parameters stripped from URL bar immediately to break loops.");
+        
+        try {
+          console.log("⚡ Forcing manual Appwrite session creation via URL secret parameters...");
+          await account.createSession(urlUserId, urlSecret);
+          console.log("⚡ Manual Session creation request completed.");
+        } catch (sessionErr: any) {
+          console.error("Forced manual session activation from URL failed:", sessionErr);
+          triggerToast('Session Activation Error', sessionErr?.message || String(sessionErr), true);
+        }
+      }
+
       setIsCheckingRedirect(true);
+      setIsLoading(true);
+
       try {
         let user: any = null;
-        let isCookieOrNetworkBlock = false;
 
         try {
           user = await account.get();
         } catch (getErr: any) {
-          console.warn("Standard account.get() failed. Checking alternatives...", getErr);
-          isCookieOrNetworkBlock = true;
-
-          // 1. If standard account.get() fails, check for userId and secret parameters inside the URL
-          const urlParams = new URLSearchParams(window.location.search);
-          const urlUserId = urlParams.get('userId');
-          const urlSecret = urlParams.get('secret');
-
-          if (urlUserId && urlSecret) {
-            try {
-              console.log("⚡ Found OAuth URL parameters on standard session failure. Forcing manual session creation...");
-              
-              // 2. Explicitly force a manual session creation using await account.createSession(urlUserId, urlSecret)
-              await account.createSession(urlUserId, urlSecret);
-              
-              // Fetch user again with active session
-              user = await account.get();
-              isCookieOrNetworkBlock = false;
-
-              // Clean up the URL parameters so they don't bloat the URL or trigger loops
-              const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
-              window.history.replaceState(null, '', cleanUrl);
-              console.log("⚡ Auto-Refresh: Session established, reloading to refresh context cache.");
-              window.location.reload();
-              return;
-            } catch (sessionErr: any) {
-              console.error("Forced manual session activation from URL failed:", sessionErr);
-              triggerToast('Session Activation Error', sessionErr?.message || String(sessionErr), true);
-            }
-          }
+          console.warn("Standard account.get() failed. Active Appwrite session not detected.", getErr);
         }
 
         if (user) {
@@ -426,13 +466,15 @@ export default function App() {
             createdAt: user.$createdAt || new Date().toISOString()
           };
 
-          // Cache the states immediately inside localStorage to prevent flashes or resets on asset rerenders
-          localStorage.setItem('cached_appwrite_user', JSON.stringify(mappedUser));
-          localStorage.setItem('cached_appwrite_stats', JSON.stringify(finalUserStats));
+          // Cache the states immediately inside safeStorage to prevent flashes
+          safeStorage.setItem('cached_appwrite_user', JSON.stringify(mappedUser));
+          safeStorage.setItem('cached_appwrite_stats', JSON.stringify(finalUserStats));
 
-          setCurrentUser(mappedUser);
-          setUserStats(finalUserStats);
-          setIsStatsLoaded(true);
+          if (active) {
+            setCurrentUser(mappedUser);
+            setUserStats(finalUserStats);
+            setIsStatsLoaded(true);
+          }
 
           // Force-sync latest profile metadata including email representation to cloud Firestore
           try {
@@ -456,52 +498,58 @@ export default function App() {
             console.error("Firestore user profile sync error:", fsSyncErr);
           }
 
-          // Pre-populate holdings and achievements from localStorage mapped by user ID for pragmatic local persistence
-          const cachedHoldings = localStorage.getItem(`memex_holdings_${user.$id}`);
-          if (cachedHoldings) {
-            setHoldings(JSON.parse(cachedHoldings));
-          } else {
-            setHoldings([]);
+          // Pre-populate holdings and achievements from safeStorage mapped by user ID for pragmatic local persistence
+          const cachedHoldings = safeStorage.getItem(`memex_holdings_${user.$id}`);
+          if (active) {
+            if (cachedHoldings) {
+              setHoldings(JSON.parse(cachedHoldings));
+            } else {
+              setHoldings([]);
+            }
           }
 
-          const cachedAchs = localStorage.getItem(`memex_achievements_${user.$id}`);
-          if (cachedAchs) {
-            setAchievements(JSON.parse(cachedAchs));
-          } else {
-            setAchievements([
-              { id: 'a1', title: "Baby's First Buy", description: 'Procure your first simulated meme coin.', category: 'trading', target: 1, current: 0, claimed: false, cashReward: 200, gemReward: 15 },
-              { id: 'a2', title: 'Paper Hands', description: 'Dump an asset for simulated losses.', category: 'trading', target: 1, current: 0, claimed: false, cashReward: 100, gemReward: 10 },
-              { id: 'a3', title: 'Swaps Accumulator', description: 'Execute 10 successful coin purchases.', category: 'trading', target: 10, current: 0, claimed: false, cashReward: 1200, gemReward: 40 },
-              { id: 'a4', title: 'Creative Intelligence', description: 'Launch your first customized token dev asset.', category: 'creation', target: 1, current: 0, claimed: false, cashReward: 1500, gemReward: 50 },
-              { id: 'a5', title: 'Trading Master', description: 'Create your first meme coin.', category: 'creation', target: 1, current: 0, claimed: false, cashReward: 4000, gemReward: 100 },
-              { id: 'a6', title: 'Cash Hoarder I', description: 'Accumulate $50,000 cash balance reserves.', category: 'wealth', target: 50000, current: 10000, claimed: false, cashReward: 3500, gemReward: 75 },
-              { id: 'a7', title: 'Prestige Pioneer', description: 'Reset status to activate permanent Prestige Level I.', category: 'prestige', target: 1, current: 0, claimed: false, cashReward: 10000, gemReward: 250 },
-              { id: 'a8', title: 'Prestige Elite V', description: 'Advance to Prestige level 5.', category: 'prestige', target: 5, current: 0, claimed: false, cashReward: 100000, gemReward: 1500 }
-            ]);
+          const cachedAchs = safeStorage.getItem(`memex_achievements_${user.$id}`);
+          if (active) {
+            if (cachedAchs) {
+              setAchievements(JSON.parse(cachedAchs));
+            } else {
+              setAchievements([
+                { id: 'a1', title: "Baby's First Buy", description: 'Procure your first simulated meme coin.', category: 'trading', target: 1, current: 0, claimed: false, cashReward: 200, gemReward: 15 },
+                { id: 'a2', title: 'Paper Hands', description: 'Dump an asset for simulated losses.', category: 'trading', target: 1, current: 0, claimed: false, cashReward: 100, gemReward: 10 },
+                { id: 'a3', title: 'Swaps Accumulator', description: 'Execute 10 successful coin purchases.', category: 'trading', target: 10, current: 0, claimed: false, cashReward: 1200, gemReward: 40 },
+                { id: 'a4', title: 'Creative Intelligence', description: 'Launch your first customized token dev asset.', category: 'creation', target: 1, current: 0, claimed: false, cashReward: 1500, gemReward: 50 },
+                { id: 'a5', title: 'Trading Master', description: 'Create your first meme coin.', category: 'creation', target: 1, current: 0, claimed: false, cashReward: 4000, gemReward: 100 },
+                { id: 'a6', title: 'Cash Hoarder I', description: 'Accumulate $50,000 cash balance reserves.', category: 'wealth', target: 50000, current: 10000, claimed: false, cashReward: 3500, gemReward: 75 },
+                { id: 'a7', title: 'Prestige Pioneer', description: 'Reset status to activate permanent Prestige Level I.', category: 'prestige', target: 1, current: 0, claimed: false, cashReward: 10000, gemReward: 250 },
+                { id: 'a8', title: 'Prestige Elite V', description: 'Advance to Prestige level 5.', category: 'prestige', target: 5, current: 0, claimed: false, cashReward: 100000, gemReward: 1500 }
+              ]);
+            }
           }
         } else {
-          // If search for standard session failed, but we ALREADY have a valid localStorage cached session,
+          // If search for standard session failed, but we ALREADY have a valid safeStorage cached session,
           // trust this cached state as a recovery fallback so cookie block does not break login state.
-          const cachedUserStr = localStorage.getItem('cached_appwrite_user');
-          const cachedStatsStr = localStorage.getItem('cached_appwrite_stats');
+          const cachedUserStr = safeStorage.getItem('cached_appwrite_user');
+          const cachedStatsStr = safeStorage.getItem('cached_appwrite_stats');
 
           if (cachedUserStr && cachedStatsStr) {
-            console.log("⚡ Standard session blocked, but utilizing valid cached user session state in localStorage as fallback.");
+            console.log("⚡ Standard session blocked, but utilizing valid cached user session state in safeStorage as fallback.");
             const parsedUser = JSON.parse(cachedUserStr);
             const parsedStats = JSON.parse(cachedStatsStr);
             
-            setCurrentUser(parsedUser);
-            setUserStats(parsedStats);
-            setIsStatsLoaded(true);
+            if (active) {
+              setCurrentUser(parsedUser);
+              setUserStats(parsedStats);
+              setIsStatsLoaded(true);
+            }
 
-            // Pre-populate from localStorage caches for this user
-            const cachedHoldings = localStorage.getItem(`memex_holdings_${parsedUser.uid || parsedUser.$id}`);
-            if (cachedHoldings) setHoldings(JSON.parse(cachedHoldings));
-            const cachedAchs = localStorage.getItem(`memex_achievements_${parsedUser.uid || parsedUser.$id}`);
-            if (cachedAchs) setAchievements(JSON.parse(cachedAchs));
+            // Pre-populate from safeStorage caches for this user
+            const cachedHoldings = safeStorage.getItem(`memex_holdings_${parsedUser.uid || parsedUser.$id}`);
+            if (active && cachedHoldings) setHoldings(JSON.parse(cachedHoldings));
+            const cachedAchs = safeStorage.getItem(`memex_achievements_${parsedUser.uid || parsedUser.$id}`);
+            if (active && cachedAchs) setAchievements(JSON.parse(cachedAchs));
           } else {
             // Throw error to trigger unauthenticated clean states
-            throw new Error("No active session found and no localStorage cache is available.");
+            throw new Error("No active session found and no safeStorage cache is available.");
           }
         }
       } catch (err: any) {
@@ -515,43 +563,55 @@ export default function App() {
         }
 
         // Clean up session caches on standard session failures
-        localStorage.removeItem('cached_appwrite_user');
-        localStorage.removeItem('cached_appwrite_stats');
+        safeStorage.removeItem('cached_appwrite_user');
+        safeStorage.removeItem('cached_appwrite_stats');
         
-        setCurrentUser(null);
-        setIsStatsLoaded(false);
-        setUserStats({
-          username: 'Guest Player',
-          handle: '@guest_degen',
-          title: 'Member',
-          isPremium: false,
-          nameColor: 'text-zinc-400 font-extrabold',
-          cash: 5000.00,
-          gems: 90,
-          prestigeLevel: 0,
-          totalProfit: 0,
-          coinsCreatedCount: 0,
-          tradesCount: 0,
-          lastDailyRewardClaim: null,
-          createdAt: new Date().toISOString()
-        });
-        setHoldings([]);
-        setAchievements([
-          { id: 'a1', title: "Baby's First Buy", description: 'Procure your first simulated meme coin.', category: 'trading', target: 1, current: 0, claimed: false, cashReward: 200, gemReward: 15 },
-          { id: 'a2', title: 'Paper Hands', description: 'Dump an asset for simulated losses.', category: 'trading', target: 1, current: 0, claimed: false, cashReward: 100, gemReward: 10 },
-          { id: 'a3', title: 'Swaps Accumulator', description: 'Execute 10 successful coin purchases.', category: 'trading', target: 10, current: 0, claimed: false, cashReward: 1200, gemReward: 40 },
-          { id: 'a4', title: 'Creative Intelligence', description: 'Launch your first customized token dev asset.', category: 'creation', target: 1, current: 0, claimed: false, cashReward: 1500, gemReward: 50 },
-          { id: 'a5', title: 'Trading Master', description: 'Create your first meme coin.', category: 'creation', target: 1, current: 0, claimed: false, cashReward: 4000, gemReward: 100 },
-          { id: 'a6', title: 'Cash Hoarder I', description: 'Accumulate $50,000 cash balance reserves.', category: 'wealth', target: 50000, current: 10000, claimed: false, cashReward: 3500, gemReward: 75 },
-          { id: 'a7', title: 'Prestige Pioneer', description: 'Reset status to activate permanent Prestige Level I.', category: 'prestige', target: 1, current: 0, claimed: false, cashReward: 10000, gemReward: 250 },
-          { id: 'a8', title: 'Prestige Elite V', description: 'Advance to Prestige level 5.', category: 'prestige', target: 5, current: 0, claimed: false, cashReward: 100000, gemReward: 1500 }
-        ]);
+        if (active) {
+          setCurrentUser(null);
+          setIsStatsLoaded(false);
+          setUserStats({
+            username: 'Guest Player',
+            handle: '@guest_degen',
+            title: 'Member',
+            isPremium: false,
+            nameColor: 'text-zinc-400 font-extrabold',
+            cash: 5000.00,
+            gems: 90,
+            prestigeLevel: 0,
+            totalProfit: 0,
+            coinsCreatedCount: 0,
+            tradesCount: 0,
+            lastDailyRewardClaim: null,
+            email: '',
+            createdAt: new Date().toISOString()
+          });
+          setHoldings([]);
+          setAchievements([
+            { id: 'a1', title: "Baby's First Buy", description: 'Procure your first simulated meme coin.', category: 'trading', target: 1, current: 0, claimed: false, cashReward: 200, gemReward: 15 },
+            { id: 'a2', title: 'Paper Hands', description: 'Dump an asset for simulated losses.', category: 'trading', target: 1, current: 0, claimed: false, cashReward: 100, gemReward: 10 },
+            { id: 'a3', title: 'Swaps Accumulator', description: 'Execute 10 successful coin purchases.', category: 'trading', target: 10, current: 0, claimed: false, cashReward: 1200, gemReward: 40 },
+            { id: 'a4', title: 'Creative Intelligence', description: 'Launch your first customized token dev asset.', category: 'creation', target: 1, current: 0, claimed: false, cashReward: 1500, gemReward: 50 },
+            { id: 'a5', title: 'Trading Master', description: 'Create your first meme coin.', category: 'creation', target: 1, current: 0, claimed: false, cashReward: 4000, gemReward: 100 },
+            { id: 'a6', title: 'Cash Hoarder I', description: 'Accumulate $50,000 cash balance reserves.', category: 'wealth', target: 50000, current: 10000, claimed: false, cashReward: 3500, gemReward: 75 },
+            { id: 'a7', title: 'Prestige Pioneer', description: 'Reset status to activate permanent Prestige Level I.', category: 'prestige', target: 1, current: 0, claimed: false, cashReward: 10000, gemReward: 250 },
+            { id: 'a8', title: 'Prestige Elite V', description: 'Advance to Prestige level 5.', category: 'prestige', target: 5, current: 0, claimed: false, cashReward: 100000, gemReward: 1500 }
+          ]);
+        }
       } finally {
-        setIsCheckingRedirect(false);
+        if (active) {
+          setIsCheckingRedirect(false);
+          setIsLoading(false);
+          clearTimeout(failsafeTimer);
+        }
       }
     };
 
     initSession();
+
+    return () => {
+      active = false;
+      clearTimeout(failsafeTimer);
+    };
   }, []);
 
   // Sync state changes back to Appwrite Database if user stats are fully loaded
@@ -571,7 +631,7 @@ export default function App() {
         });
         
         // Also keep stats storage cache up-to-date with current state modifications
-        localStorage.setItem('cached_appwrite_stats', JSON.stringify(userStats));
+        safeStorage.setItem('cached_appwrite_stats', JSON.stringify(userStats));
       } catch (e) {
         console.error('Failed to sync state to Appwrite databases:', e);
       }
@@ -596,8 +656,8 @@ export default function App() {
     setIsCheckingRedirect(true);
     try {
       // Clear legacy storage cache to guarantee fresh login
-      localStorage.removeItem('cached_appwrite_user');
-      localStorage.removeItem('cached_appwrite_stats');
+      safeStorage.removeItem('cached_appwrite_user');
+      safeStorage.removeItem('cached_appwrite_stats');
       account.createOAuth2Session("google" as any, "https://pump-forge-zeke.vercel.app");
     } catch (e: any) {
       console.error('Appwrite Google sign-in failed:', e);
@@ -618,16 +678,16 @@ export default function App() {
       console.error('Appwrite Sign out error:', e);
     } finally {
       // Fully clear session storage caches
-      localStorage.removeItem('cached_appwrite_user');
-      localStorage.removeItem('cached_appwrite_stats');
+      safeStorage.removeItem('cached_appwrite_user');
+      safeStorage.removeItem('cached_appwrite_stats');
       const keysToClear = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
+      for (let i = 0; i < safeStorage.length; i++) {
+        const key = safeStorage.key(i);
         if (key && (key.includes('memex_') || key.includes('cached_appwrite_'))) {
           keysToClear.push(key);
         }
       }
-      keysToClear.forEach(k => localStorage.removeItem(k));
+      keysToClear.forEach(k => safeStorage.removeItem(k));
       
       setCurrentUser(null);
       setIsStatsLoaded(false);
@@ -914,7 +974,7 @@ export default function App() {
   function handleDismissBroadcast(id: string) {
     setDismissedBroadcastIds((prev) => {
       const nextDismissed = [...prev, id];
-      localStorage.setItem('dismissed_broadcasts', JSON.stringify(nextDismissed));
+      safeStorage.setItem('dismissed_broadcasts', JSON.stringify(nextDismissed));
       return nextDismissed;
     });
   }
@@ -1622,7 +1682,7 @@ export default function App() {
 
     // Fast-rate limiting check via localStorage to protect database writes
     const rateLimitKey = `last_bug_reported_${currentUser.uid}`;
-    const lastReport = localStorage.getItem(rateLimitKey);
+    const lastReport = safeStorage.getItem(rateLimitKey);
     if (lastReport) {
       const elapsed = Date.now() - parseInt(lastReport);
       const limitMs = 30 * 1000; // 30 seconds limit to avoid spam or accidental double submissions
@@ -1650,7 +1710,7 @@ export default function App() {
 
     try {
       await setDoc(doc(db, 'bugs', bugId), newBug);
-      localStorage.setItem(rateLimitKey, Date.now().toString());
+      safeStorage.setItem(rateLimitKey, Date.now().toString());
       onAddNotification('Bug Reported!', `Successfully logged your bug "${title}" into active queue!`, 'info');
       return true;
     } catch (e: any) {
