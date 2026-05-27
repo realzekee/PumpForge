@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Brain,
   Vote,
@@ -15,12 +15,13 @@ import {
   Loader2
 } from 'lucide-react';
 import { PredictionMarket, UserStats } from '../types';
+import { databases } from '../appwrite';
 
 interface PolymarketTabProps {
   markets: PredictionMarket[];
   userStats: UserStats;
   onPlaceBet: (marketId: string, side: 'YES' | 'NO', amount: number) => void;
-  onCreateMarket: (question: string, description: string, category: 'trading' | 'general' | 'arcade', presetDuration: '1 Day' | '1 Week' | '1 Month (Max)') => void;
+  onCreateMarket: (question: string, description: string, category: 'trading' | 'general' | 'arcade', presetDuration: '1 Day' | '1 Week' | '1 Month') => void;
   isGeneratingAi?: boolean;
 }
 
@@ -35,16 +36,73 @@ export default function PolymarketTab({
   const [betAmounts, setBetAmounts] = useState<{ [marketId: string]: string }>({});
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [betFeedback, setBetFeedback] = useState<{ [marketId: string]: { type: 'success' | 'danger'; message: string } }>({});
+  const [extraAppwriteMarkets, setExtraAppwriteMarkets] = useState<PredictionMarket[]>([]);
 
   // Creation form state
   const [newQuestion, setNewQuestion] = useState('');
   const [newDesc, setNewDesc] = useState('');
   const [newCategory, setNewCategory] = useState<'trading' | 'general' | 'arcade'>('trading');
-  const [newDurationPreset, setNewDurationPreset] = useState<'1 Day' | '1 Week' | '1 Month (Max)'>('1 Day');
+  const [newDurationPreset, setNewDurationPreset] = useState<'1 Day' | '1 Week' | '1 Month'>('1 Day');
   const [aiPromptTopic, setAiPromptTopic] = useState('');
   const [aiGenerating, setAiGenerating] = useState(false);
 
-  const displayedMarkets = markets.filter((m) => (activeSubTab === 'resolved' ? m.resolved : !m.resolved));
+  // Polls fetching loop inside PolymarketTab mounting
+  useEffect(() => {
+    const fetchPolls = async () => {
+      try {
+        const res = await databases.listDocuments("pumpforge", "polls");
+        if (res.documents && res.documents.length > 0) {
+          const appwriteMarkets: PredictionMarket[] = res.documents.map((doc: any) => {
+            const yesPool = parseInt(String(doc.yesVotes ?? 50), 10);
+            const noPool = parseInt(String(doc.noVotes ?? 50), 10);
+            const totalPool = yesPool + noPool;
+            const yesPercentage = totalPool > 0 ? Math.round((yesPool / totalPool) * 100) : 50;
+
+            let endTimeStr = doc.expirationTime || 'Within 24 hours';
+            try {
+              if (endTimeStr.includes('T')) {
+                const targetDt = new Date(endTimeStr);
+                endTimeStr = `In ${doc.duration || '1 Day'} (${targetDt.toLocaleDateString()})`;
+              }
+            } catch (_) {}
+
+            return {
+              id: doc.pollId || doc.$id,
+              question: doc.question || '',
+              description: doc.context || '',
+              yesPool,
+              noPool,
+              yesPercentage,
+              resolved: !!doc.resolved || false,
+              resolvedOutcome: doc.resolvedOutcome === 'null' || !doc.resolvedOutcome ? null : doc.resolvedOutcome,
+              endTime: endTimeStr,
+              category: doc.category || 'general',
+              userBetAmount: 0,
+              userBetSide: null
+            } as PredictionMarket;
+          });
+          setExtraAppwriteMarkets(appwriteMarkets);
+        }
+      } catch (err) {
+        console.warn("PolymarketTab Appwrite poll load issue:", err);
+      }
+    };
+    fetchPolls();
+  }, []);
+
+  // Merge loaded Appwrite markets and manual props markets
+  const allMarkets = React.useMemo(() => {
+    const merged = [...markets];
+    extraAppwriteMarkets.forEach((am) => {
+      const exists = merged.some((m) => m.id === am.id);
+      if (!exists) {
+        merged.unshift(am);
+      }
+    });
+    return merged;
+  }, [markets, extraAppwriteMarkets]);
+
+  const displayedMarkets = allMarkets.filter((m) => (activeSubTab === 'resolved' ? m.resolved : !m.resolved));
 
   const handleBetSubmit = (marketId: string, side: 'YES' | 'NO') => {
     const amtStr = betAmounts[marketId];
@@ -431,7 +489,7 @@ export default function PolymarketTab({
                     >
                       <option value="1 Day">1 Day</option>
                       <option value="1 Week">1 Week</option>
-                      <option value="1 Month (Max)">1 Month (Max)</option>
+                      <option value="1 Month">1 Month</option>
                     </select>
                   </div>
                 </div>

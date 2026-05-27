@@ -31,6 +31,13 @@ type MenuGameType = 'coinflip' | 'slots' | 'mines' | 'dice' | 'tower';
 export default function ArcadeTab({ userStats, onUpdateStats, onAddNotification }: ArcadeTabProps) {
   const [selectedGame, setSelectedGame] = useState<MenuGameType>('coinflip');
   const [localNotice, setLocalNotice] = useState<{ title: string; message: string; isError?: boolean } | null>(null);
+  const [showTowerResultModal, setShowTowerResultModal] = useState<{
+    success: boolean;
+    title: string;
+    message: string;
+    payout?: number;
+    multiplier?: number;
+  } | null>(null);
 
   const triggerLocalNotice = (title: string, message: string, isError = false) => {
     setLocalNotice({ title, message, isError });
@@ -448,6 +455,11 @@ export default function ArcadeTab({ userStats, onUpdateStats, onAddNotification 
       // Boom skull
       setTowerActive(false);
       setTowerReveal(true);
+      setShowTowerResultModal({
+        success: false,
+        title: 'TOWER OVER!',
+        message: '💀 You hit a trap block. Your climb bet has been lost.'
+      });
       triggerLocalNotice('TOWER OVER!', '💀 You hit a trap block. Your climb bet has been lost.', true);
     } else {
       // Safe step upward!
@@ -490,6 +502,15 @@ export default function ArcadeTab({ userStats, onUpdateStats, onAddNotification 
 
     setTowerActive(false);
     setTowerReveal(true);
+    setShowTowerResultModal({
+      success: true,
+      title: lvl === 10 ? 'CONGRATULATIONS!' : 'TOWER CLAIMED!',
+      message: lvl === 10 
+        ? '🗼 GRAND CLEAR! You conquered the tower and cashed out floor 10 successfully!' 
+        : `🗼 Cashed out floor ${lvl} successfully!`,
+      payout,
+      multiplier: mult
+    });
     triggerLocalNotice('Tower Claim Complete!', `🗼 Cashed out floor ${lvl} successfully for a return of $${payout.toLocaleString()} (${mult}x)!`);
   };
 
@@ -522,6 +543,58 @@ export default function ArcadeTab({ userStats, onUpdateStats, onAddNotification 
           >
             <X className="w-4 h-4" />
           </button>
+        </div>
+      )}
+
+      {/* Sleek Custom Dark-Themed Tower Result Overlay Modal */}
+      {showTowerResultModal && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4 select-none">
+          <div className="bg-zinc-900 border-2 border-zinc-800 p-6 rounded-3xl max-w-sm w-full relative font-mono text-center shadow-2xl animate-fade-in">
+            <button
+              onClick={() => setShowTowerResultModal(null)}
+              className="absolute top-4 right-4 text-zinc-500 hover:text-zinc-200 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-3xl mx-auto mb-4 border shadow-lg ${
+              showTowerResultModal.success 
+                ? 'bg-emerald-950 border-emerald-500/30 text-emerald-450' 
+                : 'bg-rose-950 border-rose-500/30 text-rose-450'
+            }`}>
+              {showTowerResultModal.success ? '🏆' : '💀'}
+            </div>
+            <h3 className={`text-base font-extrabold uppercase tracking-widest mb-2 ${
+              showTowerResultModal.success ? 'text-emerald-400' : 'text-rose-400 font-bold'
+            }`}>
+              {showTowerResultModal.title}
+            </h3>
+            <p className="text-xs text-zinc-400 mb-5 leading-relaxed font-semibold">
+              {showTowerResultModal.message}
+            </p>
+
+            {showTowerResultModal.success && showTowerResultModal.payout !== undefined && (
+              <div className="bg-zinc-950/80 p-3.5 rounded-2xl border border-zinc-900/60 w-full mb-5 flex flex-col gap-1 text-center select-none font-mono">
+                <span className="text-[9px] text-zinc-500 uppercase font-bold tracking-widest">Winnings Received</span>
+                <span className="text-xl font-extrabold text-emerald-400">
+                  +${showTowerResultModal.payout.toLocaleString()}
+                </span>
+                <span className="text-[10px] text-zinc-500 font-bold">
+                  Multiplier: {showTowerResultModal.multiplier?.toFixed(2)}x
+                </span>
+              </div>
+            )}
+
+            <button
+              onClick={() => setShowTowerResultModal(null)}
+              className={`w-full py-3.5 rounded-xl font-black text-xs uppercase tracking-wider transition-all select-none border font-mono ${
+                showTowerResultModal.success 
+                  ? 'bg-emerald-600 hover:bg-emerald-500 border-emerald-500 hover:brightness-110 active:scale-98 text-white' 
+                  : 'bg-zinc-950 border-zinc-850 hover:bg-zinc-805 text-zinc-350'
+              }`}
+            >
+              {showTowerResultModal.success ? 'Collect Profits' : 'Try Again'}
+            </button>
+          </div>
         </div>
       )}
 

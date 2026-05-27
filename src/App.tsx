@@ -38,6 +38,7 @@ import { Award, Gift, Sparkles, X, ChevronRight, Check, Gamepad2, ShoppingBag, P
 
 // Appwrite imports
 import { account, databases } from './appwrite';
+import { ID } from 'appwrite';
 
 // Firebase imports
 import { auth, db, googleProvider, OperationType, handleFirestoreError } from './firebase';
@@ -435,6 +436,10 @@ export default function App() {
         }
 
         if (user) {
+          const isOwnerEmail = (user.email === 'realzekeee@gmail.com' || user.email === 'realzekee@gmail.com');
+          const finalUsername = user.name || user.email.split('@')[0] || 'Appwrite Player';
+          const finalHandle = '@' + finalUsername.toLowerCase().replace(/[^a-z0-9]/g, '');
+
           // Immediately fetch game data from Appwrite databases if exists or create document
           let profileDoc: any;
           try {
@@ -444,12 +449,12 @@ export default function App() {
             if (isNotFound) {
               console.log("Creating brand new Appwrite database profile for user:", user.$id);
               profileDoc = await databases.createDocument("pumpforge", "users", user.$id, {
-                total_value: 0.0,
+                userId: user.$id,
+                username: finalUsername,
                 cash: 5000.00, // Initialize new users with the standard 5000 cash balance
-                coins: 0,
+                coins: 0.0,
                 gems: 90,
                 prestigeLevel: 0,
-                tradesCount: 0,
                 lastDailyRewardClaim: ""
               });
             } else {
@@ -463,10 +468,6 @@ export default function App() {
             uid: user.$id,
             displayName: user.name || user.email.split('@')[0] || 'Appwrite Player'
           };
-          
-          const isOwnerEmail = (user.email === 'realzekeee@gmail.com' || user.email === 'realzekee@gmail.com');
-          const finalUsername = user.name || user.email.split('@')[0] || 'Appwrite Player';
-          const finalHandle = '@' + finalUsername.toLowerCase().replace(/[^a-z0-9]/g, '');
 
           const finalUserStats = {
             username: finalUsername,
@@ -475,12 +476,12 @@ export default function App() {
             email: user.email || '',
             isPremium: isOwnerEmail,
             nameColor: isOwnerEmail ? 'text-rose-500 font-extrabold text-glow tracking-wider' : 'text-zinc-400 font-bold',
-            cash: profileDoc.cash ?? 5000.00,
-            gems: profileDoc.gems ?? 90,
-            prestigeLevel: profileDoc.prestigeLevel ?? 0,
-            totalProfit: profileDoc.total_value ?? 0,
-            coinsCreatedCount: profileDoc.coins ?? 0,
-            tradesCount: profileDoc.tradesCount ?? 0,
+            cash: Number(profileDoc.cash ?? 5000.00),
+            gems: parseInt(String(profileDoc.gems ?? 90), 10),
+            prestigeLevel: parseInt(String(profileDoc.prestigeLevel ?? 0), 10),
+            totalProfit: 0.0,
+            coinsCreatedCount: Number(profileDoc.coins ?? 0.0),
+            tradesCount: 0.0,
             lastDailyRewardClaim: profileDoc.lastDailyRewardClaim || null,
             createdAt: user.$createdAt || new Date().toISOString()
           };
@@ -639,13 +640,14 @@ export default function App() {
     
     const syncToAppwrite = async () => {
       try {
+        const totalCoinsOwned = holdings.reduce((sum, h) => sum + h.amount, 0);
         await databases.updateDocument("pumpforge", "users", currentUser.uid || currentUser.$id, {
-          total_value: userStats.totalProfit || 0.0,
-          cash: userStats.cash || 0.0,
-          coins: userStats.coinsCreatedCount || 0,
-          gems: userStats.gems || 0,
-          prestigeLevel: userStats.prestigeLevel || 0,
-          tradesCount: userStats.tradesCount || 0,
+          userId: currentUser.uid || currentUser.$id,
+          username: userStats.username,
+          cash: Number(userStats.cash || 0.0),
+          coins: Number(totalCoinsOwned || 0.0),
+          gems: parseInt(String(userStats.gems || 0), 10),
+          prestigeLevel: parseInt(String(userStats.prestigeLevel || 0), 10),
           lastDailyRewardClaim: userStats.lastDailyRewardClaim || ""
         });
         
@@ -659,13 +661,11 @@ export default function App() {
     const handler = setTimeout(syncToAppwrite, 1500);
     return () => clearTimeout(handler);
   }, [
-    userStats.totalProfit,
     userStats.cash,
-    userStats.coinsCreatedCount,
     userStats.gems,
     userStats.prestigeLevel,
-    userStats.tradesCount,
     userStats.lastDailyRewardClaim,
+    holdings,
     currentUser,
     isStatsLoaded
   ]);
@@ -857,35 +857,39 @@ export default function App() {
     };
   }, []);
 
-  // 3b. ACTIVE QUERY TO SYNC USER-CREATED POLLS FROM APPWRITE "MARKETS" COLLECTION
+  // 3b. ACTIVE QUERY TO SYNC USER-CREATED POLLS FROM APPWRITE "POLLS" COLLECTION
   useEffect(() => {
     if (activeTab === 'polymarket') {
       const loadAppwriteMarkets = async () => {
         try {
-          const res = await databases.listDocuments("pumpforge", "markets");
-          console.log("Appwrite prediction markets documents pulled:", res.documents);
+          const res = await databases.listDocuments("pumpforge", "polls");
+          console.log("Appwrite prediction polls documents pulled:", res.documents);
           
           if (res.documents && res.documents.length > 0) {
             const appwriteMarkets: PredictionMarket[] = res.documents.map((doc: any) => {
-              let resolvedOutcome = doc.resolvedOutcome;
-              if (resolvedOutcome === 'null' || resolvedOutcome === '') {
-                resolvedOutcome = null;
-              }
-              const yesPool = Number(doc.yesPool ?? 50);
-              const noPool = Number(doc.noPool ?? 50);
+              const yesPool = parseInt(String(doc.yesVotes ?? 50), 10);
+              const noPool = parseInt(String(doc.noVotes ?? 50), 10);
               const totalPool = yesPool + noPool;
               const yesPercentage = totalPool > 0 ? Math.round((yesPool / totalPool) * 100) : 50;
 
+              let endTimeStr = doc.expirationTime || 'Within 24 hours';
+              try {
+                if (endTimeStr.includes('T')) {
+                  const targetDt = new Date(endTimeStr);
+                  endTimeStr = `In ${doc.duration || '1 Day'} (${targetDt.toLocaleDateString()})`;
+                }
+              } catch (_) {}
+
               return {
-                id: doc.id || doc.$id,
-                question: doc.question,
-                description: doc.description,
+                id: doc.pollId || doc.$id,
+                question: doc.question || '',
+                description: doc.context || '',
                 yesPool,
                 noPool,
                 yesPercentage,
-                resolved: !!doc.resolved,
-                resolvedOutcome,
-                endTime: doc.endTime,
+                resolved: !!doc.resolved || false,
+                resolvedOutcome: doc.resolvedOutcome === 'null' || !doc.resolvedOutcome ? null : doc.resolvedOutcome,
+                endTime: endTimeStr,
                 category: doc.category || 'general',
                 userBetAmount: 0,
                 userBetSide: null
@@ -1389,19 +1393,13 @@ export default function App() {
         // Appwrite persistent coin cache document initialization
         try {
           await databases.createDocument("pumpforge", "coins", coinId, {
-            id: coinId,
+            coinId: coinId,
+            creatorId: currentUser.uid || currentUser.$id,
             name,
             symbol,
-            creator: userStats.handle,
             description: desc,
-            avatarEmoji: emoji,
-            avatarBg: 'bg-emerald-950 text-emerald-300 border-emerald-500',
-            price: listPrice,
-            marketCap: 1000,
-            supply: 200000,
-            volume24h: 300,
-            change24h: 0,
-            isUserCreated: true
+            price: Number(listPrice),
+            marketCap: 1000.0
           });
           console.log("Appwrite: Successfully cached coin document.");
         } catch (appwriteCoinErr) {
@@ -1574,7 +1572,7 @@ export default function App() {
     question: string,
     description: string,
     category: 'trading' | 'general' | 'arcade',
-    presetDuration?: '1 Day' | '1 Week' | '1 Month (Max)'
+    presetDuration?: '1 Day' | '1 Week' | '1 Month'
   ) => {
     let calculatedEndTime = 'Within 24 hours';
     const now = new Date();
@@ -1585,7 +1583,7 @@ export default function App() {
     } else if (duration === '1 Week') {
       const target = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
       calculatedEndTime = `In 1 Week (${target.toLocaleDateString()})`;
-    } else if (duration === '1 Month (Max)') {
+    } else if (duration === '1 Month') {
       const target = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
       calculatedEndTime = `In 1 Month (${target.toLocaleDateString()})`;
     }
@@ -1612,24 +1610,31 @@ export default function App() {
       try {
         // Create prediction document inside Appwrite explicit database collection as requested
         try {
-          await databases.createDocument("pumpforge", "markets", marketId, {
-            id: marketId,
+          const now = new Date();
+          const pDuration = presetDuration || '1 Day';
+          let expirationTimeIso = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
+          if (pDuration === '1 Week') {
+            expirationTimeIso = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
+          } else if (pDuration === '1 Month') {
+            expirationTimeIso = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+          }
+
+          const uniqueDocId = ID.unique();
+          await databases.createDocument("pumpforge", "polls", uniqueDocId, {
+            pollId: uniqueDocId,
             question,
-            description,
-            yesPool: 50,
-            noPool: 50,
-            yesPercentage: 50,
-            resolved: false,
-            resolvedOutcome: 'null', // default unresolved outcome
-            endTime: calculatedEndTime,
-            category
+            context: description,
+            duration: pDuration,
+            yesVotes: 50,
+            noVotes: 50,
+            expirationTime: expirationTimeIso
           });
-          console.log("Appwrite: Created prediction market successfully in collections.");
+          console.log("Appwrite: Created prediction poll successfully in collections.");
         } catch (appwriteMarketErr) {
           console.warn("Could not write prediction market to Appwrite databases:", appwriteMarketErr);
         }
 
-        // Also update cash in Appwrite
+        // Also update cash in Appwrite (only valid schema attributes)
         try {
           await databases.updateDocument("pumpforge", "users", currentUser.uid || currentUser.$id, {
             cash: Number(nextCash.toFixed(2))
@@ -1818,15 +1823,13 @@ export default function App() {
 
     try {
       if (currentUser) {
-        // Increment the user's prestigeLevel, reset cash, and reset total_value attributes inside the Appwrite databases users collection as requested
+        // Increment the user's prestigeLevel, reset cash inside the Appwrite databases users collection as requested
         try {
           await databases.updateDocument("pumpforge", "users", currentUser.uid || currentUser.$id, {
             prestigeLevel: nextLvl,
             cash: 5000.0,
             gems: userStats.gems + 500,
-            total_value: 0.0,
-            tradesCount: 0,
-            coins: 0
+            coins: 0.0
           });
           console.log("Appwrite: Prestige Reset saved successfully.");
         } catch (appwritePrestigeErr) {
