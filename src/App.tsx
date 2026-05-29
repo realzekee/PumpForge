@@ -769,7 +769,13 @@ export default function App() {
         setCoins(INITIAL_COINS);
       } else {
         const list: MemeCoin[] = [];
-        snap.forEach((doc) => list.push(doc.data() as MemeCoin));
+        snap.forEach((doc) => {
+          const data = doc.data() as MemeCoin;
+          if (data.creator === '@zeke' || data.creator === 'zeke') {
+            data.creator = '@system';
+          }
+          list.push(data);
+        });
         setCoins(list);
       }
     }, (error) => {
@@ -857,70 +863,7 @@ export default function App() {
     };
   }, []);
 
-  // 3b. ACTIVE QUERY TO SYNC USER-CREATED POLLS FROM APPWRITE "POLLS" COLLECTION
-  useEffect(() => {
-    if (activeTab === 'polymarket') {
-      const loadAppwriteMarkets = async () => {
-        try {
-          const res = await databases.listDocuments("pumpforge", "polls");
-          console.log("Appwrite prediction polls documents pulled:", res.documents);
-          
-          if (res.documents && res.documents.length > 0) {
-            const appwriteMarkets: PredictionMarket[] = res.documents.map((doc: any) => {
-              const yesPool = parseInt(String(doc.yesVotes ?? 50), 10);
-              const noPool = parseInt(String(doc.noVotes ?? 50), 10);
-              const totalPool = yesPool + noPool;
-              const yesPercentage = totalPool > 0 ? Math.round((yesPool / totalPool) * 100) : 50;
-
-              let endTimeStr = doc.expirationTime || 'Within 24 hours';
-              try {
-                if (endTimeStr.includes('T')) {
-                  const targetDt = new Date(endTimeStr);
-                  endTimeStr = `In ${doc.duration || '1 Day'} (${targetDt.toLocaleDateString()})`;
-                }
-              } catch (_) {}
-
-              return {
-                id: doc.pollId || doc.$id,
-                question: doc.question || '',
-                description: doc.context || '',
-                yesPool,
-                noPool,
-                yesPercentage,
-                resolved: !!doc.resolved || false,
-                resolvedOutcome: doc.resolvedOutcome === 'null' || !doc.resolvedOutcome ? null : doc.resolvedOutcome,
-                endTime: endTimeStr,
-                category: doc.category || 'general',
-                userBetAmount: 0,
-                userBetSide: null
-              } as PredictionMarket;
-            });
-
-            // Merge Appwrite markets together with local markets, avoiding duplicates
-            setMarkets((prev) => {
-              const merged = [...prev];
-              appwriteMarkets.forEach((am) => {
-                const idx = merged.findIndex((m) => m.id === am.id);
-                if (idx > -1) {
-                  merged[idx] = {
-                    ...merged[idx],
-                    ...am
-                  };
-                } else {
-                  merged.unshift(am);
-                }
-              });
-              return merged;
-            });
-          }
-        } catch (err) {
-          console.warn("Could not load prediction markets from Appwrite (collection might not be populated or created):", err);
-        }
-      };
-
-      loadAppwriteMarkets();
-    }
-  }, [activeTab]);
+  // Removed redundant Appwrite POLLS sync here (migrated to PolymarketTab.tsx)
 
   // 4. WORKER INTERVALS
   // DAILY COOLDOWN INTERVAL WORKER
@@ -1354,9 +1297,9 @@ export default function App() {
       return { success: false, error: 'User not signed in' };
     }
 
-    const existingOwnCoin = coins.find((c) => c.creator === userStats.handle);
-    if (existingOwnCoin) {
-      return { success: false, error: `❌ 1-COIN LIMIT: You already have an active coin (*${existingOwnCoin.symbol}). Delete it before launching!` };
+    const userOwnCoins = coins.filter((c) => c.creator === userStats.handle);
+    if (userOwnCoins.length >= 10) {
+      return { success: false, error: `❌ 10-COIN LIMIT: You already have 10 active coins. Delete one before launching another!` };
     }
 
     if (userStats.cash < 1100) {
@@ -1813,88 +1756,57 @@ export default function App() {
       return;
     }
 
-    if (userStats.cash < 100000.0) {
-      triggerToast('Requirement Not Met', `You must accumulate at least $100.00K in Cash Reserves. (Current: $${userStats.cash.toLocaleString()})`, true);
-      return;
-    }
-
-    const nextLvl = userStats.prestigeLevel + 1;
-    const title = PRESTIGE_NAMES[nextLvl - 1] || 'Galactic Legend';
-
     try {
-      if (currentUser) {
-        // Increment the user's prestigeLevel, reset cash inside the Appwrite databases users collection as requested
-        try {
-          await databases.updateDocument("pumpforge", "users", currentUser.uid || currentUser.$id, {
-            prestigeLevel: nextLvl,
-            cash: 5000.0,
-            gems: userStats.gems + 500,
-            coins: 0.0
-          });
-          console.log("Appwrite: Prestige Reset saved successfully.");
-        } catch (appwritePrestigeErr) {
-          console.error("Appwrite: Could not write prestige progress update:", appwritePrestigeErr);
-        }
-
-        // Firebase Firestore update
-        try {
-          const batch = writeBatch(db);
-          const userRef = doc(db, 'users', currentUser.uid);
-          const achRef = doc(db, 'users', currentUser.uid, 'achievements', 'a7');
-
-          batch.update(userRef, {
-            cash: 5000.0,
-            gems: userStats.gems + 500,
-            prestigeLevel: nextLvl,
-            title,
-            totalProfit: 0,
-            tradesCount: 0,
-            coinsCreatedCount: 0
-          });
-
-          batch.update(achRef, { current: 1 });
-
-          // Delete holdings subcollection contents
-          holdings.forEach((h) => {
-            const hRef = doc(db, 'users', currentUser.uid, 'holdings', h.coinId);
-            batch.delete(hRef);
-          });
-
-          await batch.commit();
-        } catch (fiErr) {
-          console.warn("Firestore prestige sync batch commit issue:", fiErr);
-        }
-
-        setUserStats((prev) => ({
-          ...prev,
-          cash: 5000.0,
-          gems: prev.gems + 500,
-          prestigeLevel: nextLvl,
-          title,
-          totalProfit: 0,
-          tradesCount: 0,
-          coinsCreatedCount: 0
-        }));
-        setHoldings([]);
-      } else {
-        setUserStats((prev) => ({
-          ...prev,
-          cash: 5000.0,
-          gems: prev.gems + 500,
-          prestigeLevel: nextLvl,
-          title,
-          totalProfit: 0,
-          tradesCount: 0,
-          coinsCreatedCount: 0
-        }));
-
-        setHoldings([]);
-        setCoins(INITIAL_COINS);
-
-        setAchievements((prev) =>
-          prev.map((ach) => (ach.id === 'a7' ? { ...ach, current: 1 } : ach))
-        );
+      const uid = currentUser.uid || currentUser.$id;
+      // Fetch latest document state from Appwrite
+      let latestUserDoc;
+      try {
+        latestUserDoc = await databases.getDocument("pumpforge", "users", uid);
+      } catch (err) {
+        console.error("Appwrite: Could not fetch latest user state for prestige lookup.", err);
       }
+      
+      const trueCashLevel = latestUserDoc?.cash ?? userStats.cash;
+      const trueGemsLevel = latestUserDoc?.gems ?? userStats.gems;
+      const truePrestigeLevel = latestUserDoc?.prestigeLevel ?? userStats.prestigeLevel;
+
+      if (trueCashLevel < 100000.0) {
+        triggerToast('Requirement Not Met', `You must accumulate at least $100.00K in Cash Reserves. (Current: $${trueCashLevel.toLocaleString()})`, true);
+        return;
+      }
+
+      const nextLvl = truePrestigeLevel + 1;
+      const title = PRESTIGE_NAMES[nextLvl - 1] || 'Galactic Legend';
+
+      try {
+        await databases.updateDocument("pumpforge", "users", uid, {
+          prestigeLevel: nextLvl,
+          cash: 5000.0,
+          gems: trueGemsLevel + 500,
+          coins: 0.0
+        });
+        console.log("Appwrite: Prestige Reset saved successfully.");
+      } catch (appwritePrestigeErr) {
+        console.error("Appwrite: Could not write prestige progress update:", appwritePrestigeErr);
+      }
+
+      // Reset local simulation holdings cleanly
+      setHoldings([]);
+      
+      setUserStats((prev) => ({
+        ...prev,
+        cash: 5000.0,
+        gems: trueGemsLevel + 500,
+        prestigeLevel: nextLvl,
+        title,
+        totalProfit: 0,
+        tradesCount: 0,
+        coinsCreatedCount: 0
+      }));
+
+      setAchievements((prev) =>
+        prev.map((ach) => (ach.id === 'a7' ? { ...ach, current: 1 } : ach))
+      );
 
       onAddNotification('PRESTIGE ACQUIRED', `Advanced to ${title}! Daily reward multiplier active!`, 'achievement');
       triggerToast('Prestige Completed!', `Leveled up to Prestige Level ${nextLvl}! Your cash and holdings have reset with bonuses.`);

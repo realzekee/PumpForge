@@ -28,6 +28,7 @@ import {
 import { UserStats, MemeCoin, ActiveTab, SimulatedPlayer, LiveTrade } from '../types';
 import { db, OperationType, handleFirestoreError } from '../firebase';
 import { doc, updateDoc, collection, getDocs, deleteDoc, writeBatch, onSnapshot, query, orderBy, setDoc } from 'firebase/firestore';
+import { databases } from '../appwrite';
 
 interface OwnerDashboardProps {
   userStats: UserStats;
@@ -59,6 +60,8 @@ export default function OwnerDashboardTab({
   // Local state for creator controls
   const [customCash, setCustomCash] = useState<number>(50000);
   const [customGems, setCustomGems] = useState<number>(500);
+  const [appwriteUsers, setAppwriteUsers] = useState<any[]>([]);
+
   const [alertTitle, setAlertTitle] = useState<string>('🚨 BLACK SWAN DETECTED');
   const [alertMsg, setAlertMsg] = useState<string>('Whale dev zeke is manipulating the system state!');
   const [alertType, setAlertType] = useState<'info' | 'achievement' | 'trade' | 'crash'>('crash');
@@ -75,6 +78,18 @@ export default function OwnerDashboardTab({
 
   // Directory filter of players
   const [searchQuery, setSearchQuery] = useState<string>('');
+
+  useEffect(() => {
+    const fetchAppwriteUsers = async () => {
+      try {
+        const res = await databases.listDocuments("pumpforge", "users");
+        setAppwriteUsers(res.documents);
+      } catch (err) {
+        console.error("Owner Dashboard appwrite users list error:", err);
+      }
+    };
+    fetchAppwriteUsers();
+  }, [searchQuery]);
   
   // Custom suspension duration (in days)
   const [suspendDurationDays, setSuspendDurationDays] = useState<number>(1);
@@ -755,26 +770,51 @@ export default function OwnerDashboardTab({
   };
 
   // Mint instant resources (Cash/Gems self adjustments)
-  const handleMintCash = () => {
-    onUpdateStats((stats) => {
-      stats.cash += customCash;
-    });
-    onAddNotification(
-      '💸 Owner Resource Mint',
-      `Minted $${customCash.toLocaleString()} cash from central reserve.`,
-      'achievement'
-    );
+  const handleMintCash = async () => {
+    try {
+      // Find current user's uid from registeredUsers if available, fallback to search based on handle
+      const currentUserReg = registeredUsers.find(u => (u.handle && userStats.handle) && u.handle.toLowerCase() === userStats.handle.toLowerCase());
+      if (currentUserReg?.uid) {
+        await databases.updateDocument("pumpforge", "users", currentUserReg.uid, {
+          cash: userStats.cash + customCash
+        });
+      }
+      
+      onUpdateStats((stats) => {
+        stats.cash += customCash;
+      });
+      onAddNotification(
+        '💸 Owner Resource Mint',
+        `Minted $${customCash.toLocaleString()} cash from central reserve.`,
+        'achievement'
+      );
+    } catch (e: any) {
+      console.error('Failed to mint cash in Appwrite database:', e);
+      onAddNotification('Error', 'Failed to sync mint cash with Appwrite', 'crash');
+    }
   };
 
-  const handleMintGems = () => {
-    onUpdateStats((stats) => {
-      stats.gems += customGems;
-    });
-    onAddNotification(
-      '💎 Owner Resource Mint',
-      `Minted ${customGems} gems directly to your profile.`,
-      'achievement'
-    );
+  const handleMintGems = async () => {
+    try {
+      const currentUserReg = registeredUsers.find(u => (u.handle && userStats.handle) && u.handle.toLowerCase() === userStats.handle.toLowerCase());
+      if (currentUserReg?.uid) {
+        await databases.updateDocument("pumpforge", "users", currentUserReg.uid, {
+          gems: userStats.gems + customGems
+        });
+      }
+      
+      onUpdateStats((stats) => {
+        stats.gems += customGems;
+      });
+      onAddNotification(
+        '💎 Owner Resource Mint',
+        `Minted ${customGems} gems directly to your profile.`,
+        'achievement'
+      );
+    } catch (e: any) {
+      console.error('Failed to mint gems in Appwrite database:', e);
+      onAddNotification('Error', 'Failed to sync mint gems with Appwrite', 'crash');
+    }
   };
 
   // Run instant 50% pumped price on all active coins
@@ -1127,6 +1167,29 @@ export default function OwnerDashboardTab({
         isAdmin: !!r.isAdmin || r.title?.toLowerCase() === 'owner' || r.title?.toLowerCase() === 'admin',
         createdAt: r.createdAt || '2026-05-24T06:40:00Z',
         activityLog: r.activityLog || []
+      })),
+    ...appwriteUsers
+      .filter(r => {
+        const rHandle = r.handle || '';
+        const curHandle = userStats.handle || '';
+        return rHandle.toLowerCase() !== curHandle.toLowerCase();
+      })
+      .map(r => ({
+        uid: r.$id,
+        name: r.username || 'Appwrite Player',
+        handle: r.handle || `@user_${r.$id.substring(0, 5)}`,
+        email: r.email || '',
+        profit: (r.totalProfit ?? 0) + ((r.cash ?? 5000) - 5000),
+        cash: r.cash ?? 5000,
+        gems: r.gems ?? 250,
+        prestige: r.prestigeLevel || 0,
+        title: r.title || (r.isAdmin ? 'Admin' : 'Member'),
+        isUser: false,
+        isSuspended: false,
+        isBanned: false,
+        isAdmin: !!r.isAdmin || r.title?.toLowerCase() === 'owner' || r.title?.toLowerCase() === 'admin',
+        createdAt: r.$createdAt || '2026-05-24T06:40:00Z',
+        activityLog: []
       }))
   ];
 

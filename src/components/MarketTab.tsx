@@ -15,6 +15,7 @@ import {
   ShieldAlert
 } from 'lucide-react';
 import { MemeCoin, UserStats, PortfolioHolding } from '../types';
+import CoinDetailsTab from './CoinDetailsTab';
 
 interface MarketTabProps {
   coins: MemeCoin[];
@@ -128,6 +129,18 @@ export default function MarketTab({
 
     return `M ${points.join(' L ')}`;
   };
+
+  if (selectedCoin) {
+    return (
+      <CoinDetailsTab
+        coin={selectedCoin}
+        userStats={userStats}
+        holdings={holdings}
+        onTradeAction={onTradeAction}
+        onBackToList={() => setSelectedCoin(null)}
+      />
+    );
+  }
 
   return (
     <div className="flex flex-col gap-5 animate-fade-in">
