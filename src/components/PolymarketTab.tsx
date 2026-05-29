@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import {
   Brain,
   Vote,
@@ -12,16 +12,21 @@ import {
   CircleCheck,
   CheckCircle2,
   XCircle,
-  Loader2
-} from 'lucide-react';
-import { PredictionMarket, UserStats } from '../types';
-import { databases } from '../appwrite';
+  Loader2,
+} from "lucide-react";
+import { PredictionMarket, UserStats } from "../types";
+import { databases } from "../appwrite";
 
 interface PolymarketTabProps {
   markets: PredictionMarket[];
   userStats: UserStats;
-  onPlaceBet: (marketId: string, side: 'YES' | 'NO', amount: number) => void;
-  onCreateMarket: (question: string, description: string, category: 'trading' | 'general' | 'arcade', presetDuration: '1 Day' | '1 Week' | '1 Month') => void;
+  onPlaceBet: (marketId: string, side: "YES" | "NO", amount: number) => void;
+  onCreateMarket: (
+    question: string,
+    description: string,
+    category: "trading" | "general" | "arcade",
+    presetDuration: "1 Day" | "1 Week" | "1 Month",
+  ) => void;
   isGeneratingAi?: boolean;
 }
 
@@ -30,20 +35,32 @@ export default function PolymarketTab({
   userStats,
   onPlaceBet,
   onCreateMarket,
-  isGeneratingAi = false
+  isGeneratingAi = false,
 }: PolymarketTabProps) {
-  const [activeSubTab, setActiveSubTab] = useState<'active' | 'resolved'>('active');
-  const [betAmounts, setBetAmounts] = useState<{ [marketId: string]: string }>({});
+  const [activeSubTab, setActiveSubTab] = useState<"active" | "resolved">(
+    "active",
+  );
+  const [betAmounts, setBetAmounts] = useState<{ [marketId: string]: string }>(
+    {},
+  );
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [betFeedback, setBetFeedback] = useState<{ [marketId: string]: { type: 'success' | 'danger'; message: string } }>({});
-  const [extraAppwriteMarkets, setExtraAppwriteMarkets] = useState<PredictionMarket[]>([]);
+  const [betFeedback, setBetFeedback] = useState<{
+    [marketId: string]: { type: "success" | "danger"; message: string };
+  }>({});
+  const [extraAppwriteMarkets, setExtraAppwriteMarkets] = useState<
+    PredictionMarket[]
+  >([]);
 
   // Creation form state
-  const [newQuestion, setNewQuestion] = useState('');
-  const [newDesc, setNewDesc] = useState('');
-  const [newCategory, setNewCategory] = useState<'trading' | 'general' | 'arcade'>('trading');
-  const [newDurationPreset, setNewDurationPreset] = useState<'1 Day' | '1 Week' | '1 Month'>('1 Day');
-  const [aiPromptTopic, setAiPromptTopic] = useState('');
+  const [newQuestion, setNewQuestion] = useState("");
+  const [newDesc, setNewDesc] = useState("");
+  const [newCategory, setNewCategory] = useState<
+    "trading" | "general" | "arcade"
+  >("trading");
+  const [newDurationPreset, setNewDurationPreset] = useState<
+    "1 Day" | "1 Week" | "1 Month"
+  >("1 Day");
+  const [aiPromptTopic, setAiPromptTopic] = useState("");
   const [aiGenerating, setAiGenerating] = useState(false);
 
   // Polls fetching loop inside PolymarketTab mounting
@@ -52,35 +69,41 @@ export default function PolymarketTab({
       try {
         const res = await databases.listDocuments("pumpforge", "polls");
         if (res.documents && res.documents.length > 0) {
-          const appwriteMarkets: PredictionMarket[] = res.documents.map((doc: any) => {
-            const yesPool = parseInt(String(doc.yesVotes ?? 50), 10);
-            const noPool = parseInt(String(doc.noVotes ?? 50), 10);
-            const totalPool = yesPool + noPool;
-            const yesPercentage = totalPool > 0 ? Math.round((yesPool / totalPool) * 100) : 50;
+          const appwriteMarkets: PredictionMarket[] = res.documents.map(
+            (doc: any) => {
+              const yesPool = parseInt(String(doc.yesVotes ?? 50), 10);
+              const noPool = parseInt(String(doc.noVotes ?? 50), 10);
+              const totalPool = yesPool + noPool;
+              const yesPercentage =
+                totalPool > 0 ? Math.round((yesPool / totalPool) * 100) : 50;
 
-            let endTimeStr = doc.expirationTime || 'Within 24 hours';
-            try {
-              if (endTimeStr.includes('T')) {
-                const targetDt = new Date(endTimeStr);
-                endTimeStr = `In ${doc.duration || '1 Day'} (${targetDt.toLocaleDateString()})`;
-              }
-            } catch (_) {}
+              let endTimeStr = doc.expirationTime || "Within 24 hours";
+              try {
+                if (endTimeStr.includes("T")) {
+                  const targetDt = new Date(endTimeStr);
+                  endTimeStr = `In ${doc.duration || "1 Day"} (${targetDt.toLocaleDateString()})`;
+                }
+              } catch (_) {}
 
-            return {
-              id: doc.pollId || doc.$id,
-              question: doc.question || '',
-              description: doc.context || '',
-              yesPool,
-              noPool,
-              yesPercentage,
-              resolved: !!doc.resolved || false,
-              resolvedOutcome: doc.resolvedOutcome === 'null' || !doc.resolvedOutcome ? null : doc.resolvedOutcome,
-              endTime: endTimeStr,
-              category: doc.category || 'general',
-              userBetAmount: 0,
-              userBetSide: null
-            } as PredictionMarket;
-          });
+              return {
+                id: doc.pollId || doc.$id,
+                question: doc.question || "",
+                description: doc.context || "",
+                yesPool,
+                noPool,
+                yesPercentage,
+                resolved: !!doc.resolved || false,
+                resolvedOutcome:
+                  doc.resolvedOutcome === "null" || !doc.resolvedOutcome
+                    ? null
+                    : doc.resolvedOutcome,
+                endTime: endTimeStr,
+                category: doc.category || "general",
+                userBetAmount: 0,
+                userBetSide: null,
+              } as PredictionMarket;
+            },
+          );
           setExtraAppwriteMarkets(appwriteMarkets);
         }
       } catch (err) {
@@ -102,33 +125,53 @@ export default function PolymarketTab({
     return merged;
   }, [markets, extraAppwriteMarkets]);
 
-  const displayedMarkets = allMarkets.filter((m) => (activeSubTab === 'resolved' ? m.resolved : !m.resolved));
+  const displayedMarkets = allMarkets.filter((m) =>
+    activeSubTab === "resolved" ? m.resolved : !m.resolved,
+  );
 
-  const handleBetSubmit = (marketId: string, side: 'YES' | 'NO') => {
+  const handleBetSubmit = (marketId: string, side: "YES" | "NO") => {
     const amtStr = betAmounts[marketId];
     if (!amtStr) return;
     const amount = Number(amtStr);
-    
+
     if (isNaN(amount) || amount <= 0) {
-      setBetFeedback(prev => ({ ...prev, [marketId]: { type: 'danger', message: '❌ Invalid bet amount!' } }));
-      setTimeout(() => setBetFeedback(prev => ({ ...prev, [marketId]: null as any })), 3000);
+      setBetFeedback((prev) => ({
+        ...prev,
+        [marketId]: { type: "danger", message: "❌ Invalid bet amount!" },
+      }));
+      setTimeout(
+        () => setBetFeedback((prev) => ({ ...prev, [marketId]: null as any })),
+        3000,
+      );
       return;
     }
 
     if (amount > userStats.cash) {
-      setBetFeedback(prev => ({ ...prev, [marketId]: { type: 'danger', message: '❌ Insufficient Balance' } }));
-      setTimeout(() => setBetFeedback(prev => ({ ...prev, [marketId]: null as any })), 3000);
+      setBetFeedback((prev) => ({
+        ...prev,
+        [marketId]: { type: "danger", message: "❌ Insufficient Balance" },
+      }));
+      setTimeout(
+        () => setBetFeedback((prev) => ({ ...prev, [marketId]: null as any })),
+        3000,
+      );
       return;
     }
 
     onPlaceBet(marketId, side, amount);
-    
+
     // Set success feedback
-    setBetFeedback(prev => ({ ...prev, [marketId]: { type: 'success', message: '✅ Transaction Success' } }));
-    setTimeout(() => setBetFeedback(prev => ({ ...prev, [marketId]: null as any })), 3000);
-    
+    setBetFeedback((prev) => ({
+      ...prev,
+      [marketId]: { type: "success", message: "✅ Transaction Success" },
+    }));
+    setTimeout(
+      () => setBetFeedback((prev) => ({ ...prev, [marketId]: null as any })),
+      3000,
+    );
+
     // Reset specific bet input amount
-    setBetAmounts((prev) => ({ ...prev, [marketId]: '' }));
+    setBetAmounts((prev) => ({ ...prev, [marketId]: "" }));
   };
 
   const handleCreateMarketLocal = (e: React.FormEvent) => {
@@ -136,22 +179,35 @@ export default function PolymarketTab({
     if (!newQuestion.trim()) return;
 
     if (userStats.cash < 500) {
-      setBetFeedback(prev => ({ ...prev, 'general-creation': { type: 'danger', message: '❌ Insufficient Balance for creation fee ($500).' } }));
-      setTimeout(() => setBetFeedback(prev => ({ ...prev, 'general-creation': null as any })), 4000);
+      setBetFeedback((prev) => ({
+        ...prev,
+        "general-creation": {
+          type: "danger",
+          message: "❌ Insufficient Balance for creation fee ($500).",
+        },
+      }));
+      setTimeout(
+        () =>
+          setBetFeedback((prev) => ({
+            ...prev,
+            "general-creation": null as any,
+          })),
+        4000,
+      );
       return;
     }
 
     onCreateMarket(
       newQuestion.trim(),
-      newDesc.trim() || 'Community prediction market.',
+      newDesc.trim() || "Community prediction market.",
       newCategory,
-      newDurationPreset
+      newDurationPreset,
     );
 
     // Reset fields
-    setNewQuestion('');
-    setNewDesc('');
-    setNewDurationPreset('1 Day');
+    setNewQuestion("");
+    setNewDesc("");
+    setNewDurationPreset("1 Day");
     setShowCreateModal(false);
   };
 
@@ -160,42 +216,48 @@ export default function PolymarketTab({
     setAiGenerating(true);
 
     try {
-      const response = await fetch('/api/generate-hopium', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: aiPromptTopic })
+      const response = await fetch("/api/generate-hopium", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ topic: aiPromptTopic }),
       });
 
       if (response.ok) {
         const data = await response.json();
-        onCreateMarket(data.question, data.description, 'general', '1 Week');
+        onCreateMarket(data.question, data.description, "general", "1 Week");
         setShowCreateModal(false);
-        setAiPromptTopic('');
+        setAiPromptTopic("");
       } else {
         const funnyFallbacks = [
           {
             q: `Will *${aiPromptTopic.toUpperCase()} hit a $5.0M market cap before dev crashes?`,
-            d: `Experts predict ${aiPromptTopic} is either a direct moonshot or absolute vaporware.`
+            d: `Experts predict ${aiPromptTopic} is either a direct moonshot or absolute vaporware.`,
           },
           {
             q: `Will @zeke launch a direct copycat of ${aiPromptTopic} within 24 hours?`,
-            d: `Imitation is the highest form of flattery, or in this case, direct theft.`
+            d: `Imitation is the highest form of flattery, or in this case, direct theft.`,
           },
           {
             q: `Will users buy a total of 100M tokens of ${aiPromptTopic} before paperhanding?`,
-            d: `Panic selling might trigger as soon as the price dips 2%.`
-          }
+            d: `Panic selling might trigger as soon as the price dips 2%.`,
+          },
         ];
-        const randomItem = funnyFallbacks[Math.floor(Math.random() * funnyFallbacks.length)];
-        onCreateMarket(randomItem.q, randomItem.d, 'trading', '1 Week');
+        const randomItem =
+          funnyFallbacks[Math.floor(Math.random() * funnyFallbacks.length)];
+        onCreateMarket(randomItem.q, randomItem.d, "trading", "1 Week");
         setShowCreateModal(false);
-        setAiPromptTopic('');
+        setAiPromptTopic("");
       }
     } catch (e) {
       const fallbackQ = `Will ${aiPromptTopic.toUpperCase()} coin face a delist by next Monday?`;
-      onCreateMarket(fallbackQ, 'Degen predictive analytics based on absolute rumors.', 'trading', '1 Week');
+      onCreateMarket(
+        fallbackQ,
+        "Degen predictive analytics based on absolute rumors.",
+        "trading",
+        "1 Week",
+      );
       setShowCreateModal(false);
-      setAiPromptTopic('');
+      setAiPromptTopic("");
     } finally {
       setAiGenerating(false);
     }
@@ -207,7 +269,8 @@ export default function PolymarketTab({
       <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4 bg-zinc-90 w-full">
         <div className="flex flex-col gap-1.5">
           <h2 className="text-sm font-extrabold text-zinc-400 font-mono tracking-widest uppercase flex items-center gap-1.5 leading-none">
-            <Brain className="text-orange-500 w-4 h-4" /> Polymarket Prediction Markets
+            <Brain className="text-orange-500 w-4 h-4" /> Polymarket Prediction
+            Markets
           </h2>
           <span className="text-xs text-zinc-500 leading-none">
             Predict market trends, arcade actions, and droll community outcomes.
@@ -217,17 +280,21 @@ export default function PolymarketTab({
           {/* Active/Resolved Filter */}
           <div className="flex bg-zinc-950 p-1 rounded-xl self-start border border-zinc-900/60 font-mono text-[10px] font-bold uppercase shrink-0">
             <button
-              onClick={() => setActiveSubTab('active')}
+              onClick={() => setActiveSubTab("active")}
               className={`px-3 py-1.5 rounded-lg transition-colors ${
-                activeSubTab === 'active' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-300'
+                activeSubTab === "active"
+                  ? "bg-zinc-800 text-white"
+                  : "text-zinc-500 hover:text-zinc-300"
               }`}
             >
               Active Markets
             </button>
             <button
-              onClick={() => setActiveSubTab('resolved')}
+              onClick={() => setActiveSubTab("resolved")}
               className={`px-3 py-1.5 rounded-lg transition-colors ${
-                activeSubTab === 'resolved' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-300'
+                activeSubTab === "resolved"
+                  ? "bg-zinc-800 text-white"
+                  : "text-zinc-500 hover:text-zinc-300"
               }`}
             >
               Resolved History
@@ -248,20 +315,28 @@ export default function PolymarketTab({
         {displayedMarkets.length === 0 ? (
           <div className="col-span-1 md:col-span-2 bg-zinc-900 p-12 border border-zinc-800 rounded-2xl flex flex-col items-center justify-center text-center">
             <QuestionIcon className="w-10 h-10 text-zinc-600 mb-2" />
-            <p className="text-xs font-mono text-zinc-400">No prediction markets listed here.</p>
-            <span className="text-[10px] text-zinc-500 font-mono mt-1">Create one using the button above!</span>
+            <p className="text-xs font-mono text-zinc-400">
+              No prediction markets listed here.
+            </p>
+            <span className="text-[10px] text-zinc-500 font-mono mt-1">
+              Create one using the button above!
+            </span>
           </div>
         ) : (
           displayedMarkets.map((market) => {
             const totalPool = market.yesPool + market.noPool;
-            const yesPct = totalPool > 0 ? (market.yesPool / totalPool) * 100 : 50;
-            const noPct = totalPool > 0 ? (market.noPool / totalPool) * 100 : 50;
+            const yesPct =
+              totalPool > 0 ? (market.yesPool / totalPool) * 100 : 50;
+            const noPct =
+              totalPool > 0 ? (market.noPool / totalPool) * 100 : 50;
 
             return (
               <div
                 key={market.id}
                 className={`bg-zinc-900 border rounded-2xl p-5 flex flex-col justify-between transition-colors ${
-                  market.resolved ? 'border-zinc-950 opacity-70 bg-zinc-950/20' : 'border-zinc-850'
+                  market.resolved
+                    ? "border-zinc-950 opacity-70 bg-zinc-950/20"
+                    : "border-zinc-850"
                 }`}
               >
                 <div className="flex flex-col gap-2">
@@ -290,12 +365,22 @@ export default function PolymarketTab({
                 {/* Pool Slider bar */}
                 <div className="mt-4 flex flex-col gap-1.5">
                   <div className="flex justify-between font-mono text-[10px] font-bold select-none text-zinc-400">
-                    <span className="text-emerald-400">YES ({yesPct.toFixed(0)}%)</span>
-                    <span className="text-rose-450">NO ({noPct.toFixed(0)}%)</span>
+                    <span className="text-emerald-400">
+                      YES ({yesPct.toFixed(0)}%)
+                    </span>
+                    <span className="text-rose-450">
+                      NO ({noPct.toFixed(0)}%)
+                    </span>
                   </div>
                   <div className="w-full h-2.5 rounded-full bg-zinc-950 overflow-hidden flex">
-                    <div className="bg-emerald-500 h-full transition-all duration-300" style={{ width: `${yesPct}%` }} />
-                    <div className="bg-rose-500 h-full transition-all duration-300" style={{ width: `${noPct}%` }} />
+                    <div
+                      className="bg-emerald-500 h-full transition-all duration-300"
+                      style={{ width: `${yesPct}%` }}
+                    />
+                    <div
+                      className="bg-rose-500 h-full transition-all duration-300"
+                      style={{ width: `${noPct}%` }}
+                    />
                   </div>
                   <div className="flex justify-between font-mono text-[9px] text-zinc-500">
                     <span>Pool: ${market.yesPool.toFixed(0)}</span>
@@ -308,22 +393,33 @@ export default function PolymarketTab({
                   {market.resolved ? (
                     <div className="flex items-center justify-between font-mono text-xs">
                       <div className="flex flex-col">
-                        <span className="text-[9px] text-zinc-500 uppercase">Correct Side</span>
-                        <span className={`font-black uppercase text-[13px] ${
-                          market.resolvedOutcome === 'YES' ? 'text-emerald-400' : 'text-rose-400'
-                        }`}>
+                        <span className="text-[9px] text-zinc-500 uppercase">
+                          Correct Side
+                        </span>
+                        <span
+                          className={`font-black uppercase text-[13px] ${
+                            market.resolvedOutcome === "YES"
+                              ? "text-emerald-400"
+                              : "text-rose-400"
+                          }`}
+                        >
                           {market.resolvedOutcome}
                         </span>
                       </div>
                       {market.userBetSide && (
                         <div className="flex flex-col items-end">
-                          <span className="text-[9px] text-zinc-500 uppercase">Your Position</span>
-                          <span className={`font-bold uppercase text-[11px] ${
-                            market.userBetSide === market.resolvedOutcome
-                              ? 'text-emerald-400 bg-emerald-950/20 px-1 border border-emerald-900/40 rounded'
-                              : 'text-zinc-500 line-through'
-                          }`}>
-                            {market.userBetSide} bet of ${market.userBetAmount.toFixed(0)}
+                          <span className="text-[9px] text-zinc-500 uppercase">
+                            Your Position
+                          </span>
+                          <span
+                            className={`font-bold uppercase text-[11px] ${
+                              market.userBetSide === market.resolvedOutcome
+                                ? "text-emerald-400 bg-emerald-950/20 px-1 border border-emerald-900/40 rounded"
+                                : "text-zinc-500 line-through"
+                            }`}
+                          >
+                            {market.userBetSide} bet of $
+                            {market.userBetAmount.toFixed(0)}
                           </span>
                         </div>
                       )}
@@ -332,9 +428,21 @@ export default function PolymarketTab({
                     <div className="flex flex-col gap-2.5">
                       {market.userBetSide ? (
                         <div className="bg-zinc-950/60 p-2.5 border border-zinc-850 rounded-xl font-mono text-xs flex justify-between items-center">
-                          <span className="text-zinc-500">My prediction ticket:</span>
+                          <span className="text-zinc-500">
+                            My prediction ticket:
+                          </span>
                           <span className="font-extrabold text-zinc-300">
-                            Placed <strong className={market.userBetSide === 'YES' ? 'text-emerald-400' : 'text-rose-400'}>{market.userBetSide}</strong> bet of ${market.userBetAmount.toFixed(0)}
+                            Placed{" "}
+                            <strong
+                              className={
+                                market.userBetSide === "YES"
+                                  ? "text-emerald-400"
+                                  : "text-rose-400"
+                              }
+                            >
+                              {market.userBetSide}
+                            </strong>{" "}
+                            bet of ${market.userBetAmount.toFixed(0)}
                           </span>
                         </div>
                       ) : (
@@ -344,10 +452,13 @@ export default function PolymarketTab({
                               type="number"
                               min="1"
                               placeholder="Bet Cash amount..."
-                              value={betAmounts[market.id] || ''}
+                              value={betAmounts[market.id] || ""}
                               onChange={(e) => {
                                 const val = e.target.value;
-                                setBetAmounts((prev) => ({ ...prev, [market.id]: val }));
+                                setBetAmounts((prev) => ({
+                                  ...prev,
+                                  [market.id]: val,
+                                }));
                               }}
                               className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-orange-500"
                             />
@@ -357,24 +468,26 @@ export default function PolymarketTab({
                           </div>
                           <div className="grid grid-cols-2 gap-2 font-mono text-[10px] font-bold uppercase">
                             <button
-                              onClick={() => handleBetSubmit(market.id, 'YES')}
+                              onClick={() => handleBetSubmit(market.id, "YES")}
                               className="bg-emerald-950/30 border border-emerald-900/60 hover:bg-emerald-900 hover:text-white px-3 py-2 text-emerald-400 rounded-xl transition-all"
                             >
                               Predict YES
                             </button>
                             <button
-                              onClick={() => handleBetSubmit(market.id, 'NO')}
+                              onClick={() => handleBetSubmit(market.id, "NO")}
                               className="bg-rose-950/20 border border-rose-900/60 hover:bg-rose-900 hover:text-white px-3 py-2 text-rose-400 rounded-xl transition-all"
                             >
                               Predict NO
                             </button>
                           </div>
                           {betFeedback[market.id] && (
-                            <div className={`text-[11px] font-mono font-bold text-center mt-1 p-2 rounded-xl border ${
-                              betFeedback[market.id].type === 'success' 
-                                ? 'bg-emerald-950/40 border-emerald-900/60 text-emerald-400 shadow-sm' 
-                                : 'bg-rose-955/35 border-rose-900/50 text-rose-450 shadow-sm'
-                            }`}>
+                            <div
+                              className={`text-[11px] font-mono font-bold text-center mt-1 p-2 rounded-xl border ${
+                                betFeedback[market.id].type === "success"
+                                  ? "bg-emerald-950/40 border-emerald-900/60 text-emerald-400 shadow-sm"
+                                  : "bg-rose-955/35 border-rose-900/50 text-rose-450 shadow-sm"
+                              }`}
+                            >
                               {betFeedback[market.id].message}
                             </div>
                           )}
@@ -409,6 +522,7 @@ export default function PolymarketTab({
             <div className="flex flex-col gap-4">
               <div className="bg-zinc-950/80 p-3 rounded-xl border border-zinc-850 flex flex-col gap-2">
                 <span className="text-[9.5px] uppercase font-mono tracking-widest font-extrabold text-cyan-400 flex items-center gap-1">
+                  <Sparkles className="w-3.5 h-3.5 animate-pulse" /> Brainstorm
                 </span>
                 <div className="flex gap-2">
                   <input
@@ -424,6 +538,10 @@ export default function PolymarketTab({
                     disabled={aiGenerating || !aiPromptTopic.trim()}
                     className="bg-cyan-600 hover:bg-cyan-500 disabled:bg-zinc-800 disabled:text-zinc-650 cursor-pointer disabled:cursor-not-allowed font-bold text-white px-3 rounded-xl text-xs flex items-center gap-1 shrink-0"
                   >
+                    {aiGenerating ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                    )}
                   </button>
                 </div>
               </div>
@@ -435,7 +553,10 @@ export default function PolymarketTab({
               </div>
 
               {/* Option B: Standard Manual creation fields */}
-              <form onSubmit={handleCreateMarketLocal} className="flex flex-col gap-3 font-mono text-xs">
+              <form
+                onSubmit={handleCreateMarketLocal}
+                className="flex flex-col gap-3 font-mono text-xs"
+              >
                 <div className="flex flex-col gap-1">
                   <label className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
                     Prediction Question
@@ -484,7 +605,9 @@ export default function PolymarketTab({
                     </label>
                     <select
                       value={newDurationPreset}
-                      onChange={(e) => setNewDurationPreset(e.target.value as any)}
+                      onChange={(e) =>
+                        setNewDurationPreset(e.target.value as any)
+                      }
                       className="bg-zinc-950 border border-zinc-800 focus:border-orange-500 rounded-xl px-3 py-2 text-xs text-zinc-300 focus:outline-none"
                     >
                       <option value="1 Day">1 Day</option>
@@ -494,13 +617,15 @@ export default function PolymarketTab({
                   </div>
                 </div>
 
-                {betFeedback['general-creation'] && (
-                  <div className={`text-[11px] font-mono p-2 rounded-xl border text-center ${
-                    betFeedback['general-creation'].type === 'success'
-                      ? 'bg-emerald-950/40 border-emerald-900/60 text-emerald-100 font-bold'
-                      : 'bg-rose-955/35 border-rose-900/50 text-rose-300 font-bold'
-                  }`}>
-                    {betFeedback['general-creation'].message}
+                {betFeedback["general-creation"] && (
+                  <div
+                    className={`text-[11px] font-mono p-2 rounded-xl border text-center ${
+                      betFeedback["general-creation"].type === "success"
+                        ? "bg-emerald-950/40 border-emerald-900/60 text-emerald-100 font-bold"
+                        : "bg-rose-955/35 border-rose-900/50 text-rose-300 font-bold"
+                    }`}
+                  >
+                    {betFeedback["general-creation"].message}
                   </div>
                 )}
 
