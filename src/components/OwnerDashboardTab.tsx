@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAppContext } from "../context/AppContext";
 import {
   ShieldAlert,
   Coins,
@@ -48,8 +50,6 @@ import {
 import { databases } from "../appwrite";
 
 interface OwnerDashboardProps {
-  userStats: UserStats;
-  onUpdateStats: (updater: (stats: UserStats) => void) => void;
   coins: MemeCoin[];
   setCoins: React.Dispatch<React.SetStateAction<MemeCoin[]>>;
   onAddNotification: (
@@ -57,7 +57,6 @@ interface OwnerDashboardProps {
     message: string,
     type?: "info" | "achievement" | "trade" | "crash",
   ) => void;
-  setActiveTab?: (tab: ActiveTab) => void;
   simulatedPlayers?: SimulatedPlayer[];
   setSimulatedPlayers?: React.Dispatch<React.SetStateAction<SimulatedPlayer[]>>;
   liveTrades?: LiveTrade[];
@@ -66,18 +65,29 @@ interface OwnerDashboardProps {
 }
 
 export default function OwnerDashboardTab({
-  userStats,
-  onUpdateStats,
   coins,
   setCoins,
   onAddNotification,
-  setActiveTab,
   simulatedPlayers = [],
   setSimulatedPlayers,
   liveTrades = [],
   registeredUsers = [],
   currentUserEmail,
 }: OwnerDashboardProps) {
+  const navigate = useNavigate();
+  const { userStats, cash, setCash, gems, setGems, userId } = useAppContext();
+
+  const onUpdateStats = (updater: (stats: UserStats) => void) => {
+    // Legacy support since we migrated to AppContext
+    const newStats = { ...userStats };
+    updater(newStats);
+    setCash(newStats.cash);
+    setGems(newStats.gems);
+    if (userId) {
+      databases.updateDocument("pumpforge", "users", userId, { cash: newStats.cash, gems: newStats.gems, prestigeLevel: newStats.prestigeLevel });
+    }
+  };
+
   // Local state for creator controls
   const [customCash, setCustomCash] = useState<number>(50000);
   const [customGems, setCustomGems] = useState<number>(500);

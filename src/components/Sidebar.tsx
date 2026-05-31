@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   Home,
   TrendingUp,
@@ -43,8 +44,6 @@ import {
 } from "../types";
 
 interface SidebarProps {
-  activeTab: ActiveTab;
-  setActiveTab: (tab: ActiveTab) => void;
   userStats: UserStats;
   onClaimDailyReward: () => void;
   liveTrades: LiveTrade[];
@@ -61,8 +60,6 @@ interface SidebarProps {
 }
 
 export default function Sidebar({
-  activeTab,
-  setActiveTab,
   userStats,
   onClaimDailyReward,
   liveTrades,
@@ -77,6 +74,10 @@ export default function Sidebar({
   holdings = [],
   onOpenBugReportModal,
 }: SidebarProps) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const activeTab = location.pathname === '/' ? 'home' : location.pathname.substring(1);
+
   const [isOpen, setIsOpen] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false); // Bottom user profile popover
   const [promoCode, setPromoCode] = useState("");
@@ -179,7 +180,7 @@ export default function Sidebar({
       {/* Mobile Header */}
       <header className="flex md:hidden bg-zinc-950 border-b border-zinc-900 px-4 py-3 sticky top-0 z-40 items-center justify-between">
         <div
-          onClick={() => setActiveTab("home")}
+          onClick={() => navigate("/")}
           className="flex items-center gap-2 cursor-pointer select-none active:opacity-80 transition-opacity"
         >
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-rose-500 to-red-650 flex items-center justify-center text-white shadow-lg shadow-rose-950/40">
@@ -215,7 +216,7 @@ export default function Sidebar({
       >
         {/* Logo Heading: crashPLAY */}
         <div
-          onClick={() => setActiveTab("home")}
+          onClick={() => navigate("/")}
           className="p-5 hidden md:flex items-center gap-3 overflow-hidden select-none border-b border-zinc-900/60 cursor-pointer hover:opacity-95 active:opacity-80 transition-opacity shrink-0 animate-fade-in"
         >
           <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-rose-650 to-red-600 flex items-center justify-center text-white shadow-lg shadow-rose-950/30">
@@ -242,7 +243,7 @@ export default function Sidebar({
                   key={item.id}
                   id={`nav-item-${item.id}`}
                   onClick={() => {
-                    setActiveTab(item.id as ActiveTab);
+                    navigate(item.id === "home" ? "/" : `/${item.id}`);
                     setIsOpen(false);
                   }}
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg font-medium text-sm transition-all duration-205 select-none ${
@@ -314,7 +315,7 @@ export default function Sidebar({
                 </span>
                 <span
                   className="text-[8px] text-zinc-655 font-mono hover:underline cursor-pointer"
-                  onClick={() => setActiveTab("home")}
+                  onClick={() => navigate("/")}
                 >
                   View All
                 </span>
@@ -445,7 +446,7 @@ export default function Sidebar({
                   {/* Popover links */}
                   <button
                     onClick={() => {
-                      setActiveTab("profile");
+                      navigate("/profile");
                       setShowDropdown(false);
                       setIsOpen(false);
                     }}
@@ -457,7 +458,7 @@ export default function Sidebar({
 
                   <button
                     onClick={() => {
-                      setActiveTab("settings");
+                      navigate("/settings");
                       setShowDropdown(false);
                       setIsOpen(false);
                     }}

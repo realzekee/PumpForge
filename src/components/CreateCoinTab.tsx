@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useAppContext } from "../context/AppContext";
 import {
   PlusCircle,
   HelpCircle,
@@ -14,20 +15,15 @@ import { databases } from "../appwrite";
 import { ID } from "appwrite";
 
 interface CreateCoinProps {
-  userStats: UserStats;
-  currentUser: any;
   setCoins: React.Dispatch<React.SetStateAction<any[]>>;
-  setUserStats: React.Dispatch<React.SetStateAction<UserStats>>;
   coins: any[];
 }
 
 export default function CreateCoinTab({
-  userStats,
-  currentUser,
   setCoins,
-  setUserStats,
   coins,
 }: CreateCoinProps) {
+  const { userStats, currentUser, cash, setCash, userId } = useAppContext();
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
   const [desc, setDesc] = useState("");
@@ -147,11 +143,10 @@ export default function CreateCoinTab({
       };
 
       setCoins((prev) => [newMeme, ...prev]);
-      setUserStats((prev) => ({
-        ...prev,
-        cash: newCash,
-        coinsCreatedCount: prev.coinsCreatedCount + 1,
-      }));
+      setCash(newCash);
+      if (userId) {
+         databases.updateDocument("pumpforge", "users", userId, { cash: newCash, coins: (userStats.coinsCreatedCount || 0) + 1 });
+      }
 
       setSuccess(true);
       setName("");

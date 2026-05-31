@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   TrendingUp,
   TrendingDown,
@@ -22,7 +23,6 @@ interface HomeTabProps {
   userStats: UserStats;
   achievements: Achievement[];
   onClaimAchievement: (id: string) => void;
-  setActiveTab: (tab: any) => void;
   onTradeCoin: (coinId: string) => void;
 }
 
@@ -31,9 +31,9 @@ export default function HomeTab({
   userStats,
   achievements,
   onClaimAchievement,
-  setActiveTab,
   onTradeCoin
 }: HomeTabProps) {
+  const navigate = useNavigate();
   // Sort coins by marketcap or high price changes
   const hotCoins = [...coins].sort((a, b) => b.change24h - a.change24h).slice(0, 3);
 
@@ -132,13 +132,13 @@ export default function HomeTab({
 
           <div className="flex items-center gap-3 mt-2 justify-center md:justify-start">
             <button
-              onClick={() => setActiveTab('market')}
+              onClick={() => navigate('/market')}
               className="px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-xs font-bold text-white transition-all flex items-center gap-1 shadow-lg shadow-orange-950/20 active:scale-98"
             >
               Start Trading <ArrowRight className="w-3.5 h-3.5" />
             </button>
             <button
-              onClick={() => setActiveTab('create-coin')}
+              onClick={() => navigate('/create-coin')}
               className="px-4 py-2 rounded-xl bg-zinc-950 border border-zinc-800 hover:bg-zinc-900 text-xs font-bold text-zinc-300 transition-all flex items-center gap-1"
             >
               Launch Coin <PlusCircle className="w-3.5 h-3.5 text-orange-400" />
@@ -174,7 +174,7 @@ export default function HomeTab({
               <Flame className="w-4 h-4 text-orange-500" /> Hot Gainers
             </h3>
             <button
-              onClick={() => setActiveTab('market')}
+              onClick={() => navigate('/market')}
               className="text-xs text-orange-500 hover:text-orange-400 font-semibold flex items-center gap-1"
             >
               See all <ArrowRight className="w-3 h-3" />
@@ -226,7 +226,7 @@ export default function HomeTab({
               </div>
             </div>
             <button
-              onClick={() => setActiveTab('create-coin')}
+              onClick={() => navigate('/create-coin')}
               className="bg-teal-600 hover:bg-teal-500 active:scale-98 text-white font-bold py-2 px-3 rounded-xl text-xs transition-colors shrink-0"
             >
               Launch Coin
@@ -243,7 +243,7 @@ export default function HomeTab({
                 <Award className="w-4 h-4 text-orange-500" /> Milestones & Badges
               </h3>
               <button
-                onClick={() => setActiveTab('achievements')}
+                onClick={() => navigate('/achievements')}
                 className="text-[10px] text-orange-400 hover:text-orange-300 font-extrabold uppercase tracking-wider font-mono bg-orange-950/40 px-2 py-1 rounded border border-orange-900/40 transition-colors cursor-pointer"
               >
                 View Details

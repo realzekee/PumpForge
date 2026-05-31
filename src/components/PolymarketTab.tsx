@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useAppContext } from "../context/AppContext";
 import {
   Brain,
   Vote,
@@ -19,7 +20,6 @@ import { databases } from "../appwrite";
 
 interface PolymarketTabProps {
   markets: PredictionMarket[];
-  userStats: UserStats;
   onPlaceBet: (marketId: string, side: "YES" | "NO", amount: number) => void;
   onCreateMarket: (
     question: string,
@@ -32,11 +32,11 @@ interface PolymarketTabProps {
 
 export default function PolymarketTab({
   markets,
-  userStats,
   onPlaceBet,
   onCreateMarket,
   isGeneratingAi = false,
 }: PolymarketTabProps) {
+  const { userStats } = useAppContext();
   const [activeSubTab, setActiveSubTab] = useState<"active" | "resolved">(
     "active",
   );
