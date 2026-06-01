@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { Routes, Route, useNavigate } from "react-router-dom";
+import { toast } from 'sonner';
 import Sidebar from "./components/Sidebar";
 import HomeTab from "./components/HomeTab";
 import MarketTab from "./components/MarketTab";
@@ -554,6 +555,9 @@ export default function App() {
           );
           await account.createSession(urlUserId, urlSecret);
           console.log("⚡ Manual Session creation request completed.");
+          // Mirror session validation flag to bypass Firefox ETP dropping the third-party cookie
+          localStorage.setItem("pf_session_valid", "true");
+          localStorage.setItem("pf_fallback_userId", urlUserId);
         } catch (sessionErr: any) {
           console.error(
             "Forced manual session activation from URL failed:",
@@ -1334,13 +1338,17 @@ export default function App() {
   // DAILY COOLDOWN INTERVAL WORKER
   useEffect(() => {
     const updateDailyCooldown = () => {
-      if (!userStats.lastDailyRewardClaim) {
+      // Don't crash if userStats isn't loaded yet
+      if (!userStats) return;
+
+      const lastClaim = userStats.lastClaimed;
+      if (!lastClaim) {
         setIsDailyRewardAvailable(true);
         setDailyRewardTimer("Claim Available!");
         return;
       }
 
-      const claimTime = new Date(userStats.lastDailyRewardClaim).getTime();
+      const claimTime = new Date(lastClaim).getTime();
       const now = new Date().getTime();
       const dif = 24 * 60 * 60 * 1000 - (now - claimTime);
 
@@ -1349,8 +1357,8 @@ export default function App() {
         setDailyRewardTimer("Claim Available!");
       } else {
         setIsDailyRewardAvailable(false);
-        const hrs = Math.floor(dif / (1000 * 60 * 65));
-        const mins = Math.floor((dif % (1000 * 60 * 60)) / (1000 * 65));
+        const hrs = Math.floor(dif / (1000 * 60 * 60));
+        const mins = Math.floor((dif % (1000 * 60 * 60)) / (1000 * 60));
         setDailyRewardTimer(`Next in ${hrs}h ${mins}m`);
       }
     };
@@ -1358,7 +1366,7 @@ export default function App() {
     updateDailyCooldown();
     const timer = setInterval(updateDailyCooldown, 45000); // refresh timer check
     return () => clearInterval(timer);
-  }, [userStats.lastDailyRewardClaim]);
+  }, [userStats?.lastClaimed]);
 
   // Update specific current achievement trackers whenever statistics change
   useEffect(() => {
@@ -1497,51 +1505,48 @@ export default function App() {
       return;
     }
 
-    if (!isDailyRewardAvailable) return;
+    const lastClaim = userStats.lastClaimed;
+    if (lastClaim) {
+      const claimTime = new Date(lastClaim).getTime();
+      const now = new Date().getTime();
+      const dif = 24 * 60 * 60 * 1000 - (now - claimTime);
+      if (dif > 0) {
+        toast.error("Daily reward is not available yet. Please wait.");
+        return;
+      }
+    }
 
     // Daily claim yields $1200 + 25% for each prestige level
-    const mult = 1 + userStats.prestigeLevel * 0.25;
+    const mult = 1 + (userStats.prestigeLevel || 0) * 0.25;
     const cashYield = Math.floor(1200 * mult);
 
     const nextClaimTime = new Date().toISOString();
-    const nextCash = userStats.cash + cashYield;
+    const nextCash = (userStats.cash || 5000) + cashYield;
 
-    if (currentUser) {
-      try {
-        await updateDoc(doc(db, "users", currentUser.uid), {
+    try {
+      if (currentUser.$id) {
+        await databases.updateDocument("pumpforge", "users", currentUser.$id, {
           cash: Number(nextCash.toFixed(2)),
-          lastDailyRewardClaim: nextClaimTime,
+          lastClaimed: nextClaimTime,
         });
-
-        setUserStats((prev) => ({
-          ...prev,
-          cash: nextCash,
-          lastDailyRewardClaim: nextClaimTime,
-        }));
-      } catch (e) {
-        handleFirestoreError(
-          e,
-          OperationType.UPDATE,
-          `users/${currentUser.uid}`,
-        );
       }
-    } else {
+
       setUserStats((prev) => ({
         ...prev,
-        cash: prev.cash + cashYield,
-        lastDailyRewardClaim: nextClaimTime,
+        cash: nextCash,
+        lastClaimed: nextClaimTime,
       }));
-    }
 
-    onAddNotification(
-      "Daily claimed",
-      `Gained $${cashYield.toLocaleString()} cash reward (Includes prestige mult)!`,
-      "info",
-    );
-    setShowDailyToast(true);
-    setTimeout(() => {
-      setShowDailyToast(false);
-    }, 8000);
+      toast.success(`Claimed $${cashYield.toLocaleString()} daily reward!`);
+      onAddNotification(
+        "Daily claimed",
+        `Gained $${cashYield.toLocaleString()} cash reward (Includes prestige mult)!`,
+        "info",
+      );
+    } catch (e: any) {
+      console.error("Daily claim Appwrite error:", e);
+      toast.error(`Error claiming reward: ${e.message}`);
+    }
   };
 
   const tradeAction = async (

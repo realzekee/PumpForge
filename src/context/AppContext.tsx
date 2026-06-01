@@ -34,8 +34,38 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setCash(doc.cash ?? 5000);
         setGems(doc.gems ?? 90);
         setPrestigeLevel(doc.prestigeLevel ?? 0);
-      } catch (e) {
-        console.error("Appwrite init error in context:", e);
+        
+        // Mirror session validation flag to bypass Firefox ETP dropping the third-party cookie
+        localStorage.setItem("pf_session_valid", "true");
+        localStorage.setItem("pf_fallback_userId", user.$id);
+      } catch (e: any) {
+        console.warn("Appwrite init error in context (possible Firefox ETP):", e);
+        if (e?.code === 403) {
+            import('sonner').then(({ toast }) => {
+                toast.error("Appwrite Permission Denied (403): Check your Security Roles or Collection Permissions in the console.");
+            });
+        }
+        
+        // Firefox ETP fallback hydration
+        const isSessionValid = localStorage.getItem("pf_session_valid");
+        const fallbackId = localStorage.getItem("pf_fallback_userId");
+        if (isSessionValid === "true" && fallbackId) {
+          console.log("Hydrating user state from Firefox ETP fallback");
+          try {
+            const doc = await databases.getDocument("pumpforge", "users", fallbackId);
+            setUserStats(doc);
+            setCash(doc.cash ?? 5000);
+            setGems(doc.gems ?? 90);
+            setPrestigeLevel(doc.prestigeLevel ?? 0);
+            setUserId(fallbackId);
+            // Reconstruct minimal user to keep the app working
+            setCurrentUser({ $id: fallbackId, email: doc.email || "", name: doc.username || "Player" });
+          } catch (fallbackErr) {
+            console.error("ETP hydration also failed:", fallbackErr);
+            localStorage.removeItem("pf_session_valid");
+            localStorage.removeItem("pf_fallback_userId");
+          }
+        }
       }
     };
     initAppwrite();

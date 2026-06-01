@@ -29,6 +29,7 @@ export interface UserStats {
   coinsCreatedCount: number;
   tradesCount: number;
   lastDailyRewardClaim?: string | null; // ISO date or null when not claimed yet
+  lastClaimed?: string | null; 
   createdAt?: string; // Account registration ISO date
   isSuspended?: boolean;
   isBanned?: boolean;

@@ -64,6 +64,8 @@ interface OwnerDashboardProps {
   currentUserEmail?: string;
 }
 
+import { useQuery } from '@tanstack/react-query';
+
 export default function OwnerDashboardTab({
   coins,
   setCoins,
@@ -76,6 +78,24 @@ export default function OwnerDashboardTab({
 }: OwnerDashboardProps) {
   const navigate = useNavigate();
   const { userStats, cash, setCash, gems, setGems, userId } = useAppContext();
+
+  const { data: usersQueryData = [], isLoading: isUsersLoading, isError: isUsersError, error: usersError } = useQuery({
+    queryKey: ['registeredUsers'],
+    queryFn: async () => {
+      const res = await databases.listDocuments("pumpforge", "users");
+      return res.documents;
+    }
+  });
+
+  useEffect(() => {
+    if (isUsersError && (usersError as any)?.code === 403) {
+      import('sonner').then(({ toast }) => {
+        toast.error("Owner Dashboard Error (403): You don't have permission to list Appwrite users.");
+      });
+    }
+  }, [isUsersError, usersError]);
+
+  const appwriteUsers = usersQueryData;
 
   const onUpdateStats = (updater: (stats: UserStats) => void) => {
     // Legacy support since we migrated to AppContext
@@ -91,7 +111,7 @@ export default function OwnerDashboardTab({
   // Local state for creator controls
   const [customCash, setCustomCash] = useState<number>(50000);
   const [customGems, setCustomGems] = useState<number>(500);
-  const [appwriteUsers, setAppwriteUsers] = useState<any[]>([]);
+
 
   const [alertTitle, setAlertTitle] = useState<string>(
     "🚨 BLACK SWAN DETECTED",
@@ -117,18 +137,6 @@ export default function OwnerDashboardTab({
 
   // Directory filter of players
   const [searchQuery, setSearchQuery] = useState<string>("");
-
-  useEffect(() => {
-    const fetchAppwriteUsers = async () => {
-      try {
-        const res = await databases.listDocuments("pumpforge", "users");
-        setAppwriteUsers(res.documents);
-      } catch (err) {
-        console.error("Owner Dashboard appwrite users list error:", err);
-      }
-    };
-    fetchAppwriteUsers();
-  }, [searchQuery]);
 
   // Custom suspension duration (in days)
   const [suspendDurationDays, setSuspendDurationDays] = useState<number>(1);
@@ -1667,7 +1675,15 @@ export default function OwnerDashboardTab({
 
         {/* Profiles Admin List */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[420px] overflow-y-auto pr-1">
-          {filteredUsers.length === 0 ? (
+          {isUsersLoading ? (
+            <div className="md:col-span-2 text-center py-8 text-xs text-zinc-500 bg-zinc-950/60 rounded-xl border border-zinc-800 border-dashed animate-pulse">
+              Loading player data directory...
+            </div>
+          ) : isUsersError ? (
+             <div className="md:col-span-2 text-center py-8 text-xs text-rose-500 bg-rose-950/20 rounded-xl border border-rose-900 border-dashed">
+              Failed to load Appwrite users. Check roles and connection.
+            </div>
+          ) : filteredUsers.length === 0 ? (
             <div className="md:col-span-2 text-center py-8 text-xs text-zinc-650 bg-zinc-950/60 rounded-xl border border-zinc-800 border-dashed">
               No sandboxed players matching query.
             </div>
