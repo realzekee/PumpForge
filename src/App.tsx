@@ -603,14 +603,32 @@ export default function App() {
             "Standard account.get() failed. Active Appwrite session not detected.",
             getErr,
           );
+          // Chrome 3rd-party cookie fallback hydration
+          const isSessionValid = localStorage.getItem("pf_session_valid");
+          const fallbackId = localStorage.getItem("pf_fallback_userId");
+          if (isSessionValid === "true" && fallbackId) {
+            console.log(
+              "Hydrating minimal user from localStorage fallback in App.tsx",
+            );
+            user = {
+              $id: fallbackId,
+              email: "", // We might not have it, but we can bypass the null check
+              name: "Player",
+            };
+          }
         }
 
         if (user) {
-          const isOwnerEmail =
-            user.email === "realzekeee@gmail.com" ||
-            user.email === "realzekee@gmail.com";
+          let isOwnerEmail = false;
+          if (user.email) {
+            isOwnerEmail =
+              user.email === "realzekeee@gmail.com" ||
+              user.email === "realzekee@gmail.com";
+          }
           const finalUsername =
-            user.name || user.email.split("@")[0] || "Appwrite Player";
+            user.name ||
+            (user.email ? user.email.split("@")[0] : "Appwrite Player") ||
+            "Appwrite Player";
           const finalHandle =
             "@" + finalUsername.toLowerCase().replace(/[^a-z0-9]/g, "");
 
@@ -655,8 +673,7 @@ export default function App() {
           const mappedUser = {
             ...user,
             uid: user.$id,
-            displayName:
-              user.name || user.email.split("@")[0] || "Appwrite Player",
+            displayName: finalUsername,
           };
 
           const finalUserStats = {
@@ -1070,7 +1087,8 @@ export default function App() {
       safeStorage.removeItem("cached_appwrite_stats");
       account.createOAuth2Session(
         "google" as any,
-        "https://pump-forge-zeke.vercel.app",
+        window.location.origin,
+        window.location.origin,
       );
     } catch (e: any) {
       console.error("Appwrite Google sign-in failed:", e);
@@ -2178,7 +2196,7 @@ export default function App() {
             noVotes: 50,
             expirationTime: expirationTimeIso,
           });
-          queryClient.invalidateQueries({ queryKey: ["appwritePolls"] });
+          await queryClient.invalidateQueries({ queryKey: ["appwritePolls"] });
           console.log(
             "Appwrite: Created prediction poll successfully in collections.",
           );

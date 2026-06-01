@@ -48,9 +48,6 @@ export default function PolymarketTab({
   const [betFeedback, setBetFeedback] = useState<{
     [marketId: string]: { type: "success" | "danger"; message: string };
   }>({});
-  const [extraAppwriteMarkets, setExtraAppwriteMarkets] = useState<
-    PredictionMarket[]
-  >([]);
 
   // Creation form state
   const [newQuestion, setNewQuestion] = useState("");
@@ -106,21 +103,17 @@ export default function PolymarketTab({
     },
   });
 
-  useEffect(() => {
-    setExtraAppwriteMarkets(appwritePollsData);
-  }, [appwritePollsData]);
-
   // Merge loaded Appwrite markets and manual props markets
   const allMarkets = React.useMemo(() => {
     const merged = [...markets];
-    extraAppwriteMarkets.forEach((am) => {
+    appwritePollsData.forEach((am: any) => {
       const exists = merged.some((m) => m.id === am.id);
       if (!exists) {
         merged.unshift(am);
       }
     });
     return merged;
-  }, [markets, extraAppwriteMarkets]);
+  }, [markets, appwritePollsData]);
 
   const displayedMarkets = allMarkets.filter((m) =>
     activeSubTab === "resolved" ? m.resolved : !m.resolved,
