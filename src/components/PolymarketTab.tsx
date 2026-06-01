@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { PredictionMarket, UserStats } from "../types";
 import { databases } from "../appwrite";
+import { useQuery } from "@tanstack/react-query";
 
 interface PolymarketTabProps {
   markets: PredictionMarket[];
@@ -63,55 +64,51 @@ export default function PolymarketTab({
   const [aiPromptTopic, setAiPromptTopic] = useState("");
   const [aiGenerating, setAiGenerating] = useState(false);
 
-  // Polls fetching loop inside PolymarketTab mounting
+  const { data: appwritePollsData = [] } = useQuery({
+    queryKey: ["appwritePolls"],
+    queryFn: async () => {
+      const res = await databases.listDocuments("pumpforge", "polls");
+      if (!res.documents || res.documents.length === 0) return [];
+
+      return res.documents.map((doc: any) => {
+        const yesPool = parseInt(String(doc.yesVotes ?? 50), 10);
+        const noPool = parseInt(String(doc.noVotes ?? 50), 10);
+        const totalPool = yesPool + noPool;
+        const yesPercentage =
+          totalPool > 0 ? Math.round((yesPool / totalPool) * 100) : 50;
+
+        let endTimeStr = doc.expirationTime || "Within 24 hours";
+        try {
+          if (endTimeStr.includes("T")) {
+            const targetDt = new Date(endTimeStr);
+            endTimeStr = `In ${doc.duration || "1 Day"} (${targetDt.toLocaleDateString()})`;
+          }
+        } catch (_) {}
+
+        return {
+          id: doc.pollId || doc.$id,
+          question: doc.question || "",
+          description: doc.context || "",
+          yesPool,
+          noPool,
+          yesPercentage,
+          resolved: !!doc.resolved || false,
+          resolvedOutcome:
+            doc.resolvedOutcome === "null" || !doc.resolvedOutcome
+              ? null
+              : doc.resolvedOutcome,
+          endTime: endTimeStr,
+          category: doc.category || "general",
+          userBetAmount: 0,
+          userBetSide: null,
+        } as PredictionMarket;
+      });
+    },
+  });
+
   useEffect(() => {
-    const fetchPolls = async () => {
-      try {
-        const res = await databases.listDocuments("pumpforge", "polls");
-        if (res.documents && res.documents.length > 0) {
-          const appwriteMarkets: PredictionMarket[] = res.documents.map(
-            (doc: any) => {
-              const yesPool = parseInt(String(doc.yesVotes ?? 50), 10);
-              const noPool = parseInt(String(doc.noVotes ?? 50), 10);
-              const totalPool = yesPool + noPool;
-              const yesPercentage =
-                totalPool > 0 ? Math.round((yesPool / totalPool) * 100) : 50;
-
-              let endTimeStr = doc.expirationTime || "Within 24 hours";
-              try {
-                if (endTimeStr.includes("T")) {
-                  const targetDt = new Date(endTimeStr);
-                  endTimeStr = `In ${doc.duration || "1 Day"} (${targetDt.toLocaleDateString()})`;
-                }
-              } catch (_) {}
-
-              return {
-                id: doc.pollId || doc.$id,
-                question: doc.question || "",
-                description: doc.context || "",
-                yesPool,
-                noPool,
-                yesPercentage,
-                resolved: !!doc.resolved || false,
-                resolvedOutcome:
-                  doc.resolvedOutcome === "null" || !doc.resolvedOutcome
-                    ? null
-                    : doc.resolvedOutcome,
-                endTime: endTimeStr,
-                category: doc.category || "general",
-                userBetAmount: 0,
-                userBetSide: null,
-              } as PredictionMarket;
-            },
-          );
-          setExtraAppwriteMarkets(appwriteMarkets);
-        }
-      } catch (err) {
-        console.warn("PolymarketTab Appwrite poll load issue:", err);
-      }
-    };
-    fetchPolls();
-  }, []);
+    setExtraAppwriteMarkets(appwritePollsData);
+  }, [appwritePollsData]);
 
   // Merge loaded Appwrite markets and manual props markets
   const allMarkets = React.useMemo(() => {

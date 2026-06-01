@@ -1,6 +1,17 @@
-import { initializeApp } from 'firebase/app';
-import { initializeAuth, browserPopupRedirectResolver, GoogleAuthProvider, signInWithRedirect, signOut } from 'firebase/auth';
-import { initializeFirestore, doc, getDocFromServer, setLogLevel } from 'firebase/firestore';
+import { initializeApp } from "firebase/app";
+import {
+  initializeAuth,
+  browserPopupRedirectResolver,
+  GoogleAuthProvider,
+  signInWithRedirect,
+  signOut,
+} from "firebase/auth";
+import {
+  initializeFirestore,
+  doc,
+  getDocFromServer,
+  setLogLevel,
+} from "firebase/firestore";
 
 const firebaseConfig = {
   projectId: "grandmaster-chess-8xev6",
@@ -10,35 +21,39 @@ const firebaseConfig = {
   firestoreDatabaseId: "ai-studio-f0a1a58e-8e8e-4a8f-a5d1-99bfa0f33c9c",
   storageBucket: "grandmaster-chess-8xev6.firebasestorage.app",
   messagingSenderId: "460660435436",
-  measurementId: ""
+  measurementId: "",
 };
 
 const app = initializeApp(firebaseConfig);
 
 // Silence internal Firestore warning/info logs in browser console
 try {
-  setLogLevel('silent');
+  setLogLevel("silent");
 } catch (e) {
   // Safe fallback
 }
 
 // Initialize Firestore with experimentalForceLongPolling to bypass sandboxed container/proxy websocket blocks
-export const db = initializeFirestore(app, {
-  experimentalForceLongPolling: true,
-}, firebaseConfig.firestoreDatabaseId);
+export const db = initializeFirestore(
+  app,
+  {
+    experimentalForceLongPolling: true,
+  },
+  firebaseConfig.firestoreDatabaseId,
+);
 
 export const auth = initializeAuth(app, {
-  popupRedirectResolver: browserPopupRedirectResolver
+  popupRedirectResolver: browserPopupRedirectResolver,
 });
 export const googleProvider = new GoogleAuthProvider();
 
 export enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
+  CREATE = "create",
+  UPDATE = "update",
+  DELETE = "delete",
+  LIST = "list",
+  GET = "get",
+  WRITE = "write",
 }
 
 export interface FirestoreErrorInfo {
@@ -58,7 +73,11 @@ export interface FirestoreErrorInfo {
   };
 }
 
-export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+export function handleFirestoreError(
+  error: unknown,
+  operationType: OperationType,
+  path: string | null,
+) {
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
@@ -67,33 +86,44 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
       emailVerified: auth.currentUser?.emailVerified,
       isAnonymous: auth.currentUser?.isAnonymous,
       tenantId: auth.currentUser?.tenantId,
-      providerInfo: auth.currentUser?.providerData?.map(provider => ({
-        providerId: provider.providerId,
-        email: provider.email,
-      })) || []
+      providerInfo:
+        auth.currentUser?.providerData?.map((provider) => ({
+          providerId: provider.providerId,
+          email: provider.email,
+        })) || [],
     },
     operationType,
-    path
+    path,
   };
 
   const errStr = error instanceof Error ? error.message : String(error);
-  const isPermissionError = errStr.toLowerCase().includes('permission') || 
-                            errStr.toLowerCase().includes('insufficient') ||
-                            (error && typeof error === 'object' && 'code' in error && error.code === 'permission-denied');
+  const isPermissionError =
+    errStr.toLowerCase().includes("permission") ||
+    errStr.toLowerCase().includes("insufficient") ||
+    (error &&
+      typeof error === "object" &&
+      "code" in error &&
+      error.code === "permission-denied");
 
   if (isPermissionError) {
-    console.error('Firestore Security Permission Error: ', JSON.stringify(errInfo));
+    console.error(
+      "Firestore Security Permission Error: ",
+      JSON.stringify(errInfo),
+    );
     throw new Error(JSON.stringify(errInfo));
   } else {
     // Log a non-blocking warning for connection-offline and unreachable exceptions
-    console.error('Firestore Non-Security Network/Offline Warning: ', JSON.stringify(errInfo));
+    console.error(
+      "Firestore Non-Security Network/Offline Warning: ",
+      JSON.stringify(errInfo),
+    );
   }
 }
 
 // Test connectivity on boot
 async function testConnection() {
   try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
+    await getDocFromServer(doc(db, "test", "connection"));
   } catch (error) {
     // Silently swallow permission denied or other harmless errors on locked test path
   }

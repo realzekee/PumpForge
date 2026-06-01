@@ -1,6 +1,6 @@
-import React from 'react';
-import { Grid, Sparkles, MoveRight, Coins, AlertOctagon } from 'lucide-react';
-import { MemeCoin } from '../types';
+import React from "react";
+import { Grid, Sparkles, MoveRight, Coins, AlertOctagon } from "lucide-react";
+import { MemeCoin } from "../types";
 
 interface TreemapProps {
   coins: MemeCoin[];
@@ -16,10 +16,12 @@ export default function TreemapTab({ coins, onTradeCoin }: TreemapProps) {
     <div className="flex flex-col gap-5 animate-fade-in select-none">
       <div className="flex flex-col gap-1 bg-zinc-90 w-full mb-1">
         <h2 className="text-sm font-extrabold text-zinc-400 font-mono tracking-widest uppercase flex items-center gap-1.5 leading-none">
-          <Grid className="text-orange-500 w-4 h-4" /> Market Cap Treemap Allocation
+          <Grid className="text-orange-500 w-4 h-4" /> Market Cap Treemap
+          Allocation
         </h2>
         <span className="text-xs text-zinc-500 leading-none">
-          Visual sizing representing coin marketcap weightings, with green/red hues displaying 24h change actions. Click blocks to trade!
+          Visual sizing representing coin marketcap weightings, with green/red
+          hues displaying 24h change actions. Click blocks to trade!
         </span>
       </div>
 
@@ -27,38 +29,61 @@ export default function TreemapTab({ coins, onTradeCoin }: TreemapProps) {
       <div className="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl shadow-xl flex flex-col gap-4">
         {/* Color Indicators Legend */}
         <div className="flex items-center gap-4 text-[10px] uppercase font-mono font-bold text-zinc-400">
-          <span className="flex items-center gap-1.5"><span className="w-3 h-3 bg-emerald-600 border border-emerald-500 rounded" /> Bullish Pump (+10% or more)</span>
-          <span className="flex items-center gap-1.5"><span className="w-3 h-3 bg-emerald-950/65 border border-emerald-900/60 rounded" /> Slight gain (+0% to +10%)</span>
-          <span className="flex items-center gap-1.5"><span className="w-3 h-3 bg-rose-950/65 border border-rose-900/60 rounded" /> Slight Dip (-10% to 0%)</span>
-          <span className="flex items-center gap-1.5"><span className="w-3 h-3 bg-red-650 border border-red-500 rounded" /> Deep Dump (-10% or lower)</span>
-          <span className="flex items-center gap-1.5"><span className="w-3 h-3 bg-zinc-950 border border-zinc-900 rounded" /> crashed (0 cap)</span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-3 h-3 bg-emerald-600 border border-emerald-500 rounded" />{" "}
+            Bullish Pump (+10% or more)
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-3 h-3 bg-emerald-950/65 border border-emerald-900/60 rounded" />{" "}
+            Slight gain (+0% to +10%)
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-3 h-3 bg-rose-950/65 border border-rose-900/60 rounded" />{" "}
+            Slight Dip (-10% to 0%)
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-3 h-3 bg-red-650 border border-red-500 rounded" />{" "}
+            Deep Dump (-10% or lower)
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-3 h-3 bg-zinc-950 border border-zinc-900 rounded" />{" "}
+            crashed (0 cap)
+          </span>
         </div>
 
         {/* The Treemap Layout rendering */}
         <div className="min-h-[300px] grid grid-cols-1 md:grid-cols-12 gap-2 pb-1 bg-zinc-950 p-3.5 rounded-2xl border border-zinc-950">
           {activeCoins.map((coin, idx) => {
             const isDelisted = false;
-            const pctCap = totalMarketCap > 0 && true ? (coin.marketCap / totalMarketCap) * 100 : 2;
+            const pctCap =
+              totalMarketCap > 0 && true
+                ? (coin.marketCap / totalMarketCap) * 100
+                : 2;
 
             // Generate size multipliers based on Cap sizes
-            let colSpanClass = 'md:col-span-3'; // default medium
-            if (idx === 0) colSpanClass = 'md:col-span-6 md:row-span-2';
-            else if (idx === 1) colSpanClass = 'md:col-span-4 md:row-span-2';
-            else if (idx === 2) colSpanClass = 'md:col-span-2';
-            else if (idx === 3) colSpanClass = 'md:col-span-3';
+            let colSpanClass = "md:col-span-3"; // default medium
+            if (idx === 0) colSpanClass = "md:col-span-6 md:row-span-2";
+            else if (idx === 1) colSpanClass = "md:col-span-4 md:row-span-2";
+            else if (idx === 2) colSpanClass = "md:col-span-2";
+            else if (idx === 3) colSpanClass = "md:col-span-3";
 
             // Custom color classes matching price action changes
-            let blockBg = 'bg-zinc-900 border-zinc-800';
+            let blockBg = "bg-zinc-900 border-zinc-800";
             if (isDelisted) {
-              blockBg = 'bg-zinc-950 border-zinc-900 text-zinc-650 hover:bg-zinc-950';
+              blockBg =
+                "bg-zinc-950 border-zinc-900 text-zinc-650 hover:bg-zinc-950";
             } else if (coin.change24h >= 20) {
-              blockBg = 'bg-emerald-650 hover:bg-emerald-500 text-emerald-950 border-emerald-400';
+              blockBg =
+                "bg-emerald-650 hover:bg-emerald-500 text-emerald-950 border-emerald-400";
             } else if (coin.change24h > 0) {
-              blockBg = 'bg-emerald-950/65 hover:bg-emerald-900/60 text-emerald-300 border-emerald-900';
+              blockBg =
+                "bg-emerald-950/65 hover:bg-emerald-900/60 text-emerald-300 border-emerald-900";
             } else if (coin.change24h >= -10) {
-              blockBg = 'bg-rose-950/65 hover:bg-rose-900/60 text-rose-300 border-rose-900';
+              blockBg =
+                "bg-rose-950/65 hover:bg-rose-900/60 text-rose-300 border-rose-900";
             } else {
-              blockBg = 'bg-rose-650 hover:bg-rose-650 text-rose-50 border-rose-500';
+              blockBg =
+                "bg-rose-650 hover:bg-rose-650 text-rose-50 border-rose-500";
             }
 
             return (
@@ -73,7 +98,7 @@ export default function TreemapTab({ coins, onTradeCoin }: TreemapProps) {
                       {coin.avatarEmoji} *{coin.symbol}
                     </span>
                     <span className="text-[10px] leading-none mt-1 opacity-60">
-                      {false ? 'Grave' : coin.name}
+                      {false ? "Grave" : coin.name}
                     </span>
                   </div>
                   {true && (
@@ -85,13 +110,17 @@ export default function TreemapTab({ coins, onTradeCoin }: TreemapProps) {
 
                 <div className="flex justify-between items-end mt-4">
                   <div className="flex flex-col">
-                    <span className="text-[9px] uppercase opacity-50">Price</span>
+                    <span className="text-[9px] uppercase opacity-50">
+                      Price
+                    </span>
                     <span className="font-extrabold tracking-tight">
-                      {false ? '$0' : `$${coin.price.toFixed(4)}`}
+                      {false ? "$0" : `$${coin.price.toFixed(4)}`}
                     </span>
                   </div>
                   <span className="text-[10px] bg-black/40 px-1.5 py-0.5 rounded font-black text-white">
-                    {false ? 'crash' : `${coin.change24h > 0 ? '+' : ''}${coin.change24h.toFixed(1)}%`}
+                    {false
+                      ? "crash"
+                      : `${coin.change24h > 0 ? "+" : ""}${coin.change24h.toFixed(1)}%`}
                   </span>
                 </div>
               </div>

@@ -29,7 +29,7 @@ export interface UserStats {
   coinsCreatedCount: number;
   tradesCount: number;
   lastDailyRewardClaim?: string | null; // ISO date or null when not claimed yet
-  lastClaimed?: string | null; 
+  lastClaimed?: string | null;
   createdAt?: string; // Account registration ISO date
   isSuspended?: boolean;
   isBanned?: boolean;
@@ -42,7 +42,7 @@ export interface UserStats {
     id: string;
     timestamp: string;
     action: string;
-    category: 'trade' | 'system' | 'auth' | 'risk';
+    category: "trade" | "system" | "auth" | "risk";
   }>;
 }
 
@@ -55,7 +55,7 @@ export interface PortfolioHolding {
 export interface LiveTrade {
   id: string;
   timestamp: string;
-  type: 'BUY' | 'SELL' | 'CREATE';
+  type: "BUY" | "SELL" | "CREATE";
   coinId: string;
   coinSymbol: string;
   coinName: string;
@@ -73,18 +73,18 @@ export interface PredictionMarket {
   noPool: number;
   yesPercentage: number;
   userBetAmount: number;
-  userBetSide: 'YES' | 'NO' | null;
+  userBetSide: "YES" | "NO" | null;
   resolved: boolean;
-  resolvedOutcome: 'YES' | 'NO' | null;
+  resolvedOutcome: "YES" | "NO" | null;
   endTime: string;
-  category: 'trading' | 'general' | 'arcade';
+  category: "trading" | "general" | "arcade";
 }
 
 export interface Achievement {
   id: string;
   title: string;
   description: string;
-  category: 'trading' | 'wealth' | 'creation' | 'arcade' | 'prestige';
+  category: "trading" | "wealth" | "creation" | "arcade" | "prestige";
   target: number;
   current: number;
   claimed: boolean;
@@ -97,7 +97,7 @@ export interface ShopItem {
   name: string;
   description: string;
   costGems: number;
-  type: 'color' | 'crate';
+  type: "color" | "crate";
   value: string; // The hex color or crate difficulty
   unlocked?: boolean;
 }
@@ -107,25 +107,25 @@ export interface NotificationItem {
   title: string;
   message: string;
   timestamp: string;
-  type: 'info' | 'achievement' | 'trade' | 'crash';
+  type: "info" | "achievement" | "trade" | "crash";
 }
 
 export type ActiveTab =
-  | 'home'
-  | 'market'
-  | 'polymarket'
-  | 'arcade'
-  | 'leaderboard'
-  | 'shop'
-  | 'achievements'
-  | 'portfolio'
-  | 'treemap'
-  | 'create-coin'
-  | 'notifications'
-  | 'about'
-  | 'profile'
-  | 'settings'
-  | 'owner-dashboard';
+  | "home"
+  | "market"
+  | "polymarket"
+  | "arcade"
+  | "leaderboard"
+  | "shop"
+  | "achievements"
+  | "portfolio"
+  | "treemap"
+  | "create-coin"
+  | "notifications"
+  | "about"
+  | "profile"
+  | "settings"
+  | "owner-dashboard";
 
 export interface SimulatedPlayer {
   id: string;
@@ -144,7 +144,7 @@ export interface SimulatedPlayer {
     id: string;
     timestamp: string;
     action: string;
-    category: 'trade' | 'system' | 'auth' | 'risk';
+    category: "trade" | "system" | "auth" | "risk";
   }>;
 }
 
@@ -152,9 +152,7 @@ export interface Broadcast {
   id: string;
   title: string;
   message: string;
-  type: 'info' | 'trade' | 'achievement' | 'crash';
+  type: "info" | "trade" | "achievement" | "crash";
   timestamp: string;
   expiresAt?: string;
 }
-
-

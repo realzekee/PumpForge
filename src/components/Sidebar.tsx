@@ -76,7 +76,8 @@ export default function Sidebar({
 }: SidebarProps) {
   const navigate = useNavigate();
   const location = useLocation();
-  const activeTab = location.pathname === '/' ? 'home' : location.pathname.substring(1);
+  const activeTab =
+    location.pathname === "/" ? "home" : location.pathname.substring(1);
 
   const [isOpen, setIsOpen] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false); // Bottom user profile popover

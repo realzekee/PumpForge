@@ -64,7 +64,7 @@ interface OwnerDashboardProps {
   currentUserEmail?: string;
 }
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 export default function OwnerDashboardTab({
   coins,
@@ -78,19 +78,27 @@ export default function OwnerDashboardTab({
 }: OwnerDashboardProps) {
   const navigate = useNavigate();
   const { userStats, cash, setCash, gems, setGems, userId } = useAppContext();
+  const queryClient = useQueryClient();
 
-  const { data: usersQueryData = [], isLoading: isUsersLoading, isError: isUsersError, error: usersError } = useQuery({
-    queryKey: ['registeredUsers'],
+  const {
+    data: usersQueryData = [],
+    isLoading: isUsersLoading,
+    isError: isUsersError,
+    error: usersError,
+  } = useQuery({
+    queryKey: ["registeredUsers"],
     queryFn: async () => {
       const res = await databases.listDocuments("pumpforge", "users");
       return res.documents;
-    }
+    },
   });
 
   useEffect(() => {
     if (isUsersError && (usersError as any)?.code === 403) {
-      import('sonner').then(({ toast }) => {
-        toast.error("Owner Dashboard Error (403): You don't have permission to list Appwrite users.");
+      import("sonner").then(({ toast }) => {
+        toast.error(
+          "Owner Dashboard Error (403): You don't have permission to list Appwrite users.",
+        );
       });
     }
   }, [isUsersError, usersError]);
@@ -104,14 +112,17 @@ export default function OwnerDashboardTab({
     setCash(newStats.cash);
     setGems(newStats.gems);
     if (userId) {
-      databases.updateDocument("pumpforge", "users", userId, { cash: newStats.cash, gems: newStats.gems, prestigeLevel: newStats.prestigeLevel });
+      databases.updateDocument("pumpforge", "users", userId, {
+        cash: newStats.cash,
+        gems: newStats.gems,
+        prestigeLevel: newStats.prestigeLevel,
+      });
     }
   };
 
   // Local state for creator controls
   const [customCash, setCustomCash] = useState<number>(50000);
   const [customGems, setCustomGems] = useState<number>(500);
-
 
   const [alertTitle, setAlertTitle] = useState<string>(
     "🚨 BLACK SWAN DETECTED",
@@ -596,6 +607,7 @@ export default function OwnerDashboardTab({
           await databases.updateDocument("pumpforge", "users", uid, {
             cash: newCash,
           });
+          queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
         }
 
         onUpdateStats((stats) => {
@@ -639,6 +651,7 @@ export default function OwnerDashboardTab({
           await databases.updateDocument("pumpforge", "users", uid, {
             cash: newCash,
           });
+          queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
 
           onAddNotification(
             "💸 Balance Adjusted",
@@ -710,6 +723,7 @@ export default function OwnerDashboardTab({
           await databases.updateDocument("pumpforge", "users", uid, {
             gems: newGems,
           });
+          queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
         }
 
         onUpdateStats((stats) => {
@@ -752,6 +766,7 @@ export default function OwnerDashboardTab({
           await databases.updateDocument("pumpforge", "users", uid, {
             gems: newGems,
           });
+          queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
 
           onAddNotification(
             "💎 Gems Adjusted",
@@ -1091,6 +1106,7 @@ export default function OwnerDashboardTab({
             cash: userStats.cash + customCash,
           },
         );
+        queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
       }
 
       onUpdateStats((stats) => {
@@ -1128,6 +1144,7 @@ export default function OwnerDashboardTab({
             gems: userStats.gems + customGems,
           },
         );
+        queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
       }
 
       onUpdateStats((stats) => {
@@ -1680,7 +1697,7 @@ export default function OwnerDashboardTab({
               Loading player data directory...
             </div>
           ) : isUsersError ? (
-             <div className="md:col-span-2 text-center py-8 text-xs text-rose-500 bg-rose-950/20 rounded-xl border border-rose-900 border-dashed">
+            <div className="md:col-span-2 text-center py-8 text-xs text-rose-500 bg-rose-950/20 rounded-xl border border-rose-900 border-dashed">
               Failed to load Appwrite users. Check roles and connection.
             </div>
           ) : filteredUsers.length === 0 ? (
@@ -1740,14 +1757,12 @@ export default function OwnerDashboardTab({
                           {user.title}
                         </span>
                       </span>
-                      {user.email && (
-                        <div className="text-[9px] text-zinc-400/80 font-mono tracking-tight mt-1 bg-zinc-950/60 border border-zinc-900 rounded px-1.5 py-0.5 w-fit flex items-center gap-1">
-                          <span className="opacity-70 text-[10px]">📧</span>
-                          <span className="select-all text-sky-400 font-bold text-[9px]">
-                            {user.email}
-                          </span>
-                        </div>
-                      )}
+                      <div className="text-[9px] text-zinc-400/80 font-mono tracking-tight mt-1 bg-zinc-950/60 border border-zinc-900 rounded px-1.5 py-0.5 w-fit flex items-center gap-1">
+                        <span className="opacity-70 text-[10px]">📧</span>
+                        <span className="select-all text-sky-400 font-bold text-[9px]">
+                          {user.email || "No email provided"}
+                        </span>
+                      </div>
                     </div>
 
                     <div className="text-right shrink-0">

@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { Routes, Route, useNavigate } from "react-router-dom";
-import { toast } from 'sonner';
+import { toast } from "sonner";
 import Sidebar from "./components/Sidebar";
 import HomeTab from "./components/HomeTab";
 import MarketTab from "./components/MarketTab";
@@ -57,6 +57,7 @@ import {
 // Appwrite imports
 import { account, databases } from "./appwrite";
 import { ID } from "appwrite";
+import { useQueryClient } from "@tanstack/react-query";
 
 // Firebase imports
 import {
@@ -142,6 +143,7 @@ const safeStorage = {
 };
 
 export default function App() {
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [selectedCoinIdForMarket, setSelectedCoinIdForMarket] = useState<
     string | null
@@ -2176,6 +2178,7 @@ export default function App() {
             noVotes: 50,
             expirationTime: expirationTimeIso,
           });
+          queryClient.invalidateQueries({ queryKey: ["appwritePolls"] });
           console.log(
             "Appwrite: Created prediction poll successfully in collections.",
           );
@@ -3030,198 +3033,230 @@ export default function App() {
 
         {/* Tab Workspace Views content */}
         <Routes>
-          <Route path="/" element={
-            <HomeTab
-              coins={coins}
-              userStats={userStats}
-              achievements={achievements}
-              onClaimAchievement={claimAchievement}
-              onTradeCoin={(coinId) => {
-                const cn = coins.find((c) => c.id === coinId);
-                if (cn) {
+          <Route
+            path="/"
+            element={
+              <HomeTab
+                coins={coins}
+                userStats={userStats}
+                achievements={achievements}
+                onClaimAchievement={claimAchievement}
+                onTradeCoin={(coinId) => {
+                  const cn = coins.find((c) => c.id === coinId);
+                  if (cn) {
+                    setSelectedCoinIdForMarket(coinId);
+                    navigate("/market");
+                  }
+                }}
+              />
+            }
+          />
+
+          <Route
+            path="/market"
+            element={
+              <MarketTab
+                coins={coins}
+                userStats={userStats}
+                holdings={holdings}
+                onTradeAction={tradeAction}
+                onDeleteOwnCoin={handleDeleteOwnCoin}
+                initialCoinId={selectedCoinIdForMarket}
+              />
+            }
+          />
+
+          <Route
+            path="/polymarket"
+            element={
+              <PolymarketTab
+                markets={mergedMarkets}
+                onPlaceBet={handlePlacePolymarketBet}
+                onCreateMarket={handleCreatePredictionLocal}
+              />
+            }
+          />
+
+          <Route
+            path="/arcade"
+            element={
+              !currentUser ? (
+                <div
+                  className="flex-1 flex flex-col items-center justify-center py-20 px-4 text-center font-mono animate-fade-in max-w-xl mx-auto select-none"
+                  id="arcade-lock-screen"
+                >
+                  <div className="w-16 h-16 rounded-2xl bg-zinc-900 border border-zinc-805 flex items-center justify-center text-rose-500 mb-6 shadow-xl relative">
+                    <Gamepad2 className="w-8 h-8" />
+                    <Lock className="w-4 h-4 text-zinc-400 absolute -bottom-1 -right-1 bg-zinc-900 rounded-full p-1 box-content" />
+                  </div>
+                  <h2 className="text-xl font-black text-white uppercase tracking-wider mb-2">
+                    Arcade Simulator Locked
+                  </h2>
+                  <p className="text-xs text-zinc-400 leading-relaxed mb-8">
+                    You are playing in Guest Sandbox. High-stakes arcade
+                    operations (Coinflip, Slots, Mines, Dice, and Tower) require
+                    a dynamic Google-authenticated profile to prevent session
+                    loss and secure cash drops.
+                  </p>
+                  <button
+                    onClick={handleGoogleSignIn}
+                    className="bg-gradient-to-r from-orange-500 to-rose-600 hover:from-orange-600 hover:to-rose-700 text-white font-extrabold px-6 py-3.5 rounded-xl flex items-center gap-2.5 shadow-lg shadow-rose-950/20 active:scale-98 transition-all text-xs uppercase tracking-wider font-mono"
+                  >
+                    <LogIn className="w-4 h-4 text-white" />
+                    <span>Connect Google Profile</span>
+                  </button>
+                </div>
+              ) : (
+                <ArcadeTab
+                  userStats={userStats}
+                  onUpdateStats={handleUpdateStats}
+                  onAddNotification={onAddNotification}
+                />
+              )
+            }
+          />
+
+          <Route
+            path="/leaderboard"
+            element={
+              <LeaderboardTab
+                userStats={userStats}
+                simulatedPlayers={simulatedPlayers}
+              />
+            }
+          />
+
+          <Route
+            path="/shop"
+            element={
+              !currentUser ? (
+                <div
+                  className="flex-1 flex flex-col items-center justify-center py-20 px-4 text-center font-mono animate-fade-in max-w-xl mx-auto select-none"
+                  id="shop-lock-screen"
+                >
+                  <div className="w-16 h-16 rounded-2xl bg-zinc-900 border border-zinc-805 flex items-center justify-center text-amber-500 mb-6 shadow-xl relative">
+                    <ShoppingBag className="w-8 h-8 font-bold" />
+                    <Lock className="w-4 h-4 text-zinc-400 absolute -bottom-1 -right-1 bg-zinc-900 rounded-full p-1 box-content" />
+                  </div>
+                  <h2 className="text-xl font-black text-white uppercase tracking-wider mb-2">
+                    Forge Shop Locked
+                  </h2>
+                  <p className="text-xs text-zinc-400 leading-relaxed mb-8">
+                    Purchasing rare profile colors and high-volume Mystery
+                    Crates requires a Cloud Sync Profile. Secure your progress
+                    and sync with our Firebase database.
+                  </p>
+                  <button
+                    onClick={handleGoogleSignIn}
+                    className="bg-gradient-to-r from-orange-500 to-rose-600 hover:from-orange-600 hover:to-rose-700 text-white font-extrabold px-6 py-3.5 rounded-xl flex items-center gap-2.5 shadow-lg shadow-rose-950/20 active:scale-98 transition-all text-xs uppercase tracking-wider font-mono"
+                  >
+                    <LogIn className="w-4 h-4 text-white" />
+                    <span>Connect Google Profile</span>
+                  </button>
+                </div>
+              ) : (
+                <ShopTab
+                  userStats={userStats}
+                  onUpdateStats={handleUpdateStats}
+                  onAddNotification={onAddNotification}
+                />
+              )
+            }
+          />
+
+          <Route
+            path="/achievements"
+            element={
+              <AchievementsTab
+                achievements={achievements}
+                userStats={userStats}
+                onClaimAchievement={claimAchievement}
+                onClaimAll={claimAllAchievements}
+              />
+            }
+          />
+
+          <Route
+            path="/portfolio"
+            element={
+              <PortfolioTab
+                userStats={userStats}
+                holdings={holdings}
+                coins={coins}
+                onUpdateStats={handleUpdateStats}
+                onAddNotification={onAddNotification}
+                onSendMoney={handleSendMoney}
+                registeredUsers={registeredUsers}
+              />
+            }
+          />
+
+          <Route
+            path="/treemap"
+            element={
+              <TreemapTab
+                coins={coins}
+                onTradeCoin={(coinId) => {
                   setSelectedCoinIdForMarket(coinId);
                   navigate("/market");
-                }
-              }}
-            />
-          } />
+                }}
+              />
+            }
+          />
 
-          <Route path="/market" element={
-            <MarketTab
-              coins={coins}
-              userStats={userStats}
-              holdings={holdings}
-              onTradeAction={tradeAction}
-              onDeleteOwnCoin={handleDeleteOwnCoin}
-              initialCoinId={selectedCoinIdForMarket}
-            />
-          } />
-
-          <Route path="/polymarket" element={
-            <PolymarketTab
-              markets={mergedMarkets}
-              onPlaceBet={handlePlacePolymarketBet}
-              onCreateMarket={handleCreatePredictionLocal}
-            />
-          } />
-
-          <Route path="/arcade" element={
-            !currentUser ? (
-              <div
-                className="flex-1 flex flex-col items-center justify-center py-20 px-4 text-center font-mono animate-fade-in max-w-xl mx-auto select-none"
-                id="arcade-lock-screen"
-              >
-                <div className="w-16 h-16 rounded-2xl bg-zinc-900 border border-zinc-805 flex items-center justify-center text-rose-500 mb-6 shadow-xl relative">
-                  <Gamepad2 className="w-8 h-8" />
-                  <Lock className="w-4 h-4 text-zinc-400 absolute -bottom-1 -right-1 bg-zinc-900 rounded-full p-1 box-content" />
-                </div>
-                <h2 className="text-xl font-black text-white uppercase tracking-wider mb-2">
-                  Arcade Simulator Locked
-                </h2>
-                <p className="text-xs text-zinc-400 leading-relaxed mb-8">
-                  You are playing in Guest Sandbox. High-stakes arcade operations
-                  (Coinflip, Slots, Mines, Dice, and Tower) require a dynamic
-                  Google-authenticated profile to prevent session loss and secure
-                  cash drops.
-                </p>
-                <button
-                  onClick={handleGoogleSignIn}
-                  className="bg-gradient-to-r from-orange-500 to-rose-600 hover:from-orange-600 hover:to-rose-700 text-white font-extrabold px-6 py-3.5 rounded-xl flex items-center gap-2.5 shadow-lg shadow-rose-950/20 active:scale-98 transition-all text-xs uppercase tracking-wider font-mono"
+          <Route
+            path="/create-coin"
+            element={
+              !currentUser ? (
+                <div
+                  className="flex-1 flex flex-col items-center justify-center py-20 px-4 text-center font-mono animate-fade-in max-w-xl mx-auto select-none"
+                  id="create-lock-screen"
                 >
-                  <LogIn className="w-4 h-4 text-white" />
-                  <span>Connect Google Profile</span>
-                </button>
-              </div>
-            ) : (
-              <ArcadeTab
+                  <div className="w-16 h-16 rounded-2xl bg-zinc-900 border border-zinc-805 flex items-center justify-center text-teal-500 mb-6 shadow-xl relative">
+                    <PlusCircle className="w-8 h-8" />
+                    <Lock className="w-4 h-4 text-zinc-400 absolute -bottom-1 -right-1 bg-zinc-900 rounded-full p-1 box-content" />
+                  </div>
+                  <h2 className="text-xl font-black text-white uppercase tracking-wider mb-2">
+                    Create Token Locked
+                  </h2>
+                  <p className="text-xs text-zinc-400 leading-relaxed mb-8">
+                    Becoming a dev to mint custom coins, aggregate bot tracking
+                    volume, and execute strategic trades requires Google profile
+                    credentials.
+                  </p>
+                  <button
+                    onClick={handleGoogleSignIn}
+                    className="bg-gradient-to-r from-orange-500 to-rose-600 hover:from-orange-600 hover:to-rose-700 text-white font-extrabold px-6 py-3.5 rounded-xl flex items-center gap-2.5 shadow-lg shadow-rose-950/20 active:scale-98 transition-all text-xs uppercase tracking-wider font-mono"
+                  >
+                    <LogIn className="w-4 h-4 text-white" />
+                    <span>Connect Google Profile</span>
+                  </button>
+                </div>
+              ) : (
+                <CreateCoinTab setCoins={setCoins} coins={coins} />
+              )
+            }
+          />
+
+          <Route
+            path="/notifications"
+            element={<NotificationsTab notifications={notifications} />}
+          />
+
+          <Route
+            path="/settings"
+            element={
+              <SettingsTab
                 userStats={userStats}
                 onUpdateStats={handleUpdateStats}
-                onAddNotification={onAddNotification}
+                currentUserEmail={currentUser?.email}
               />
-            )
-          } />
+            }
+          />
 
-          <Route path="/leaderboard" element={
-            <LeaderboardTab
-              userStats={userStats}
-              simulatedPlayers={simulatedPlayers}
-            />
-          } />
-
-          <Route path="/shop" element={
-            !currentUser ? (
-              <div
-                className="flex-1 flex flex-col items-center justify-center py-20 px-4 text-center font-mono animate-fade-in max-w-xl mx-auto select-none"
-                id="shop-lock-screen"
-              >
-                <div className="w-16 h-16 rounded-2xl bg-zinc-900 border border-zinc-805 flex items-center justify-center text-amber-500 mb-6 shadow-xl relative">
-                  <ShoppingBag className="w-8 h-8 font-bold" />
-                  <Lock className="w-4 h-4 text-zinc-400 absolute -bottom-1 -right-1 bg-zinc-900 rounded-full p-1 box-content" />
-                </div>
-                <h2 className="text-xl font-black text-white uppercase tracking-wider mb-2">
-                  Forge Shop Locked
-                </h2>
-                <p className="text-xs text-zinc-400 leading-relaxed mb-8">
-                  Purchasing rare profile colors and high-volume Mystery Crates
-                  requires a Cloud Sync Profile. Secure your progress and sync
-                  with our Firebase database.
-                </p>
-                <button
-                  onClick={handleGoogleSignIn}
-                  className="bg-gradient-to-r from-orange-500 to-rose-600 hover:from-orange-600 hover:to-rose-700 text-white font-extrabold px-6 py-3.5 rounded-xl flex items-center gap-2.5 shadow-lg shadow-rose-950/20 active:scale-98 transition-all text-xs uppercase tracking-wider font-mono"
-                >
-                  <LogIn className="w-4 h-4 text-white" />
-                  <span>Connect Google Profile</span>
-                </button>
-              </div>
-            ) : (
-              <ShopTab
-                userStats={userStats}
-                onUpdateStats={handleUpdateStats}
-                onAddNotification={onAddNotification}
-              />
-            )
-          } />
-
-          <Route path="/achievements" element={
-            <AchievementsTab
-              achievements={achievements}
-              userStats={userStats}
-              onClaimAchievement={claimAchievement}
-              onClaimAll={claimAllAchievements}
-            />
-          } />
-
-          <Route path="/portfolio" element={
-            <PortfolioTab
-              userStats={userStats}
-              holdings={holdings}
-              coins={coins}
-              onUpdateStats={handleUpdateStats}
-              onAddNotification={onAddNotification}
-              onSendMoney={handleSendMoney}
-              registeredUsers={registeredUsers}
-            />
-          } />
-
-          <Route path="/treemap" element={
-            <TreemapTab
-              coins={coins}
-              onTradeCoin={(coinId) => {
-                setSelectedCoinIdForMarket(coinId);
-                navigate("/market");
-              }}
-            />
-          } />
-
-          <Route path="/create-coin" element={
-            !currentUser ? (
-              <div
-                className="flex-1 flex flex-col items-center justify-center py-20 px-4 text-center font-mono animate-fade-in max-w-xl mx-auto select-none"
-                id="create-lock-screen"
-              >
-                <div className="w-16 h-16 rounded-2xl bg-zinc-900 border border-zinc-805 flex items-center justify-center text-teal-500 mb-6 shadow-xl relative">
-                  <PlusCircle className="w-8 h-8" />
-                  <Lock className="w-4 h-4 text-zinc-400 absolute -bottom-1 -right-1 bg-zinc-900 rounded-full p-1 box-content" />
-                </div>
-                <h2 className="text-xl font-black text-white uppercase tracking-wider mb-2">
-                  Create Token Locked
-                </h2>
-                <p className="text-xs text-zinc-400 leading-relaxed mb-8">
-                  Becoming a dev to mint custom coins, aggregate bot tracking
-                  volume, and execute strategic trades requires Google profile
-                  credentials.
-                </p>
-                <button
-                  onClick={handleGoogleSignIn}
-                  className="bg-gradient-to-r from-orange-500 to-rose-600 hover:from-orange-600 hover:to-rose-700 text-white font-extrabold px-6 py-3.5 rounded-xl flex items-center gap-2.5 shadow-lg shadow-rose-950/20 active:scale-98 transition-all text-xs uppercase tracking-wider font-mono"
-                >
-                  <LogIn className="w-4 h-4 text-white" />
-                  <span>Connect Google Profile</span>
-                </button>
-              </div>
-            ) : (
-              <CreateCoinTab
-                setCoins={setCoins}
-                coins={coins}
-              />
-            )
-          } />
-
-          <Route path="/notifications" element={
-            <NotificationsTab notifications={notifications} />
-          } />
-
-          <Route path="/settings" element={
-            <SettingsTab
-              userStats={userStats}
-              onUpdateStats={handleUpdateStats}
-              currentUserEmail={currentUser?.email}
-            />
-          } />
-
-          <Route path="/owner-dashboard" element={
-            (() => {
+          <Route
+            path="/owner-dashboard"
+            element={(() => {
               const isOwnerEmail =
                 (currentUser?.email || "").trim().toLowerCase() ===
                   "realzekeee@gmail.com" ||
@@ -3268,20 +3303,23 @@ export default function App() {
                   currentUserEmail={currentUser?.email}
                 />
               );
-            })()
-          } />
+            })()}
+          />
 
           <Route path="/about" element={<AboutTab />} />
 
-          <Route path="/profile" element={
-            <ProfileTab
-              userStats={userStats}
-              holdings={holdings}
-              coins={coins}
-              achievements={achievements}
-              liveTrades={liveTrades}
-            />
-          } />
+          <Route
+            path="/profile"
+            element={
+              <ProfileTab
+                userStats={userStats}
+                holdings={holdings}
+                coins={coins}
+                achievements={achievements}
+                liveTrades={liveTrades}
+              />
+            }
+          />
         </Routes>
       </main>
 

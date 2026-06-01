@@ -19,10 +19,7 @@ interface CreateCoinProps {
   coins: any[];
 }
 
-export default function CreateCoinTab({
-  setCoins,
-  coins,
-}: CreateCoinProps) {
+export default function CreateCoinTab({ setCoins, coins }: CreateCoinProps) {
   const { userStats, currentUser, cash, setCash, userId } = useAppContext();
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
@@ -145,7 +142,10 @@ export default function CreateCoinTab({
       setCoins((prev) => [newMeme, ...prev]);
       setCash(newCash);
       if (userId) {
-         databases.updateDocument("pumpforge", "users", userId, { cash: newCash, coins: (userStats.coinsCreatedCount || 0) + 1 });
+        databases.updateDocument("pumpforge", "users", userId, {
+          cash: newCash,
+          coins: (userStats.coinsCreatedCount || 0) + 1,
+        });
       }
 
       setSuccess(true);

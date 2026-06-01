@@ -1,15 +1,34 @@
-import React, { useState, useEffect } from 'react';
-import { Briefcase, Wallet, Send, Award, Coins, HelpCircle, History, X, CheckCircle, ArrowRight } from 'lucide-react';
-import { UserStats, PortfolioHolding, MemeCoin } from '../types';
+import React, { useState, useEffect } from "react";
+import {
+  Briefcase,
+  Wallet,
+  Send,
+  Award,
+  Coins,
+  HelpCircle,
+  History,
+  X,
+  CheckCircle,
+  ArrowRight,
+} from "lucide-react";
+import { UserStats, PortfolioHolding, MemeCoin } from "../types";
 
 interface PortfolioProps {
   userStats: UserStats;
   holdings: PortfolioHolding[];
   coins: MemeCoin[];
   onUpdateStats: (updater: (stats: UserStats) => void) => void;
-  onAddNotification: (title: string, msg: string, type: 'info' | 'achievement' | 'trade' | 'crash') => void;
-  onUpdateHoldings?: (updater: (holdings: PortfolioHolding[]) => void) => void; 
-  onSendMoney?: (handle: string, amount: number, type: string) => Promise<{ success: boolean; message: string }>;
+  onAddNotification: (
+    title: string,
+    msg: string,
+    type: "info" | "achievement" | "trade" | "crash",
+  ) => void;
+  onUpdateHoldings?: (updater: (holdings: PortfolioHolding[]) => void) => void;
+  onSendMoney?: (
+    handle: string,
+    amount: number,
+    type: string,
+  ) => Promise<{ success: boolean; message: string }>;
   registeredUsers?: (UserStats & { uid: string })[];
 }
 
@@ -21,14 +40,14 @@ export default function PortfolioTab({
   onAddNotification,
   onUpdateHoldings,
   onSendMoney,
-  registeredUsers = []
+  registeredUsers = [],
 }: PortfolioProps) {
   const [loading, setLoading] = useState(true);
   const [showSendModal, setShowSendModal] = useState(false);
-  const [sendHandle, setSendHandle] = useState('');
-  const [sendType, setSendType] = useState('cash'); // 'cash' or a coin ID
-  const [sendAmount, setSendAmount] = useState<string>('');
-  const [successMsg, setSuccessMsg] = useState('');
+  const [sendHandle, setSendHandle] = useState("");
+  const [sendType, setSendType] = useState("cash"); // 'cash' or a coin ID
+  const [sendAmount, setSendAmount] = useState<string>("");
+  const [successMsg, setSuccessMsg] = useState("");
 
   useEffect(() => {
     // Simulator loading pattern to match the video
@@ -51,10 +70,10 @@ export default function PortfolioTab({
 
   // Selected asset available balance
   const getSelectedAvailable = () => {
-    if (sendType === 'cash') {
+    if (sendType === "cash") {
       return userStats.cash;
     }
-    if (sendType === 'gems') {
+    if (sendType === "gems") {
       return userStats.gems;
     }
     const match = holdings.find((h) => h.coinId === sendType);
@@ -69,11 +88,12 @@ export default function PortfolioTab({
   const handleSendCash = async (e: React.FormEvent) => {
     e.preventDefault();
     const numericAmount = Number(sendAmount);
-    if (!sendHandle.trim() || isNaN(numericAmount) || numericAmount <= 0) return;
+    if (!sendHandle.trim() || isNaN(numericAmount) || numericAmount <= 0)
+      return;
 
     const available = getSelectedAvailable();
     if (available < numericAmount) {
-      alert('Insufficient assets in your reserves!');
+      alert("Insufficient assets in your reserves!");
       return;
     }
 
@@ -84,74 +104,91 @@ export default function PortfolioTab({
         return;
       }
     } else {
-       // local only fallback if not provided
-       if (sendType === 'cash') {
-         onUpdateStats((stats) => {
-           stats.cash -= numericAmount;
-         });
-       } else if (sendType === 'gems') {
-         onUpdateStats((stats) => {
-           stats.gems -= numericAmount;
-         });
-       } else {
-          if (onUpdateHoldings) {
-            onUpdateHoldings((prev) => {
-              return prev.map((h) => {
+      // local only fallback if not provided
+      if (sendType === "cash") {
+        onUpdateStats((stats) => {
+          stats.cash -= numericAmount;
+        });
+      } else if (sendType === "gems") {
+        onUpdateStats((stats) => {
+          stats.gems -= numericAmount;
+        });
+      } else {
+        if (onUpdateHoldings) {
+          onUpdateHoldings((prev) => {
+            return prev
+              .map((h) => {
                 if (h.coinId === sendType) {
-                  return { ...h, amount: Math.max(0, h.amount - numericAmount) };
+                  return {
+                    ...h,
+                    amount: Math.max(0, h.amount - numericAmount),
+                  };
                 }
                 return h;
-              }).filter(h => h.amount > 0);
-            });
-          }
-       }
+              })
+              .filter((h) => h.amount > 0);
+          });
+        }
+      }
     }
 
-    if (sendType === 'cash') {
+    if (sendType === "cash") {
       onAddNotification(
-        'Funds Sent',
-        `Sent $${numericAmount.toLocaleString()} cash to @${sendHandle.replace('@', '')}`,
-        'info'
+        "Funds Sent",
+        `Sent $${numericAmount.toLocaleString()} cash to @${sendHandle.replace("@", "")}`,
+        "info",
       );
-      setSuccessMsg(`💸 Sent $${numericAmount.toLocaleString('en-US')} cash to @${sendHandle.replace('@', '')}!`);
-    } else if (sendType === 'gems') {
+      setSuccessMsg(
+        `💸 Sent $${numericAmount.toLocaleString("en-US")} cash to @${sendHandle.replace("@", "")}!`,
+      );
+    } else if (sendType === "gems") {
       onAddNotification(
-        'Gems Sent',
-        `Sent 💎 ${numericAmount.toLocaleString()} gems to @${sendHandle.replace('@', '')}`,
-        'achievement'
+        "Gems Sent",
+        `Sent 💎 ${numericAmount.toLocaleString()} gems to @${sendHandle.replace("@", "")}`,
+        "achievement",
       );
-      setSuccessMsg(`💎 Sent ${numericAmount.toLocaleString('en-US')} gems to @${sendHandle.replace('@', '')}!`);
+      setSuccessMsg(
+        `💎 Sent ${numericAmount.toLocaleString("en-US")} gems to @${sendHandle.replace("@", "")}!`,
+      );
     } else {
-      const coin = coins.find(c => c.id === sendType);
+      const coin = coins.find((c) => c.id === sendType);
       const symbol = coin ? coin.symbol : sendType.toUpperCase();
-      
+
       onAddNotification(
-        'Coins Transferred',
-        `Sent ${numericAmount.toLocaleString()} *${symbol} to @${sendHandle.replace('@', '')}`,
-        'info'
+        "Coins Transferred",
+        `Sent ${numericAmount.toLocaleString()} *${symbol} to @${sendHandle.replace("@", "")}`,
+        "info",
       );
-      setSuccessMsg(`🪙 Sent ${numericAmount.toLocaleString()} *${symbol} to @${sendHandle.replace('@', '')}!`);
+      setSuccessMsg(
+        `🪙 Sent ${numericAmount.toLocaleString()} *${symbol} to @${sendHandle.replace("@", "")}!`,
+      );
     }
 
     // Reset fields
-    setSendHandle('');
-    setSendAmount('');
+    setSendHandle("");
+    setSendAmount("");
     setTimeout(() => {
-      setSuccessMsg('');
+      setSuccessMsg("");
       setShowSendModal(false);
     }, 2800);
   };
 
   if (loading) {
     return (
-      <div className="flex-1 flex flex-col gap-6 select-none font-mono" id="portfolio-skeleton">
+      <div
+        className="flex-1 flex flex-col gap-6 select-none font-mono"
+        id="portfolio-skeleton"
+      >
         <div className="flex flex-col gap-1.5">
           <div className="h-6 w-32 bg-zinc-800 rounded animate-pulse" />
           <div className="h-4 w-48 bg-zinc-850 rounded animate-pulse mt-0.5" />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {[...Array(3)].map((_, i) => (
-            <div key={i} className="h-28 bg-zinc-900/30 border border-zinc-900/60 rounded-2xl animate-pulse" />
+            <div
+              key={i}
+              className="h-28 bg-zinc-900/30 border border-zinc-900/60 rounded-2xl animate-pulse"
+            />
           ))}
         </div>
         <div className="h-48 bg-zinc-900/10 border border-zinc-900/40 rounded-2xl animate-pulse mt-3" />
@@ -160,12 +197,16 @@ export default function PortfolioTab({
   }
 
   return (
-    <div className="flex-col flex gap-6 animate-fade-in text-zinc-100 font-mono" id="portfolio-tab-view">
+    <div
+      className="flex-col flex gap-6 animate-fade-in text-zinc-100 font-mono"
+      id="portfolio-tab-view"
+    >
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex flex-col">
           <h2 className="text-xl font-black text-white tracking-tight flex items-center gap-2">
-            <Briefcase className="w-5 h-5 text-rose-500 animate-pulse" /> Portfolio
+            <Briefcase className="w-5 h-5 text-rose-500 animate-pulse" />{" "}
+            Portfolio
           </h2>
           <p className="text-xs text-zinc-500 mt-0.5">
             Manage your investments and transactions
@@ -174,7 +215,7 @@ export default function PortfolioTab({
         {/* Send Money button - styled pink/red to highlight action like video */}
         <button
           onClick={() => {
-            setSuccessMsg('');
+            setSuccessMsg("");
             setShowSendModal(true);
           }}
           className="bg-rose-600 hover:bg-rose-500 text-white font-black hover:brightness-110 px-4 py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-md shadow-rose-950/20 active:scale-98 transition-all shrink-0 cursor-pointer self-start sm:self-auto uppercase tracking-wide border border-rose-500"
@@ -192,9 +233,15 @@ export default function PortfolioTab({
               Total Portfolio Valuation
             </span>
             <span className="text-2xl font-black text-white mt-2 tracking-tight">
-              ${totalPortfolioValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              $
+              {totalPortfolioValue.toLocaleString("en-US", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}
             </span>
-            <span className="text-[10px] text-zinc-500 mt-1">Includes coin assets is valued dynamically</span>
+            <span className="text-[10px] text-zinc-500 mt-1">
+              Includes coin assets is valued dynamically
+            </span>
           </div>
           <div className="w-12 h-12 bg-zinc-950 border border-zinc-850 rounded-xl flex items-center justify-center">
             <Briefcase className="w-5 h-5 text-rose-500" />
@@ -208,9 +255,15 @@ export default function PortfolioTab({
               Cash Balance
             </span>
             <span className="text-2xl font-black text-emerald-400 mt-2 tracking-tight">
-              ${userStats.cash.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              $
+              {userStats.cash.toLocaleString("en-US", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}
             </span>
-            <span className="text-[10px] text-zinc-550 mt-1">100.0% of portfolio</span>
+            <span className="text-[10px] text-zinc-550 mt-1">
+              100.0% of portfolio
+            </span>
           </div>
           <div className="w-12 h-12 bg-zinc-950 border border-zinc-850 rounded-xl flex items-center justify-center">
             <Wallet className="w-5 h-5 text-emerald-400" />
@@ -224,9 +277,15 @@ export default function PortfolioTab({
               Coin Holdings Valuation
             </span>
             <span className="text-2xl font-black text-cyan-405 mt-2 tracking-tight">
-              ${holdingsValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              $
+              {holdingsValue.toLocaleString("en-US", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}
             </span>
-            <span className="text-[10px] text-zinc-550 mt-1">{holdings.length} active positions</span>
+            <span className="text-[10px] text-zinc-550 mt-1">
+              {holdings.length} active positions
+            </span>
           </div>
           <div className="w-12 h-12 bg-zinc-950 border border-zinc-850 rounded-xl flex items-center justify-center">
             <Coins className="w-5 h-5 text-cyan-400" />
@@ -237,7 +296,8 @@ export default function PortfolioTab({
       {/* Asset table listings */}
       <div className="flex flex-col gap-3">
         <h3 className="text-xs font-black text-zinc-400 uppercase tracking-widest flex items-center gap-1 leading-none mt-2">
-          <History className="w-4 h-4 text-rose-500 animate-pulse" /> Active Holdings Breakdown
+          <History className="w-4 h-4 text-rose-500 animate-pulse" /> Active
+          Holdings Breakdown
         </h3>
 
         <div className="bg-zinc-900/30 border border-zinc-900 rounded-2xl overflow-hidden font-mono text-xs shadow-2xl">
@@ -246,9 +306,12 @@ export default function PortfolioTab({
               <div className="w-12 h-12 rounded-xl bg-zinc-950 border border-zinc-850 flex items-center justify-center text-xl select-none">
                 📁
               </div>
-              <span className="text-xs text-zinc-400 font-extrabold">No coin holdings</span>
+              <span className="text-xs text-zinc-400 font-extrabold">
+                No coin holdings
+              </span>
               <p className="text-[10px] text-zinc-500 max-w-xs leading-normal">
-                You haven't invested in any coins yet. Start by buying existing coins on the Marketplace dashboard.
+                You haven't invested in any coins yet. Start by buying existing
+                coins on the Marketplace dashboard.
               </p>
             </div>
           ) : (
@@ -275,7 +338,10 @@ export default function PortfolioTab({
                       const valueDiff = currentVal - totalCost;
 
                       return (
-                        <tr key={h.coinId} className="hover:bg-zinc-950/20 transition-colors">
+                        <tr
+                          key={h.coinId}
+                          className="hover:bg-zinc-950/20 transition-colors"
+                        >
                           <td className="px-5 py-3.5 flex items-center gap-2.5">
                             <span className="text-lg">{coin.avatarEmoji}</span>
                             <div className="flex flex-col">
@@ -288,7 +354,9 @@ export default function PortfolioTab({
                             </div>
                           </td>
                           <td className="px-5 py-3.5 text-right font-mono font-extrabold text-zinc-200">
-                            {h.amount.toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                            {h.amount.toLocaleString("en-US", {
+                              maximumFractionDigits: 2,
+                            })}
                           </td>
                           <td className="px-5 py-3.5 text-right font-mono text-zinc-500 text-xs">
                             ${h.avgBuyPrice.toFixed(4)}
@@ -303,11 +371,18 @@ export default function PortfolioTab({
                           <td className="px-5 py-3.5 text-right font-mono">
                             <div className="flex flex-col items-end">
                               <span className="font-extrabold text-teal-450">
-                                ${currentVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                $
+                                {currentVal.toLocaleString("en-US", {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}
                               </span>
                               {true && (
-                                <span className={`text-[10px] font-bold ${valueDiff >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                  {valueDiff >= 0 ? '+' : ''}${valueDiff.toFixed(2)}
+                                <span
+                                  className={`text-[10px] font-bold ${valueDiff >= 0 ? "text-emerald-400" : "text-rose-400"}`}
+                                >
+                                  {valueDiff >= 0 ? "+" : ""}$
+                                  {valueDiff.toFixed(2)}
                                 </span>
                               )}
                             </div>
@@ -330,9 +405,14 @@ export default function PortfolioTab({
                   const valueDiff = currentVal - totalCost;
 
                   return (
-                    <div key={h.coinId} className="p-3.5 flex items-center justify-between gap-3 hover:bg-zinc-950/10 transition-colors">
+                    <div
+                      key={h.coinId}
+                      className="p-3.5 flex items-center justify-between gap-3 hover:bg-zinc-950/10 transition-colors"
+                    >
                       <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                        <span className="text-lg shrink-0">{coin.avatarEmoji}</span>
+                        <span className="text-lg shrink-0">
+                          {coin.avatarEmoji}
+                        </span>
                         <div className="flex flex-col min-w-0">
                           <span className="font-extrabold text-white text-[12px] leading-tight truncate">
                             {coin.name}
@@ -341,17 +421,29 @@ export default function PortfolioTab({
                             *{coin.symbol}
                           </span>
                           <div className="text-[9.5px] text-zinc-400 mt-1 leading-none font-medium">
-                            Qty: <span className="font-extrabold text-zinc-200">{h.amount.toLocaleString('en-US', { maximumFractionDigits: 1 })}</span>
+                            Qty:{" "}
+                            <span className="font-extrabold text-zinc-200">
+                              {h.amount.toLocaleString("en-US", {
+                                maximumFractionDigits: 1,
+                              })}
+                            </span>
                           </div>
                         </div>
                       </div>
 
                       <div className="flex flex-col items-end text-right shrink-0 font-mono">
                         <div className="text-[9px] text-zinc-500">
-                          Avg: <span className="font-extrabold">${h.avgBuyPrice.toFixed(4)}</span>
+                          Avg:{" "}
+                          <span className="font-extrabold">
+                            ${h.avgBuyPrice.toFixed(4)}
+                          </span>
                         </div>
                         <div className="text-[12px] font-extrabold text-teal-400 mt-0.5">
-                          ${currentVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          $
+                          {currentVal.toLocaleString("en-US", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
                         </div>
                         <div className="mt-0.5">
                           {false ? (
@@ -359,8 +451,10 @@ export default function PortfolioTab({
                               crashed
                             </span>
                           ) : (
-                            <span className={`text-[9.5px] font-bold ${valueDiff >= 0 ? 'text-emerald-400' : 'text-rose-455'}`}>
-                              {valueDiff >= 0 ? '+' : ''}${valueDiff.toFixed(2)}
+                            <span
+                              className={`text-[9.5px] font-bold ${valueDiff >= 0 ? "text-emerald-400" : "text-rose-455"}`}
+                            >
+                              {valueDiff >= 0 ? "+" : ""}${valueDiff.toFixed(2)}
                             </span>
                           )}
                         </div>
@@ -381,7 +475,7 @@ export default function PortfolioTab({
             <button
               onClick={() => {
                 setShowSendModal(false);
-                setSuccessMsg('');
+                setSuccessMsg("");
               }}
               className="absolute top-4 right-4 text-zinc-500 hover:text-zinc-200"
             >
@@ -400,10 +494,15 @@ export default function PortfolioTab({
                 <span>{successMsg}</span>
               </div>
             ) : (
-              <form onSubmit={handleSendCash} className="flex flex-col gap-3.5 font-mono text-xs">
+              <form
+                onSubmit={handleSendCash}
+                className="flex flex-col gap-3.5 font-mono text-xs"
+              >
                 {/* Recipient */}
                 <div className="flex flex-col gap-1.5 flex-1 w-full">
-                  <label className="text-[10px] text-zinc-500 uppercase tracking-widest font-black">Recipient</label>
+                  <label className="text-[10px] text-zinc-500 uppercase tracking-widest font-black">
+                    Recipient
+                  </label>
                   <input
                     type="text"
                     required
@@ -411,27 +510,40 @@ export default function PortfolioTab({
                     value={sendHandle}
                     onChange={(e) => setSendHandle(e.target.value)}
                     className={`px-3.5 py-2.5 rounded-xl text-xs focus:outline-none font-bold transition-all border ${
-                      sendHandle.trim() === ''
-                        ? 'bg-zinc-950 border-zinc-850 text-white focus:border-rose-500'
-                        : registeredUsers.some(u => u.handle.toLowerCase() === `@${sendHandle.replace('@', '').toLowerCase()}`)
-                        ? 'bg-emerald-950/20 border-emerald-900/50 text-emerald-400 focus:border-emerald-500'
-                        : 'bg-rose-950/20 border-rose-900/50 text-rose-400 focus:border-rose-500'
+                      sendHandle.trim() === ""
+                        ? "bg-zinc-950 border-zinc-850 text-white focus:border-rose-500"
+                        : registeredUsers.some(
+                              (u) =>
+                                u.handle.toLowerCase() ===
+                                `@${sendHandle.replace("@", "").toLowerCase()}`,
+                            )
+                          ? "bg-emerald-950/20 border-emerald-900/50 text-emerald-400 focus:border-emerald-500"
+                          : "bg-rose-950/20 border-rose-900/50 text-rose-400 focus:border-rose-500"
                     }`}
                   />
-                  {sendHandle.trim() !== '' && !registeredUsers.some(u => u.handle.toLowerCase() === `@${sendHandle.replace('@', '').toLowerCase()}`) && (
-                    <span className="text-[9px] text-rose-600 font-bold whitespace-nowrap">Error: Target user does not exist in network.</span>
-                  )}
+                  {sendHandle.trim() !== "" &&
+                    !registeredUsers.some(
+                      (u) =>
+                        u.handle.toLowerCase() ===
+                        `@${sendHandle.replace("@", "").toLowerCase()}`,
+                    ) && (
+                      <span className="text-[9px] text-rose-600 font-bold whitespace-nowrap">
+                        Error: Target user does not exist in network.
+                      </span>
+                    )}
                 </div>
 
                 {/* Type Selection */}
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-[10px] text-zinc-500 uppercase tracking-widest font-black">Type</label>
+                  <label className="text-[10px] text-zinc-500 uppercase tracking-widest font-black">
+                    Type
+                  </label>
                   <select
                     className="bg-zinc-950 border border-zinc-850 px-3.5 py-2.5 rounded-xl text-xs text-zinc-200 focus:outline-none focus:border-rose-500 select-none cursor-pointer font-bold"
                     value={sendType}
                     onChange={(e) => {
                       setSendType(e.target.value);
-                      setSendAmount('');
+                      setSendAmount("");
                     }}
                   >
                     <option value="cash">Cash ($)</option>
@@ -450,7 +562,9 @@ export default function PortfolioTab({
                 {/* Amount */}
                 <div className="flex flex-col gap-1.5">
                   <div className="flex justify-between items-center">
-                    <label className="text-[10px] text-zinc-500 uppercase tracking-widest font-black">Amount ({sendType === 'cash' ? '$' : 'Quantity'})</label>
+                    <label className="text-[10px] text-zinc-500 uppercase tracking-widest font-black">
+                      Amount ({sendType === "cash" ? "$" : "Quantity"})
+                    </label>
                     <button
                       type="button"
                       onClick={handleMaxClick}
@@ -471,7 +585,10 @@ export default function PortfolioTab({
                       className="w-full bg-zinc-950 border border-zinc-850 px-3.5 py-2.5 rounded-xl text-xs text-white focus:outline-none focus:border-rose-500 font-bold pr-14"
                     />
                     <div className="absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-500 font-bold uppercase tracking-widest text-[9px]">
-                      {sendType === 'cash' ? 'USD' : (coins.find(c => c.id === sendType)?.symbol || 'TOKEN')}
+                      {sendType === "cash"
+                        ? "USD"
+                        : coins.find((c) => c.id === sendType)?.symbol ||
+                          "TOKEN"}
                     </div>
                   </div>
                   {/* Dynamic Help details matching video */}
@@ -479,15 +596,17 @@ export default function PortfolioTab({
                     <div className="flex justify-between items-center">
                       <span>Available:</span>
                       <span className="font-extrabold text-zinc-400">
-                        {sendType === 'cash' 
-                          ? `$${getSelectedAvailable().toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` 
-                          : `${getSelectedAvailable().toLocaleString('en-US')} coin/token`}
+                        {sendType === "cash"
+                          ? `$${getSelectedAvailable().toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                          : `${getSelectedAvailable().toLocaleString("en-US")} coin/token`}
                       </span>
                     </div>
                     <div className="flex justify-between items-center">
                       <span>Minimum:</span>
                       <span className="font-extrabold">
-                        {sendType === 'cash' ? '$10.00 per transfer' : '1.00 coin/token'}
+                        {sendType === "cash"
+                          ? "$10.00 per transfer"
+                          : "1.00 coin/token"}
                       </span>
                     </div>
                   </div>
@@ -506,7 +625,7 @@ export default function PortfolioTab({
                     type="button"
                     onClick={() => {
                       setShowSendModal(false);
-                      setSuccessMsg('');
+                      setSuccessMsg("");
                     }}
                     className="w-full bg-zinc-950 hover:bg-zinc-850 text-zinc-400 hover:text-white-85 border border-zinc-850 py-2 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
                   >

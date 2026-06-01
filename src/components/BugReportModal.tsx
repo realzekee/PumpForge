@@ -1,36 +1,45 @@
-import React, { useState } from 'react';
-import { AlertTriangle, Send, X, ShieldAlert } from 'lucide-react';
-import { UserStats } from '../types';
+import React, { useState } from "react";
+import { AlertTriangle, Send, X, ShieldAlert } from "lucide-react";
+import { UserStats } from "../types";
 
 interface BugReportModalProps {
   userStats: UserStats;
   currentUser: any;
   onClose: () => void;
-  onSubmitBug: (title: string, description: string, category: string) => Promise<boolean>;
+  onSubmitBug: (
+    title: string,
+    description: string,
+    category: string,
+  ) => Promise<boolean>;
 }
 
-export default function BugReportModal({ userStats, currentUser, onClose, onSubmitBug }: BugReportModalProps) {
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [category, setCategory] = useState('UI/Layout');
+export default function BugReportModal({
+  userStats,
+  currentUser,
+  onClose,
+  onSubmitBug,
+}: BugReportModalProps) {
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [category, setCategory] = useState("UI/Layout");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
-  const [errorMsg, setErrorMsg] = useState('');
+  const [errorMsg, setErrorMsg] = useState("");
 
   const titleLimit = 80;
   const descLimit = 400;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setErrorMsg('');
+    setErrorMsg("");
 
     if (!currentUser) {
-      setErrorMsg('You must be signed in to submit a bug report.');
+      setErrorMsg("You must be signed in to submit a bug report.");
       return;
     }
 
     if (!title.trim() || !description.trim()) {
-      setErrorMsg('Please enter both a title and a description.');
+      setErrorMsg("Please enter both a title and a description.");
       return;
     }
 
@@ -39,13 +48,13 @@ export default function BugReportModal({ userStats, currentUser, onClose, onSubm
       const ok = await onSubmitBug(title.trim(), description.trim(), category);
       if (ok) {
         setSuccess(true);
-        setTitle('');
-        setDescription('');
+        setTitle("");
+        setDescription("");
       } else {
-        setErrorMsg('Failed to submit report. Please check connection.');
+        setErrorMsg("Failed to submit report. Please check connection.");
       }
     } catch (err: any) {
-      setErrorMsg(err?.message || 'Something went wrong. Let zeke know!');
+      setErrorMsg(err?.message || "Something went wrong. Let zeke know!");
     } finally {
       setIsSubmitting(false);
     }
@@ -72,7 +81,9 @@ export default function BugReportModal({ userStats, currentUser, onClose, onSubm
               Bug Report Submitted
             </h3>
             <p className="text-xs text-zinc-400 mb-6 leading-relaxed">
-              Thanks for the report! We have stored this report in a highly compressed format (less than 0.5KB) to protect database storage limits. No bloat!
+              Thanks for the report! We have stored this report in a highly
+              compressed format (less than 0.5KB) to protect database storage
+              limits. No bloat!
             </p>
             <button
               onClick={onClose}
@@ -89,8 +100,12 @@ export default function BugReportModal({ userStats, currentUser, onClose, onSubm
                 <AlertTriangle className="w-5 h-5 animate-pulse text-rose-450" />
               </div>
               <div className="flex flex-col">
-                <span className="text-xs font-black text-rose-400 uppercase tracking-widest">Submit Bug Report</span>
-                <span className="text-[9px] text-zinc-500 leading-none">Database optimized & bounded - 0.5KB max payload</span>
+                <span className="text-xs font-black text-rose-400 uppercase tracking-widest">
+                  Submit Bug Report
+                </span>
+                <span className="text-[9px] text-zinc-500 leading-none">
+                  Database optimized & bounded - 0.5KB max payload
+                </span>
               </div>
             </div>
 
@@ -104,8 +119,12 @@ export default function BugReportModal({ userStats, currentUser, onClose, onSubm
             {/* Title */}
             <div className="flex flex-col gap-1.5">
               <div className="flex justify-between items-center text-[10px] text-zinc-400 font-bold">
-                <label htmlFor="bug-title" className="uppercase tracking-wider">Bug Title</label>
-                <span className={`font-mono text-[9px] ${title.length > titleLimit - 10 ? 'text-rose-400' : 'text-zinc-550'}`}>
+                <label htmlFor="bug-title" className="uppercase tracking-wider">
+                  Bug Title
+                </label>
+                <span
+                  className={`font-mono text-[9px] ${title.length > titleLimit - 10 ? "text-rose-400" : "text-zinc-550"}`}
+                >
                   {title.length}/{titleLimit}
                 </span>
               </div>
@@ -124,16 +143,27 @@ export default function BugReportModal({ userStats, currentUser, onClose, onSubm
 
             {/* Category */}
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="bug-category" className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Category</label>
+              <label
+                htmlFor="bug-category"
+                className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider"
+              >
+                Category
+              </label>
               <select
                 id="bug-category"
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
                 className="w-full bg-zinc-950 text-zinc-100 text-xs border border-zinc-850 focus:border-rose-500/50 rounded-xl px-3.5 py-3 outline-none cursor-pointer transition-colors"
               >
-                <option value="UI/Layout">UI/Layout (Styles, cards, flickering)</option>
-                <option value="Trading">Trading System (Trades, prices, buy/sell)</option>
-                <option value="Arcade">Arcade Room (Slots, mine games, play limits)</option>
+                <option value="UI/Layout">
+                  UI/Layout (Styles, cards, flickering)
+                </option>
+                <option value="Trading">
+                  Trading System (Trades, prices, buy/sell)
+                </option>
+                <option value="Arcade">
+                  Arcade Room (Slots, mine games, play limits)
+                </option>
                 <option value="Leaderboard">Leaderboard & User Stats</option>
                 <option value="Achievements">Achievements & Perks</option>
                 <option value="Other">Other Miscellaneous Bugs</option>
@@ -143,8 +173,15 @@ export default function BugReportModal({ userStats, currentUser, onClose, onSubm
             {/* Description */}
             <div className="flex flex-col gap-1.5">
               <div className="flex justify-between items-center text-[10px] text-zinc-400 font-bold">
-                <label htmlFor="bug-description" className="uppercase tracking-wider">Detailed Description</label>
-                <span className={`font-mono text-[9px] ${description.length > descLimit - 25 ? 'text-rose-400' : 'text-zinc-550'}`}>
+                <label
+                  htmlFor="bug-description"
+                  className="uppercase tracking-wider"
+                >
+                  Detailed Description
+                </label>
+                <span
+                  className={`font-mono text-[9px] ${description.length > descLimit - 25 ? "text-rose-400" : "text-zinc-550"}`}
+                >
                   {description.length}/{descLimit}
                 </span>
               </div>
@@ -152,7 +189,9 @@ export default function BugReportModal({ userStats, currentUser, onClose, onSubm
                 id="bug-description"
                 placeholder="Describe exact steps to reproduce..."
                 value={description}
-                onChange={(e) => setDescription(e.target.value.slice(0, descLimit))}
+                onChange={(e) =>
+                  setDescription(e.target.value.slice(0, descLimit))
+                }
                 maxLength={descLimit}
                 rows={4}
                 required
@@ -167,7 +206,9 @@ export default function BugReportModal({ userStats, currentUser, onClose, onSubm
               className="w-full bg-rose-650 hover:bg-rose-550 disabled:opacity-50 disabled:cursor-not-allowed text-white font-black py-3.5 rounded-xl text-xs uppercase tracking-widest transition-colors shadow-lg shadow-rose-950/15 border border-rose-500 flex items-center justify-center gap-2"
             >
               <Send className="w-3.5 h-3.5" />
-              <span>{isSubmitting ? 'Submitting...' : 'Submit Bug Report'}</span>
+              <span>
+                {isSubmitting ? "Submitting..." : "Submit Bug Report"}
+              </span>
             </button>
           </form>
         )}
