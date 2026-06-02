@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Gamepad2,
   DollarSign,
@@ -85,9 +85,30 @@ export default function ArcadeTab({
   const [coinSide, setCoinSide] = useState<"heads" | "tails">("heads");
   const [coinIsFlapping, setCoinIsFlapping] = useState(false);
   const [coinOutcome, setCoinOutcome] = useState<"heads" | "tails" | null>(
-    null,
+    Math.random() > 0.5 ? "heads" : "tails"
   );
   const [coinResultMsg, setCoinResultMsg] = useState("");
+
+  // Idle Animation Toggle
+  const [idlePulse, setIdlePulse] = useState(false);
+  useEffect(() => {
+    const int = setInterval(() => {
+      if (!coinIsFlapping) setIdlePulse(p => !p);
+    }, 2000);
+    return () => clearInterval(int);
+  }, [coinIsFlapping]);
+
+
+  // Rapidly flip coinFace during animation
+  useEffect(() => {
+    let int: NodeJS.Timeout;
+    if (coinIsFlapping) {
+      int = setInterval(() => {
+        setCoinOutcome(prev => prev === "heads" ? "tails" : "heads");
+      }, 100);
+    }
+    return () => clearInterval(int);
+  }, [coinIsFlapping]);
 
   // Slots States
   const [slotBet, setSlotBet] = useState(100);
@@ -816,8 +837,8 @@ export default function ArcadeTab({
               {/* Graphical Flipping Coin */}
               <div className="h-28 flex items-center justify-center relative perspective-1000">
                 <div
-                  className={`w-24 h-24 rounded-full bg-gradient-to-tr from-amber-600 via-orange-500 to-yellow-400 flex items-center justify-center border-4 border-amber-950 shadow-lg shadow-orange-950/20 text-3xl font-black text-white select-none transition-transform duration-100 ${
-                    coinIsFlapping ? "animate-spin-fast" : ""
+                  className={`w-24 h-24 rounded-full bg-gradient-to-tr from-amber-600 via-orange-500 to-yellow-400 flex items-center justify-center border-4 border-amber-950 shadow-lg shadow-orange-950/20 text-3xl font-black text-white select-none transition-transform duration-700 ${
+                    coinIsFlapping ? "animate-spin-fast" : idlePulse ? "scale-105 shadow-orange-500/50" : "scale-100"
                   }`}
                 >
                   {coinOutcome === "heads"

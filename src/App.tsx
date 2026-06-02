@@ -1227,27 +1227,40 @@ export default function App() {
   // 3. GLOBAL SHARED COINS, TRADES FEED & MARKETS SYNC
   useEffect(() => {
     // Coins global listener
-    const coinsUnsub = onSnapshot(
-      collection(db, "coins"),
-      (snap) => {
-        if (snap.empty) {
+    const fetchCoins = async () => {
+      try {
+        const { Query } = await import("appwrite");
+        const res = await databases.listDocuments("pumpforge", "coins", [
+           Query.limit(100)
+        ]);
+        if (res.documents.length === 0) {
           setCoins(INITIAL_COINS);
         } else {
-          const list: MemeCoin[] = [];
-          snap.forEach((doc) => {
-            const data = doc.data() as MemeCoin;
-            if (data.creator === "@zeke" || data.creator === "zeke") {
-              data.creator = "@system";
-            }
-            list.push(data);
+          const list = res.documents.map(d => {
+             const c = { ...d } as any;
+             delete c.$id;
+             delete c.$databaseId;
+             delete c.$collectionId;
+             delete c.$permissions;
+             delete c.$updatedAt;
+             if (c.creator === "@zeke" || c.creator === "zeke") {
+               c.creator = "@system";
+             }
+             c.id = d.$id;
+             c.createdAt = d.$createdAt;
+             return c as MemeCoin;
           });
           setCoins(list);
         }
-      },
-      (error) => {
-        console.error("Coins snapshot subscription error:", error);
-      },
-    );
+      } catch(err) {
+        console.error("Appwrite coins fetch error:", err);
+      }
+    };
+
+    fetchCoins();
+    const coinsUnsub = client.subscribe("databases.pumpforge.collections.coins.documents", () => {
+       fetchCoins();
+    });
 
     // Prediction markets global listener
     const marketsUnsub = onSnapshot(
@@ -1325,25 +1338,46 @@ export default function App() {
       },
     );
 
-    // Trades live feed global listener (Limit and ordered by creation timestamp)
-    const tradesQuery = query(
-      collection(db, "trades"),
-      orderBy("timestamp", "desc"),
-      limit(15),
-    );
-    const tradesUnsub = onSnapshot(
-      tradesQuery,
-      (snap) => {
-        const list: LiveTrade[] = [];
-        snap.forEach((doc) => list.push(doc.data() as LiveTrade));
-        if (list.length > 0) {
-          setLiveTrades(list);
-        }
-      },
-      (error) => {
-        console.error("Trades snapshot subscription error:", error);
-      },
-    );
+    // Trades live feed Appwrite Real-Time
+    const fetchTrades = async () => {
+      try {
+        const { Query } = await import("appwrite");
+        const res = await databases.listDocuments("pumpforge", "trades", [
+          Query.equal("isSimulated", false),
+          Query.orderDesc("$createdAt"),
+          Query.limit(15)
+        ]);
+        
+        // We will map these in the component render, or we can fetch the user/coin
+        const list: LiveTrade[] = res.documents.map((d: any) => {
+             const coinDetails = coins.find(c => c.id === d.coinId);
+             
+             return {
+                 id: d.$id,
+                 timestamp: new Date(d.$createdAt).toLocaleTimeString(),
+                 type: d.type as any,
+                 coinId: d.coinId,
+                 coinSymbol: coinDetails?.symbol || "UNKNOWN", 
+                 coinName: coinDetails?.name || "Unknown",
+                 amountTokens: d.amount,
+                 amountUsd: coinDetails ? d.amount * coinDetails.price : 0, 
+                 userHandle: d.userId, // We'll just display ID trunc'd if handle not available
+                 userId: d.userId
+             };
+        });
+        
+        setLiveTrades(list);
+
+      } catch (err) {
+        console.error("Failed to fetch Appwrite trades:", err);
+      }
+    };
+    
+    fetchTrades();
+    
+    const tradesUnsub = client.subscribe("databases.pumpforge.collections.trades.documents", (response) => {
+       fetchTrades();
+    });
 
     // Real-time dynamic synced participants list from database
     const usersUnsub = onSnapshot(
@@ -1688,52 +1722,58 @@ export default function App() {
 
       if (currentUser) {
         try {
-          const userRef = doc(db, "users", currentUser.uid);
-          const holdingRef = doc(
-            db,
-            "users",
-            currentUser.uid,
-            "holdings",
-            coinId,
-          );
-          const tradeId = "t-" + Math.random().toString(36).substring(3);
-          const tradeRef = doc(db, "trades", tradeId);
-          const coinRef = doc(db, "coins", coinId);
-
-          const priceImpact =
-            coin.price * (1 + 0.005 * (amountCoins / coin.supply));
+          const uid = currentUser.uid || currentUser.$id;
+          const priceImpact = coin.price * (1 + 0.005 * (amountCoins / coin.supply));
           const finalPrice = Math.min(priceImpact, coin.price * 3);
           const nextHistory = [...coin.history.slice(-14), finalPrice];
-
-          const batch = writeBatch(db);
-          batch.update(userRef, {
+          
+          await databases.updateDocument("pumpforge", "users", uid, {
             cash: Number(nextCash.toFixed(2)),
             tradesCount: nextTradesCount,
           });
-          batch.set(holdingRef, {
-            coinId,
-            amount: nextAmount,
-            avgBuyPrice: nextAvgBuyPrice,
-          });
-          batch.update(coinRef, {
-            price: finalPrice,
-            marketCap: Math.floor(coin.supply * finalPrice),
-            history: nextHistory,
-            volume24h: coin.volume24h + totalUsdVal,
-          });
-          batch.set(tradeRef, {
-            id: tradeId,
-            timestamp: new Date().toLocaleTimeString(),
-            type: "BUY",
-            coinId,
-            coinSymbol: coin.symbol,
-            coinName: coin.name,
-            amountUsd: totalUsdVal,
-            amountTokens: amountCoins,
-            userHandle: userStats.handle,
-          });
 
-          await batch.commit();
+          // Check if holding exists in Appwrite to get its ID, or we can use ID.unique() and query it.
+          // Since local state doesn't have document IDs yet, let's query Appwrite holdings.
+          const { Query } = await import("appwrite");
+          const holdingDocs = await databases.listDocuments("pumpforge", "holdings", [
+            Query.equal("userId", uid),
+            Query.equal("coinId", coinId)
+          ]);
+
+          if (holdingDocs.documents.length > 0) {
+            await databases.updateDocument("pumpforge", "holdings", holdingDocs.documents[0].$id, {
+              tokenAmount: nextAmount
+            });
+          } else {
+            await databases.createDocument("pumpforge", "holdings", ID.unique(), {
+              userId: uid,
+              coinId: coinId,
+              tokenAmount: nextAmount
+            }, [
+               Permission.read(Role.any()), Permission.update(Role.any()), Permission.delete(Role.any())
+            ]);
+          }
+
+          if (coinId && typeof coinId === "string") {
+            try {
+              await databases.updateDocument("pumpforge", "coins", coinId, {
+                price: finalPrice,
+                marketCap: Math.floor(coin.supply * finalPrice),
+              });
+            } catch (err) {
+               console.warn("Failed to update coin (it may not exist in Appwrite yet):", err);
+            }
+          }
+
+          await databases.createDocument("pumpforge", "trades", ID.unique(), {
+            coinId: coinId,
+            userId: uid,
+            type: "BUY",
+            amount: amountCoins,
+            isSimulated: false
+          }, [
+            Permission.read(Role.any()), Permission.update(Role.any()), Permission.delete(Role.any())
+          ]);
 
           setHoldings((prev) => {
             if (existingHolding) {
@@ -1755,12 +1795,12 @@ export default function App() {
             cash: nextCash,
             tradesCount: nextTradesCount,
           }));
-        } catch (e) {
-          handleFirestoreError(
-            e,
-            OperationType.WRITE,
-            `tradeAction/buy/${coinId}`,
-          );
+          
+          // Update local coin price
+          setCoins(prev => prev.map(c => c.id === coinId ? { ...c, price: finalPrice, marketCap: Math.floor(c.supply * finalPrice), history: nextHistory, volume24h: c.volume24h + totalUsdVal } : c));
+        } catch (e: any) {
+          console.error("Appwrite trade buy error:", e);
+          toast.error("Trade failed: " + e.message);
         }
       } else {
         setHoldings((prev) => {
@@ -1810,60 +1850,54 @@ export default function App() {
 
       if (currentUser) {
         try {
-          const userRef = doc(db, "users", currentUser.uid);
-          const holdingRef = doc(
-            db,
-            "users",
-            currentUser.uid,
-            "holdings",
-            coinId,
-          );
-          const tradeId = "t-" + Math.random().toString(36).substring(3);
-          const tradeRef = doc(db, "trades", tradeId);
-          const coinRef = doc(db, "coins", coinId);
-
-          const priceImpact =
-            coin.price * (1 - 0.005 * (amountCoins / coin.supply));
+          const uid = currentUser.uid || currentUser.$id;
+          const priceImpact = coin.price * (1 - 0.005 * (amountCoins / coin.supply));
           const finalPrice = Math.max(0.0000001, priceImpact);
           const nextHistory = [...coin.history.slice(-14), finalPrice];
-
-          const batch = writeBatch(db);
-          batch.update(userRef, {
+          
+          await databases.updateDocument("pumpforge", "users", uid, {
             cash: Number(nextCash.toFixed(2)),
             totalProfit: nextProfit,
             tradesCount: nextTradesCount,
           });
+          
+          const { Query } = await import("appwrite");
+          const holdingDocs = await databases.listDocuments("pumpforge", "holdings", [
+            Query.equal("userId", uid),
+            Query.equal("coinId", coinId)
+          ]);
 
-          if (nextAmount <= 0) {
-            batch.delete(holdingRef);
-          } else {
-            batch.set(holdingRef, {
-              coinId,
-              amount: nextAmount,
-              avgBuyPrice: existingHolding.avgBuyPrice,
-            });
+          if (holdingDocs.documents.length > 0) {
+            const holdingId = holdingDocs.documents[0].$id;
+            if (nextAmount <= 0) {
+              await databases.deleteDocument("pumpforge", "holdings", holdingId);
+            } else {
+              await databases.updateDocument("pumpforge", "holdings", holdingId, {
+                tokenAmount: nextAmount
+              });
+            }
           }
 
-          batch.update(coinRef, {
-            price: finalPrice,
-            marketCap: Math.floor(coin.supply * finalPrice),
-            history: nextHistory,
-            volume24h: coin.volume24h + totalUsdVal,
-          });
+          if (coinId && typeof coinId === "string") {
+            try {
+              await databases.updateDocument("pumpforge", "coins", coinId, {
+                price: finalPrice,
+                marketCap: Math.floor(coin.supply * finalPrice),
+              });
+            } catch (err) {
+               console.warn("Failed to update coin (it may not exist in Appwrite yet):", err);
+            }
+          }
 
-          batch.set(tradeRef, {
-            id: tradeId,
-            timestamp: new Date().toLocaleTimeString(),
+          await databases.createDocument("pumpforge", "trades", ID.unique(), {
+            coinId: coinId,
+            userId: uid,
             type: "SELL",
-            coinId,
-            coinSymbol: coin.symbol,
-            coinName: coin.name,
-            amountUsd: totalUsdVal,
-            amountTokens: amountCoins,
-            userHandle: userStats.handle,
-          });
-
-          await batch.commit();
+            amount: amountCoins,
+            isSimulated: false
+          }, [
+            Permission.read(Role.any()), Permission.update(Role.any()), Permission.delete(Role.any())
+          ]);
 
           setHoldings((prev) => {
             return prev
@@ -1882,12 +1916,11 @@ export default function App() {
             totalProfit: nextProfit,
             tradesCount: nextTradesCount,
           }));
-        } catch (e) {
-          handleFirestoreError(
-            e,
-            OperationType.WRITE,
-            `tradeAction/sell/${coinId}`,
-          );
+          
+          setCoins(prev => prev.map(c => c.id === coinId ? { ...c, price: finalPrice, marketCap: Math.floor(c.supply * finalPrice), history: nextHistory, volume24h: c.volume24h + totalUsdVal } : c));
+        } catch (e: any) {
+          console.error("Appwrite trade sell error:", e);
+          toast.error("Trade failed: " + e.message);
         }
       } else {
         setHoldings((prev) => {
@@ -3088,6 +3121,7 @@ export default function App() {
     <div className="flex min-h-screen bg-zinc-950 text-zinc-100 flex-col md:flex-row">
       <Sidebar
         userStats={userStats}
+        achievements={achievements}
         onClaimDailyReward={handleClaimDailyReward}
         liveTrades={liveTrades}
         onOpenPrestigeModal={() => setShowPrestigeModal(true)}

@@ -126,8 +126,10 @@ export default function CreateCoinTab({ setCoins, coins }: CreateCoinProps) {
       );
 
       const listPrice = 0.005;
+      const nowString = new Date().toISOString();
       const newMeme = {
         id: newCoinId,
+        createdAt: nowString,
         name: name.trim(),
         symbol: symbol.trim().toUpperCase(),
         creator: userStats.handle,

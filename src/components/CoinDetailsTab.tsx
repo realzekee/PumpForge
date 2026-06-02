@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   ArrowLeft,
@@ -113,6 +113,59 @@ export default function CoinDetailsTab({
     type: "success" | "error";
     msg: string;
   } | null>(null);
+
+  // Fair Launch Anti-Bot 60s cooldown
+  const [launchTimer, setLaunchTimer] = useState<number>(0);
+  const isCreator = userStats?.handle?.toLowerCase() === activeCoin?.creator?.toLowerCase();
+  const [topHolders, setTopHolders] = useState<any[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    const fetchTopHolders = async () => {
+      try {
+        const { Query } = await import("appwrite");
+        const { databases } = await import("../appwrite");
+        const res = await databases.listDocuments("pumpforge", "holdings", [
+          Query.equal("coinId", activeCoin.id),
+          Query.orderDesc("tokenAmount"),
+          Query.limit(5)
+        ]);
+        if (active) {
+          const list = res.documents.map((d, index) => ({
+             rank: index + 1,
+             name: "User " + d.userId.substring(0, 4),
+             handle: d.userId, 
+             weight: ((d.tokenAmount / activeCoin.supply) * 100).toFixed(1) + "%",
+             balance: "$" + (d.tokenAmount * activeCoin.price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+             emoji: ["🏛️", "⚡", "💪", "🕶️", "👑"][index % 5],
+             bg: ["bg-amber-950 text-amber-400", "bg-orange-950 text-orange-400", "bg-emerald-950 text-emerald-400", "bg-rose-950 text-rose-400", "bg-indigo-950 text-indigo-400"][index % 5]
+          }));
+          setTopHolders(list);
+        }
+      } catch (err) {
+        console.error("Failed to fetch holders:", err);
+      }
+    };
+    fetchTopHolders();
+    return () => { active = false; };
+  }, [activeCoin.id, activeCoin.price, activeCoin.supply]);
+
+  useEffect(() => {
+    if (!activeCoin.createdAt) return;
+    const interval = setInterval(() => {
+      const createdTime = new Date(activeCoin.createdAt!).getTime();
+      const now = Date.now();
+      const elapsed = Math.floor((now - createdTime) / 1000);
+      const remaining = 60 - elapsed;
+      if (remaining > 0) {
+        setLaunchTimer(remaining);
+      } else {
+        setLaunchTimer(0);
+        clearInterval(interval);
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [activeCoin.createdAt]);
 
   // User holdings query
   const userAssetHolding = useMemo(() => {
@@ -561,6 +614,11 @@ export default function CoinDetailsTab({
             <h3 className="text-xs font-black text-white uppercase tracking-widest flex items-center gap-2 mb-1">
               <Zap className="w-3.5 h-3.5 text-rose-500 animate-pulse" />
               TRANSACTION EXECUTION
+              {launchTimer > 0 && (
+                <span className="ml-auto text-[9px] bg-red-950 text-red-500 px-1.5 py-0.5 rounded border border-red-900 font-mono animate-pulse">
+                  {launchTimer}s FAIR LAUNCH
+                </span>
+              )}
             </h3>
 
             {/* If no trade mode selected, show stacked buttons */}
@@ -568,20 +626,32 @@ export default function CoinDetailsTab({
               <div className="flex flex-col gap-3">
                 <button
                   onClick={() => {
+                    if (launchTimer > 0 && !isCreator) return;
                     setActiveTradeMode("BUY");
                     setFeedback(null);
                   }}
-                  className="w-full bg-red-600 hover:bg-red-500 hover:scale-101 active:scale-98 text-white py-4 px-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-md shadow-red-950/40 border border-red-500 cursor-pointer flex items-center justify-center gap-2 text-glow"
+                  disabled={launchTimer > 0 && !isCreator}
+                  className={`w-full py-4 px-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-md flex items-center justify-center gap-2 text-glow ${
+                    launchTimer > 0 && !isCreator
+                      ? "bg-zinc-800 text-zinc-500 border border-zinc-700 cursor-not-allowed"
+                      : "bg-red-600 hover:bg-red-500 hover:scale-101 active:scale-98 text-white shadow-red-950/40 border border-red-500 cursor-pointer"
+                  }`}
                   id="massive-buy-btn"
                 >
                   ⚡ Buy ${activeCoin.symbol}
                 </button>
                 <button
                   onClick={() => {
+                    if (launchTimer > 0 && !isCreator) return;
                     setActiveTradeMode("SELL");
                     setFeedback(null);
                   }}
-                  className="w-full bg-zinc-950 hover:bg-zinc-850 hover:scale-101 active:scale-98 text-zinc-300 hover:text-white py-4 px-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all border border-zinc-800 hover:border-zinc-700 cursor-pointer flex items-center justify-center gap-2"
+                  disabled={launchTimer > 0 && !isCreator}
+                  className={`w-full py-4 px-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all border flex items-center justify-center gap-2 ${
+                    launchTimer > 0 && !isCreator
+                      ? "bg-zinc-800 text-zinc-500 border border-zinc-700 cursor-not-allowed"
+                      : "bg-zinc-950 hover:bg-zinc-850 hover:scale-101 active:scale-98 text-zinc-300 hover:text-white border-zinc-800 hover:border-zinc-700 cursor-pointer"
+                  }`}
                   id="massive-sell-btn"
                 >
                   ⚡ Sell ${activeCoin.symbol}
@@ -763,13 +833,13 @@ export default function CoinDetailsTab({
                 <div className="flex justify-between items-center py-0.5">
                   <span className="text-zinc-500">Total Liquidity:</span>
                   <span className="text-white font-extrabold">
-                    $2,860,040 USD
+                    ${activeCoin.marketCap.toLocaleString()} USD
                   </span>
                 </div>
                 <div className="flex justify-between items-center py-0.5">
-                  <span className="text-zinc-500">Calculated Index:</span>
-                  <span className="text-emerald-400 font-black">
-                    1.135 degen_index
+                  <span className="text-zinc-500">Token Supply:</span>
+                  <span className="text-zinc-300 font-extrabold">
+                    {activeCoin.supply.toLocaleString()}
                   </span>
                 </div>
                 <div className="flex justify-between items-center py-0.5">
@@ -789,11 +859,11 @@ export default function CoinDetailsTab({
           >
             <h3 className="text-xs font-black text-white uppercase tracking-widest flex items-center gap-2">
               <Users className="w-3.5 h-3.5 text-zinc-400" />
-              TOP HOLDERS (PDH SCALE)
+              TOP HOLDERS
             </h3>
 
             <div className="flex flex-col gap-2.5">
-              {TOP_HOLDERS_SIMULATED.map((holder) => (
+              {(topHolders.length > 0 ? topHolders : TOP_HOLDERS_SIMULATED).map((holder) => (
                 <div
                   key={holder.rank}
                   className="bg-zinc-950/50 border border-zinc-900 p-3 rounded-2xl flex items-center justify-between gap-3 hover:bg-zinc-950 transition-all"

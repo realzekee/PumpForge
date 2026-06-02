@@ -13,6 +13,7 @@ export interface MemeCoin {
   change24h: number;
   history: number[]; // Price history ticks
   isUserCreated?: boolean;
+  createdAt?: string;
 }
 
 export interface UserStats {

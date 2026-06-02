@@ -59,6 +59,7 @@ interface SidebarProps {
   onSignOut: () => void;
   coins?: MemeCoin[];
   holdings?: PortfolioHolding[];
+  achievements?: any[];
   onOpenBugReportModal?: () => void;
 }
 
@@ -77,6 +78,7 @@ export default function Sidebar({
   onSignOut,
   coins = [],
   holdings = [],
+  achievements = [],
   onOpenBugReportModal,
 }: SidebarProps) {
   const { adminSettings } = useAppContext();
@@ -122,6 +124,8 @@ export default function Sidebar({
     userStats.title.toLowerCase() === "owner" ||
     userStats.title.toLowerCase() === "admin";
   const hasOwnerDashboard = isOwnerEmail || isStaff;
+  
+  const unreadCount = achievements?.filter(a => a.current >= a.target && !a.claimed)?.length || 0;
 
   const menuItems = [
     { id: "home", label: "Home", icon: Home },
@@ -130,7 +134,7 @@ export default function Sidebar({
     { id: "arcade", label: "Arcade", icon: Gamepad2 },
     { id: "leaderboard", label: "Leaderboard", icon: Trophy },
     { id: "shop", label: "Shop", icon: ShoppingBag },
-    { id: "achievements", label: "Achievements", icon: Award },
+    { id: "achievements", label: "Achievements", icon: Award, badge: unreadCount },
     { id: "portfolio", label: "Portfolio", icon: Briefcase },
     { id: "treemap", label: "Treemap", icon: Grid },
     { id: "create-coin", label: "Create coin", icon: PlusCircle },
@@ -336,6 +340,11 @@ export default function Sidebar({
                       SYS
                     </span>
                   )}
+                  {item.badge ? (
+                    <span className="text-[9px] bg-rose-600 text-white px-1.5 py-0.5 rounded-full font-mono font-black border border-rose-500 shadow-sm shadow-rose-950/50">
+                      {item.badge}
+                    </span>
+                  ) : null}
                 </button>
               );
             })}

@@ -1290,6 +1290,21 @@ export default function OwnerDashboardTab({
     );
   };
 
+  const handleDeleteCoin = async (coinId: string) => {
+    try {
+      await databases.deleteDocument("pumpforge", "coins", coinId);
+      setCoins((prev) => prev.filter((c) => c.id !== coinId));
+      onAddNotification(
+        "🗑️ Coin Deleted",
+        `Permanently removed coin from database`,
+        "trade"
+      );
+    } catch (e: any) {
+      console.error("Failed to delete coin:", e);
+      toast.error("Failed to delete coin from database.");
+    }
+  };
+
   // Double market capital of a specific coin
   const handleForcePumpSingle = (coinId: string) => {
     const coin = coins.find((c) => c.id === coinId);
@@ -3016,6 +3031,12 @@ export default function OwnerDashboardTab({
                   >
                     <Skull className="w-3.5 h-3.5" />
                     Force crash
+                  </button>
+                  <button
+                    onClick={() => handleDeleteCoin(coin.id)}
+                    className="flex-1 py-1.5 bg-red-950/20 hover:bg-red-950/50 border border-red-900/30 hover:border-red-500/50 text-red-500 rounded-lg text-[10px] font-bold transition-all uppercase flex items-center justify-center"
+                  >
+                    Delete
                   </button>
                 </div>
               ) : (
