@@ -49,6 +49,7 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { databases } from "../appwrite";
+import { ID, Permission, Role } from "appwrite";
 
 interface OwnerDashboardProps {
   coins: MemeCoin[];
@@ -1525,7 +1526,11 @@ export default function OwnerDashboardTab({
         rewardAmount: Number(promoPubAmount),
         isActive: true,
         claimedBy: []
-      });
+      }, [
+        Permission.read(Role.any()),
+        Permission.update(Role.any()),
+        Permission.delete(Role.any())
+      ]);
       toast.success(`Promo code ${promoPubCode.toUpperCase()} published!`, { id: "promo-publish" });
       setPromoPubCode("");
       setPromoPubAmount("");

@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { UserStats } from "../types";
 import { databases } from "../appwrite";
-import { ID } from "appwrite";
+import { ID, Permission, Role } from "appwrite";
 
 interface CreateCoinProps {
   setCoins: React.Dispatch<React.SetStateAction<any[]>>;
@@ -107,7 +107,11 @@ export default function CreateCoinTab({ setCoins, coins }: CreateCoinProps) {
         marketCap: dbMarketCap,
       };
 
-      await databases.createDocument("pumpforge", "coins", newCoinId, payload);
+      await databases.createDocument("pumpforge", "coins", newCoinId, payload, [
+        Permission.read(Role.any()),
+        Permission.update(Role.any()),
+        Permission.delete(Role.any())
+      ]);
 
       const newCash = userStats.cash - 1100;
 

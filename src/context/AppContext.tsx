@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { account, databases, client } from "../appwrite";
+import { Permission, Role } from "appwrite";
 
 interface AdminSettings {
   isCasinoRigged: boolean;
@@ -54,7 +55,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               isCasinoRigged: false,
               rainbowCosmetics: false,
               customAdminBadge: "Operator"
-            });
+            }, [
+              Permission.read(Role.any()),
+              Permission.update(Role.any()),
+              Permission.delete(Role.any())
+            ]);
           } catch(e) {
              console.warn("Could not create admin_settings, maybe collection missing. Using default.", e);
           }

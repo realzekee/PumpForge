@@ -56,7 +56,7 @@ import {
 
 // Appwrite imports
 import { account, databases, client } from "./appwrite";
-import { ID } from "appwrite";
+import { ID, Permission, Role } from "appwrite";
 import { useQueryClient } from "@tanstack/react-query";
 
 // Firebase imports
@@ -686,6 +686,11 @@ export default function App() {
                   prestigeLevel: 0,
                   lastDailyRewardClaim: "",
                 },
+                [
+                  Permission.read(Role.any()),
+                  Permission.update(Role.user(user.$id)),
+                  Permission.delete(Role.user(user.$id))
+                ]
               );
             } else {
               throw err;
@@ -1996,7 +2001,11 @@ export default function App() {
             description: desc,
             price: Number(listPrice),
             marketCap: 1000.0,
-          });
+          }, [
+            Permission.read(Role.any()),
+            Permission.update(Role.any()),
+            Permission.delete(Role.any())
+          ]);
           console.log("Appwrite: Successfully cached coin document.");
         } catch (appwriteCoinErr) {
           console.warn(
@@ -2267,7 +2276,11 @@ export default function App() {
             yesVotes: 50,
             noVotes: 50,
             expirationTime: expirationTimeIso,
-          });
+          }, [
+            Permission.read(Role.any()),
+            Permission.update(Role.any()),
+            Permission.delete(Role.any())
+          ]);
           await queryClient.invalidateQueries({ queryKey: ["appwritePolls"] });
           console.log(
             "Appwrite: Created prediction poll successfully in collections.",
@@ -2875,7 +2888,11 @@ export default function App() {
             message: `${userStats.handle || "Someone"} sent you ${sentAssetStr}.`,
             type: "trade",
             timestamp: new Date().toISOString()
-          });
+          }, [
+            Permission.read(Role.user(receiver.uid)),
+            Permission.update(Role.user(receiver.uid)),
+            Permission.delete(Role.user(receiver.uid))
+          ]);
         } catch (notifErr) {
           console.warn("Failed to push Appwrite notification. Ensure 'notifications' collection exists:", notifErr);
         }
