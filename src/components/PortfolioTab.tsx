@@ -329,7 +329,7 @@ export default function PortfolioTab({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-905 font-semibold text-zinc-300">
-                    {holdings.map((h) => {
+                    {(holdings || []).map((h) => {
                       const coin = coins.find((c) => c.id === h.coinId);
                       if (!coin) return null;
 
@@ -396,7 +396,7 @@ export default function PortfolioTab({
 
               {/* Mobile View lists */}
               <div className="block sm:hidden divide-y divide-zinc-900">
-                {holdings.map((h) => {
+                {(holdings || []).map((h) => {
                   const coin = coins.find((c) => c.id === h.coinId);
                   if (!coin) return null;
 
@@ -548,8 +548,8 @@ export default function PortfolioTab({
                   >
                     <option value="cash">Cash ($)</option>
                     <option value="gems">Gems (💎)</option>
-                    {holdings.map((h) => {
-                      const coin = coins.find((c) => c.id === h.coinId);
+                    {(holdings || []).map((h) => {
+                      const coin = (coins || []).find((c) => c.id === h.coinId);
                       return coin ? (
                         <option key={h.coinId} value={h.coinId}>
                           {coin.avatarEmoji} {coin.name} (*{coin.symbol})

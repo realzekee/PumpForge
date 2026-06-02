@@ -203,7 +203,7 @@ export default function HomeTab({
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {hotCoins.map((coin) => (
+            {(hotCoins || []).map((coin) => (
               <div
                 key={coin.id}
                 className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl flex flex-col justify-between hover:border-zinc-700/60 transition-all duration-200 select-none cursor-pointer group"
@@ -299,7 +299,7 @@ export default function HomeTab({
 
             {sortedAchievements.length > 0 ? (
               <div className="flex flex-col gap-2 mt-1 max-h-[320px] overflow-y-auto pr-1.5 custom-scrollbar">
-                {sortedAchievements.map((item) => {
+                {(sortedAchievements || []).map((item) => {
                   const isComplete = item.current >= item.target;
                   const isClaimable = isComplete && !item.claimed;
                   const pct = Math.min((item.current / item.target) * 100, 100);

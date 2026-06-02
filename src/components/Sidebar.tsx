@@ -397,7 +397,7 @@ export default function Sidebar({
                 className="flex flex-col gap-1.5 overflow-hidden"
                 id="live-activity-ticker"
               >
-                {liveTrades.slice(0, 3).map((trade, idx) => (
+                {(liveTrades || []).slice(0, 3).map((trade, idx) => (
                   <div
                     key={trade.id + "-" + idx}
                     className="text-[10px] bg-zinc-900/10 border border-zinc-900/30 p-2 rounded-lg flex flex-col gap-0.5 hover:bg-zinc-900/20"

@@ -76,7 +76,7 @@ export default function AchievementsTab({
 
       {/* Grid of milestones */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {achievements.map((item) => {
+        {(achievements || []).map((item) => {
           const isComplete = item.current >= item.target;
           const pct = Math.min((item.current / item.target) * 100, 100);
 

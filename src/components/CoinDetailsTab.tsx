@@ -123,6 +123,7 @@ export default function CoinDetailsTab({
     let active = true;
     const fetchTopHolders = async () => {
       try {
+        if (!activeCoin?.id) return;
         const { Query } = await import("appwrite");
         const { databases } = await import("../appwrite");
         const res = await databases.listDocuments("pumpforge", "holdings", [
@@ -135,8 +136,8 @@ export default function CoinDetailsTab({
              rank: index + 1,
              name: "User " + d.userId.substring(0, 4),
              handle: d.userId, 
-             weight: ((d.tokenAmount / activeCoin.supply) * 100).toFixed(1) + "%",
-             balance: "$" + (d.tokenAmount * activeCoin.price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+             weight: activeCoin.supply ? ((d.tokenAmount / activeCoin.supply) * 100).toFixed(1) + "%" : "0.0%",
+             balance: "$" + (d.tokenAmount * (activeCoin.price || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
              emoji: ["🏛️", "⚡", "💪", "🕶️", "👑"][index % 5],
              bg: ["bg-amber-950 text-amber-400", "bg-orange-950 text-orange-400", "bg-emerald-950 text-emerald-400", "bg-rose-950 text-rose-400", "bg-indigo-950 text-indigo-400"][index % 5]
           }));
@@ -148,10 +149,10 @@ export default function CoinDetailsTab({
     };
     fetchTopHolders();
     return () => { active = false; };
-  }, [activeCoin.id, activeCoin.price, activeCoin.supply]);
+  }, [activeCoin?.id, activeCoin?.price, activeCoin?.supply]);
 
   useEffect(() => {
-    if (!activeCoin.createdAt) return;
+    if (!activeCoin?.createdAt) return;
     const interval = setInterval(() => {
       const createdTime = new Date(activeCoin.createdAt!).getTime();
       const now = Date.now();
@@ -165,13 +166,13 @@ export default function CoinDetailsTab({
       }
     }, 1000);
     return () => clearInterval(interval);
-  }, [activeCoin.createdAt]);
+  }, [activeCoin?.createdAt]);
 
   // User holdings query
   const userAssetHolding = useMemo(() => {
-    const found = holdings.find((h) => h.coinId === activeCoin.id);
+    const found = (holdings || []).find((h) => h.coinId === activeCoin?.id);
     return found ? found.amount : 0;
-  }, [holdings, activeCoin.id]);
+  }, [holdings, activeCoin?.id]);
 
   // Handle transaction execute
   const handleExecuteTrade = (e: React.FormEvent) => {
@@ -250,8 +251,8 @@ export default function CoinDetailsTab({
   // Generate interactive mock candlestick candles dataset based on tick prices
   const candlesData = useMemo(() => {
     const ticks =
-      activeCoin.history && activeCoin.history.length > 5
-        ? activeCoin.history
+      (activeCoin?.history || []).length > 5
+        ? (activeCoin?.history || [])
         : [5.68, 5.72, 5.69, 5.71, 5.7, 5.74, 5.73, 5.75, 5.72, 5.76];
 
     return ticks.map((tick, index) => {
@@ -388,21 +389,21 @@ export default function CoinDetailsTab({
                 <div className="flex items-center gap-2 mt-0.5">
                   <span className="text-3xl font-black text-white tracking-widest font-mono">
                     $
-                    {activeCoin.price >= 1000
-                      ? `${(activeCoin.price / 1000).toFixed(2)}K`
-                      : activeCoin.price.toFixed(4)}
+                    {(activeCoin?.price || 0) >= 1000
+                      ? `${((activeCoin?.price || 0) / 1000).toFixed(2)}K`
+                      : (activeCoin?.price || 0).toFixed(4)}
                   </span>
 
                   {/* Colored Percentage momentum badge */}
                   <span
                     className={`px-2 py-1 rounded-xl text-xs font-black flex items-center gap-0.5 border select-none ${
-                      activeCoin.change24h >= 0
+                      (activeCoin?.change24h || 0) >= 0
                         ? "bg-emerald-950/60 border-emerald-500/40 text-emerald-400"
                         : "bg-rose-955/60 border-rose-500/40 text-rose-450"
                     }`}
                   >
-                    {activeCoin.change24h >= 0 ? "▲" : "▼"}{" "}
-                    {Math.abs(activeCoin.change24h).toFixed(2)}%
+                    {(activeCoin?.change24h || 0) >= 0 ? "▲" : "▼"}{" "}
+                    {Math.abs(activeCoin?.change24h || 0).toFixed(2)}%
                   </span>
                 </div>
                 <span className="text-[10px] text-zinc-550 mt-1">
@@ -699,7 +700,7 @@ export default function CoinDetailsTab({
                       <span className="text-[9px] text-zinc-400">
                         Avg. Estimate: $
                         {(
-                          parseFloat(tradeAmountCoins || "0") * activeCoin.price
+                          parseFloat(tradeAmountCoins || "0") * (activeCoin?.price || 0)
                         ).toLocaleString(undefined, {
                           maximumFractionDigits: 2,
                         })}
@@ -833,13 +834,13 @@ export default function CoinDetailsTab({
                 <div className="flex justify-between items-center py-0.5">
                   <span className="text-zinc-500">Total Liquidity:</span>
                   <span className="text-white font-extrabold">
-                    ${activeCoin.marketCap.toLocaleString()} USD
+                    ${(activeCoin?.marketCap || 0).toLocaleString()} USD
                   </span>
                 </div>
                 <div className="flex justify-between items-center py-0.5">
                   <span className="text-zinc-500">Token Supply:</span>
                   <span className="text-zinc-300 font-extrabold">
-                    {activeCoin.supply.toLocaleString()}
+                    {(activeCoin?.supply || 0).toLocaleString()}
                   </span>
                 </div>
                 <div className="flex justify-between items-center py-0.5">
@@ -863,7 +864,7 @@ export default function CoinDetailsTab({
             </h3>
 
             <div className="flex flex-col gap-2.5">
-              {(topHolders.length > 0 ? topHolders : TOP_HOLDERS_SIMULATED).map((holder) => (
+              {((topHolders || []).length > 0 ? (topHolders || []) : TOP_HOLDERS_SIMULATED).map((holder) => (
                 <div
                   key={holder.rank}
                   className="bg-zinc-950/50 border border-zinc-900 p-3 rounded-2xl flex items-center justify-between gap-3 hover:bg-zinc-950 transition-all"
@@ -912,9 +913,9 @@ export default function CoinDetailsTab({
           </span>
           <strong className="text-lg font-black text-white">
             $
-            {activeCoin.marketCap >= 1000
-              ? (activeCoin.marketCap / 1000).toFixed(2) + "K"
-              : activeCoin.marketCap.toFixed(0)}
+            {(activeCoin?.marketCap || 0) >= 1000
+              ? ((activeCoin?.marketCap || 0) / 1000).toFixed(2) + "K"
+              : (activeCoin?.marketCap || 0).toFixed(0)}
           </strong>
           <span className="text-[10px] text-zinc-505 flex items-center gap-1">
             <Activity className="w-3 h-3 text-emerald-400" /> Fully diluted
@@ -929,9 +930,9 @@ export default function CoinDetailsTab({
           </span>
           <strong className="text-lg font-black text-white">
             $
-            {activeCoin.volume24h >= 1000
-              ? `${(activeCoin.volume24h / 1000).toFixed(1)}K`
-              : activeCoin.volume24h.toFixed(0)}
+            {(activeCoin?.volume24h || 0) >= 1000
+              ? `${((activeCoin?.volume24h || 0) / 1000).toFixed(1)}K`
+              : (activeCoin?.volume24h || 0).toFixed(0)}
           </strong>
           <span className="text-[10px] text-zinc-505 flex items-center gap-1">
             <Clock className="w-3 h-3 text-cyan-400" /> Volume over last 24h
@@ -945,7 +946,7 @@ export default function CoinDetailsTab({
             <span className="text-[8px] text-zinc-400">HARD CAP</span>
           </div>
           <strong className="text-lg font-black text-zinc-200">
-            {activeCoin.supply.toLocaleString()} TON
+            {(activeCoin?.supply || 0).toLocaleString()} TON
           </strong>
           <div className="w-full bg-zinc-950 h-1 rounded overflow-hidden mt-0.5">
             <div
@@ -966,22 +967,22 @@ export default function CoinDetailsTab({
           <div className="flex items-center gap-2">
             <strong
               className={`text-lg font-black ${
-                activeCoin.change24h >= 0
+                (activeCoin?.change24h || 0) >= 0
                   ? "text-emerald-400 animate-pulse"
                   : "text-rose-400"
               }`}
             >
-              {activeCoin.change24h >= 0 ? "+" : ""}
-              {activeCoin.change24h.toFixed(2)}%
+              {(activeCoin?.change24h || 0) >= 0 ? "+" : ""}
+              {(activeCoin?.change24h || 0).toFixed(2)}%
             </strong>
             <span
               className={`p-1 rounded-full text-[8.5px] scale-90 ${
-                activeCoin.change24h >= 0
+                (activeCoin?.change24h || 0) >= 0
                   ? "bg-emerald-950 text-emerald-450"
                   : "bg-rose-955 text-rose-455"
               }`}
             >
-              {activeCoin.change24h >= 0 ? (
+              {(activeCoin?.change24h || 0) >= 0 ? (
                 <TrendingUp className="w-3.5 h-3.5" />
               ) : (
                 <TrendingDown className="w-3.5 h-3.5" />

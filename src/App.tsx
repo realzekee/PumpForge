@@ -1248,6 +1248,16 @@ export default function App() {
              }
              c.id = d.$id;
              c.createdAt = d.$createdAt;
+             
+             // Fallback for missing fields since some coins inserted dynamically lack them
+             c.supply = c.supply || 1000000;
+             c.marketCap = c.marketCap || 1000;
+             c.volume24h = c.volume24h || 0;
+             c.change24h = c.change24h || 0;
+             c.history = c.history && Array.isArray(c.history) && c.history.length > 0 ? c.history : [c.price || 5];
+             c.avatarEmoji = c.avatarEmoji || "🪙";
+             c.avatarBg = c.avatarBg || "bg-zinc-900 border-zinc-800";
+             
              return c as MemeCoin;
           });
           setCoins(list);
