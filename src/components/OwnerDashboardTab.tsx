@@ -78,7 +78,7 @@ export default function OwnerDashboardTab({
   currentUserEmail,
 }: OwnerDashboardProps) {
   const navigate = useNavigate();
-  const { userStats, cash, setCash, gems, setGems, userId } = useAppContext();
+  const { userStats, cash, setCash, gems, setGems, userId, adminSettings, setAdminSettings } = useAppContext();
   const queryClient = useQueryClient();
 
   const {
@@ -1355,16 +1355,25 @@ export default function OwnerDashboardTab({
   };
 
   // 🎰 Casino / Coinflip Rigging Toggle
-  const handleToggleCasinoRigged = () => {
-    onUpdateStats((stats) => {
-      stats.isCasinoRigged = !stats.isCasinoRigged;
-    });
+  const handleToggleCasinoRigged = async () => {
+    const nextState = !adminSettings.isCasinoRigged;
+    setAdminSettings(prev => ({ ...prev, isCasinoRigged: nextState }));
+    
+    try {
+      await databases.updateDocument("pumpforge", "admin_settings", "global", {
+        isCasinoRigged: nextState
+      });
+    } catch(e) {
+      console.error("Failed to rig casino globally", e);
+    }
+    
     onAddNotification(
       "🎰 Casino Algorithm Modified",
-      `Administrative override toggled Coinflip & Chest rig mapping to: ${!userStats.isCasinoRigged ? "GUARANTEED WIN (RIGGED)" : "NATURAL STATISTICAL RANDOM"}`,
+      `Administrative override toggled Coinflip & Chest rig mapping globally to: ${nextState ? "GUARANTEED WIN (RIGGED)" : "NATURAL STATISTICAL RANDOM"}`,
       "info",
     );
   };
+
 
   // 💥 Black Swan Bot Raids Action
   const handleTriggerBotRaid = async () => {
@@ -1455,31 +1464,77 @@ export default function OwnerDashboardTab({
   };
 
   // 🌟 Toggle Premium Rainbow Cosmetics
-  const handleToggleRainbowCosmetics = () => {
-    onUpdateStats((stats) => {
-      stats.rainbowCosmetics = !stats.rainbowCosmetics;
-    });
+  const handleToggleRainbowCosmetics = async () => {
+    const nextState = !adminSettings.rainbowCosmetics;
+    setAdminSettings(prev => ({ ...prev, rainbowCosmetics: nextState }));
+    
+    try {
+      await databases.updateDocument("pumpforge", "admin_settings", "global", {
+        rainbowCosmetics: nextState
+      });
+    } catch(e) {
+       console.error("Failed to toggle rainbow cosmetics", e);
+    }
+    
     onAddNotification(
       "🌈 Cosmetics Upgraded",
-      `Toggled dynamic rainbow neon animated name badge cosmetics on your profile footer!`,
+      `Toggled global dynamic rainbow neon animated name badge cosmetics on your profile footer!`,
       "achievement",
     );
   };
 
   // 🛡️ Set Custom Admin Badge Text
-  const handleUpdateAdminBadge = () => {
+  const handleUpdateAdminBadge = async () => {
     const text = customBadgeText.trim();
-    onUpdateStats((stats) => {
-      stats.customAdminBadge = text || undefined;
-    });
+    setAdminSettings(prev => ({ ...prev, customAdminBadge: text || "" }));
+    
+    try {
+       await databases.updateDocument("pumpforge", "admin_settings", "global", {
+          customAdminBadge: text || ""
+       });
+    } catch(e) {
+       console.error("Failed to update custom admin badge", e);
+    }
+
     onAddNotification(
       "🛡️ Identity Aura Adjusted",
-      `Successfully loaded custom administrator tag: [${text || "Removed Badge"}] on username template.`,
+      `Successfully loaded custom administrator tag: [${text || "Removed Badge"}] globally.`,
       "info",
     );
     alert(
-      `🛡️ BADGE UPDATED!\n\nModified profile badge tag to: "${text || "DISABLED"}"`,
+      `🛡️ BADGE UPDATED!\n\nModified profile badge tag to: "${text || "DISABLED"}" globally.`,
     );
+  };
+
+  // Promo Code Publisher State
+  const [promoPubIsLoading, setPromoPubIsLoading] = useState(false);
+  const [promoPubCode, setPromoPubCode] = useState("");
+  const [promoPubType, setPromoPubType] = useState<"cash" | "gems">("cash");
+  const [promoPubAmount, setPromoPubAmount] = useState("");
+
+  const handlePublishPromoCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!promoPubCode || !promoPubAmount) return;
+    
+    setPromoPubIsLoading(true);
+    toast.loading("Publishing promo code...", { id: "promo-publish" });
+    try {
+      await databases.createDocument("pumpforge", "promocodes", ID.unique(), {
+        code: promoPubCode.trim().toUpperCase(),
+        rewardType: promoPubType,
+        rewardAmount: Number(promoPubAmount),
+        isActive: true,
+        claimedBy: []
+      });
+      toast.success(`Promo code ${promoPubCode.toUpperCase()} published!`, { id: "promo-publish" });
+      setPromoPubCode("");
+      setPromoPubAmount("");
+    } catch (e: any) {
+      console.error(e);
+      toast.error(`Failed to publish: ${e.message}`, { id: "promo-publish" });
+    } finally {
+      setPromoPubIsLoading(false);
+    }
   };
 
   // 🧹 Firestore Space Cleanup & Collection Purger
@@ -2312,13 +2367,13 @@ export default function OwnerDashboardTab({
             <button
               onClick={handleToggleCasinoRigged}
               className={`w-full py-2.5 rounded-lg border font-black uppercase text-[10px] tracking-wider transition-all active:scale-97 select-none ${
-                userStats.isCasinoRigged
+                adminSettings.isCasinoRigged
                   ? "bg-amber-500/20 border-amber-500/40 text-amber-400 hover:bg-amber-500/30"
                   : "bg-zinc-950/60 border-zinc-800 text-zinc-500 hover:text-zinc-300 hover:border-zinc-700"
               }`}
             >
               ⚡ Status:{" "}
-              {userStats.isCasinoRigged
+              {adminSettings.isCasinoRigged
                 ? "FULLY RIGGED (ALWAYS WIN!)"
                 : "NORMAL (50/50 STATISTICAL RANDOM)"}
             </button>
@@ -2407,6 +2462,52 @@ export default function OwnerDashboardTab({
                 </button>
               </div>
             </div>
+          </div>
+
+          {/* Power 5: Promo Code Publisher */}
+          <div className="flex flex-col gap-3 p-4 bg-zinc-900/40 border border-zinc-850 rounded-xl hover:border-amber-500/10 transition-colors">
+            <div className="flex items-center gap-2 text-fuchsia-400 font-extrabold uppercase tracking-wide">
+              <span>🎟️ Promo Code Publisher</span>
+            </div>
+            <p className="text-[11px] text-zinc-500 leading-relaxed">
+              Mint real-world promo codes that players can redeem for cash or gems. Automatically tracks usage.
+            </p>
+            <form onSubmit={handlePublishPromoCode} className="flex flex-col gap-2 mt-auto">
+              <input
+                type="text"
+                placeholder="PROMO-CODE (e.g. DISCORD10)"
+                value={promoPubCode}
+                onChange={(e) => setPromoPubCode(e.target.value)}
+                className="bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-xs text-white focus:outline-none focus:border-fuchsia-500 uppercase font-mono"
+                required
+              />
+              <div className="flex gap-2">
+                <select
+                  value={promoPubType}
+                  onChange={(e) => setPromoPubType(e.target.value as "cash" | "gems")}
+                  className="bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-xs text-zinc-300 focus:outline-none focus:border-fuchsia-500 flex-1 font-mono"
+                >
+                  <option value="cash">Cash ($)</option>
+                  <option value="gems">Gems</option>
+                </select>
+                <input
+                  type="number"
+                  placeholder="Count"
+                  value={promoPubAmount}
+                  onChange={(e) => setPromoPubAmount(e.target.value)}
+                  className="bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-xs text-white focus:outline-none focus:border-fuchsia-500 flex-1 font-mono"
+                  min="1"
+                  required
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={promoPubIsLoading}
+                className="w-full bg-fuchsia-600/20 hover:bg-fuchsia-600/30 text-fuchsia-400 border border-fuchsia-500/30 font-bold py-2 rounded text-xs transition-colors disabled:opacity-50"
+              >
+                {promoPubIsLoading ? "Publishing..." : "Publish Global Promo"}
+              </button>
+            </form>
           </div>
 
           {/* Power 4: Clear Database Space Cleanup Maintenance */}

@@ -515,8 +515,31 @@ export default function App() {
   const [showBugReportModal, setShowBugReportModal] = useState(false);
   const [coinToDelete, setCoinToDelete] = useState<string | null>(null);
   const [showSignOutConfirm, setShowSignOutConfirm] = useState<boolean>(false);
-  const [isDailyRewardAvailable, setIsDailyRewardAvailable] = useState(true);
-  const [dailyRewardTimer, setDailyRewardTimer] = useState("Claim Available!");
+  const [isDailyRewardAvailable, setIsDailyRewardAvailable] = useState(() => {
+    const cachedLastClaimed = localStorage.getItem("pf_last_claimed");
+    if (cachedLastClaimed) {
+      const claimTime = new Date(cachedLastClaimed).getTime();
+      const now = new Date().getTime();
+      const dif = 24 * 60 * 60 * 1000 - (now - claimTime);
+      return dif <= 0;
+    }
+    return true;
+  });
+
+  const [dailyRewardTimer, setDailyRewardTimer] = useState(() => {
+    const cachedLastClaimed = localStorage.getItem("pf_last_claimed");
+    if (cachedLastClaimed) {
+      const claimTime = new Date(cachedLastClaimed).getTime();
+      const now = new Date().getTime();
+      const dif = 24 * 60 * 60 * 1000 - (now - claimTime);
+      if (dif > 0) {
+        const hrs = Math.floor(dif / (1000 * 60 * 60));
+        const mins = Math.floor((dif % (1000 * 60 * 60)) / (1000 * 60));
+        return `Next in ${hrs}h ${mins}m`;
+      }
+    }
+    return "Claim Available!";
+  });
 
   // Appwrite Session initializer and handler functions (located below all state declarations)
   useEffect(() => {
@@ -1105,53 +1128,59 @@ export default function App() {
 
   const handleConfirmSignOut = async () => {
     setShowSignOutConfirm(false);
-    try {
-      await account.deleteSession("current");
-    } catch (e) {
-      console.error("Appwrite Sign out error:", e);
-    } finally {
-      // Fully clear session storage caches
-      safeStorage.removeItem("cached_appwrite_user");
-      safeStorage.removeItem("cached_appwrite_stats");
-      const keysToClear = [];
-      for (let i = 0; i < safeStorage.length; i++) {
-        const key = safeStorage.key(i);
-        if (
-          key &&
-          (key.includes("memex_") || key.includes("cached_appwrite_"))
-        ) {
-          keysToClear.push(key);
-        }
-      }
-      keysToClear.forEach((k) => safeStorage.removeItem(k));
-      localStorage.removeItem("pf_session_valid");
-      localStorage.removeItem("pf_fallback_userId");
+    toast.loading("Logging out...", { id: "logout-toast" });
 
-      setCurrentUser(null);
-      setIsStatsLoaded(false);
-      setUserStats({
-        username: "Guest Player",
-        handle: "@guest_degen",
-        title: "Member",
-        isPremium: false,
-        nameColor: "text-zinc-400 font-extrabold",
-        cash: 5000.0,
-        gems: 90,
-        prestigeLevel: 0,
-        totalProfit: 0,
-        coinsCreatedCount: 0,
-        tradesCount: 0,
-        lastDailyRewardClaim: null,
-      });
-      setHoldings([]);
-      onAddNotification(
-        "Signed Out",
-        "Returned to Guest Sandbox mode.",
-        "info",
-      );
-      // Instantly trigger full layout refresh
-      window.location.reload();
+    // 1. Optimistically Update the UI Instantly
+    setCurrentUser(null);
+    setIsStatsLoaded(false);
+    setUserStats({
+      username: "Guest Player",
+      handle: "@guest_degen",
+      title: "Member",
+      isPremium: false,
+      nameColor: "text-zinc-400 font-extrabold",
+      cash: 5000.0,
+      gems: 90,
+      prestigeLevel: 0,
+      totalProfit: 0,
+      coinsCreatedCount: 0,
+      tradesCount: 0,
+      lastDailyRewardClaim: null,
+      lastClaimed: null,
+    });
+    setHoldings([]);
+    
+    // Clear major caches
+    safeStorage.removeItem("cached_appwrite_user");
+    safeStorage.removeItem("cached_appwrite_stats");
+    const keysToClear = [];
+    for (let i = 0; i < safeStorage.length; i++) {
+        const key = safeStorage.key(i);
+        if (key && (key.includes("memex_") || key.includes("cached_appwrite_"))) {
+            keysToClear.push(key);
+        }
     }
+    keysToClear.forEach((k) => safeStorage.removeItem(k));
+    localStorage.removeItem("pf_session_valid");
+    localStorage.removeItem("pf_fallback_userId");
+    localStorage.removeItem("pf_last_claimed");
+
+    // 2. Perform background logout without blocking UI
+    setTimeout(async () => {
+      try {
+        await account.deleteSession("current");
+      } catch (e) {
+        console.error("Appwrite Sign out error:", e);
+      } finally {
+        toast.success("Successfully logged out.", { id: "logout-toast" });
+        onAddNotification(
+          "Signed Out",
+          "Returned to Guest Sandbox mode.",
+          "info",
+        );
+        window.location.reload();
+      }
+    }, 10);
   };
 
   // 1. GLOBAL USER BETS LISTENER (REAL-TIME SYNCED FROM FIRESTORE)
@@ -1385,10 +1414,16 @@ export default function App() {
   // DAILY COOLDOWN INTERVAL WORKER
   useEffect(() => {
     const updateDailyCooldown = () => {
-      // Don't crash if userStats isn't loaded yet
-      if (!userStats) return;
+      // Priority 1: Check localStorage first for instant initial render sync
+      // Priority 2: userStats from Appwrite Context later
+      const cachedLastClaimed = localStorage.getItem("pf_last_claimed");
+      let lastClaim = userStats?.lastClaimed || cachedLastClaimed;
+      
+      // Handle legacy nomenclature
+      if (!lastClaim && userStats?.lastDailyRewardClaim) {
+        lastClaim = userStats.lastDailyRewardClaim;
+      }
 
-      const lastClaim = userStats.lastClaimed;
       if (!lastClaim) {
         setIsDailyRewardAvailable(true);
         setDailyRewardTimer("Claim Available!");
@@ -1413,7 +1448,7 @@ export default function App() {
     updateDailyCooldown();
     const timer = setInterval(updateDailyCooldown, 45000); // refresh timer check
     return () => clearInterval(timer);
-  }, [userStats?.lastClaimed]);
+  }, [userStats?.lastClaimed, userStats?.lastDailyRewardClaim]);
 
   // Update specific current achievement trackers whenever statistics change
   useEffect(() => {
@@ -1558,7 +1593,12 @@ export default function App() {
       return;
     }
 
-    const lastClaim = userStats.lastClaimed;
+    const cachedLastClaimed = localStorage.getItem("pf_last_claimed");
+    let lastClaim = userStats.lastClaimed || cachedLastClaimed;
+    if (!lastClaim && userStats.lastDailyRewardClaim) {
+      lastClaim = userStats.lastDailyRewardClaim;
+    }
+
     if (lastClaim) {
       const claimTime = new Date(lastClaim).getTime();
       const now = new Date().getTime();
@@ -1571,6 +1611,9 @@ export default function App() {
 
     const nextClaimTime = new Date().toISOString();
     const nextCash = (userStats.cash || 5000) + cashYield;
+
+    // Cache immediately in local storage for instant sync across refreshes
+    localStorage.setItem("pf_last_claimed", nextClaimTime);
 
     try {
       if (currentUser.$id) {
@@ -3477,31 +3520,6 @@ export default function App() {
       )}
 
       {/* Styled custom Daily Reward alert toast as seen in video */}
-      {showDailyToast && (
-        <div className="fixed bottom-4 right-4 left-4 sm:left-auto sm:max-w-md bg-zinc-950 border-2 border-emerald-500/80 p-4 rounded-xl shadow-2xl flex items-center justify-between gap-4 z-50 animate-bounce">
-          <div className="flex items-start gap-2.5">
-            <span className="text-xl">🟢</span>
-            <div className="flex flex-col">
-              <span className="text-xs font-black text-white">
-                Daily reward claimed! +$1,500
-              </span>
-              <span className="text-[10px] text-zinc-400 mt-0.5">
-                Login streak: 1 days
-              </span>
-            </div>
-          </div>
-          <button
-            onClick={() => {
-              setActiveTab("portfolio");
-              setShowDailyToast(false);
-            }}
-            className="bg-white hover:bg-zinc-200 text-zinc-950 px-3 py-1.5 rounded-lg text-xs font-bold leading-none shrink-0"
-          >
-            View Portfolio
-          </button>
-        </div>
-      )}
-
       {/* Universal customToast notifications */}
       {customToast && (
         <div

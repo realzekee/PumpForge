@@ -32,11 +32,14 @@ interface ArcadeTabProps {
 
 type MenuGameType = "coinflip" | "slots" | "mines" | "dice" | "tower";
 
+import { useAppContext } from "../context/AppContext";
+
 export default function ArcadeTab({
   userStats,
   onUpdateStats,
   onAddNotification,
 }: ArcadeTabProps) {
+  const { adminSettings } = useAppContext();
   const [selectedGame, setSelectedGame] = useState<MenuGameType>("coinflip");
   const [localNotice, setLocalNotice] = useState<{
     title: string;
@@ -171,7 +174,7 @@ export default function ArcadeTab({
     });
 
     setTimeout(() => {
-      const isHeads = userStats.isCasinoRigged
+      const isHeads = adminSettings.isCasinoRigged
         ? coinSide === "heads"
         : Math.random() < 0.5;
       const resultSide = isHeads ? "heads" : "tails";

@@ -24,11 +24,15 @@ interface ShopProps {
   ) => void;
 }
 
+import { useAppContext } from "../context/AppContext";
+
 export default function ShopTab({
   userStats,
   onUpdateStats,
   onAddNotification,
 }: ShopProps) {
+  const { adminSettings } = useAppContext();
+
   const [unboxingCrate, setUnboxingCrate] = useState<string | null>(null);
   const [unboxReward, setUnboxReward] = useState<{
     cash: number;
@@ -196,7 +200,7 @@ export default function ShopTab({
         Math.random() * (maxCash - minCash) + minCash,
       );
 
-      if (userStats.isCasinoRigged) {
+      if (adminSettings.isCasinoRigged) {
         if (crateId === "small") {
           rawCashReward = 15000 * 3;
           bonusGems = 150;

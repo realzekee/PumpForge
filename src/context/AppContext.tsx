@@ -1,6 +1,12 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { account, databases, client } from "../appwrite";
 
+interface AdminSettings {
+  isCasinoRigged: boolean;
+  rainbowCosmetics: boolean;
+  customAdminBadge: string;
+}
+
 interface AppContextType {
   currentUser: any;
   userStats: any;
@@ -11,6 +17,8 @@ interface AppContextType {
   prestigeLevel: number;
   setPrestigeLevel: React.Dispatch<React.SetStateAction<number>>;
   userId: string | null;
+  adminSettings: AdminSettings;
+  setAdminSettings: React.Dispatch<React.SetStateAction<AdminSettings>>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -22,10 +30,36 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [gems, setGems] = useState(90);
   const [prestigeLevel, setPrestigeLevel] = useState(0);
   const [userId, setUserId] = useState<string | null>(null);
+  const [adminSettings, setAdminSettings] = useState<AdminSettings>({
+    isCasinoRigged: false,
+    rainbowCosmetics: false,
+    customAdminBadge: "Operator"
+  });
 
   useEffect(() => {
     const initAppwrite = async () => {
       try {
+        // Fetch or create admin settings
+        try {
+          const settingsDoc = await databases.getDocument("pumpforge", "admin_settings", "global");
+          setAdminSettings({
+            isCasinoRigged: settingsDoc.isCasinoRigged ?? false,
+            rainbowCosmetics: settingsDoc.rainbowCosmetics ?? false,
+            customAdminBadge: settingsDoc.customAdminBadge ?? "Operator"
+          });
+        } catch (setErr) {
+          console.warn("Global admin_settings not found, trying to create...", setErr);
+          try {
+            await databases.createDocument("pumpforge", "admin_settings", "global", {
+              isCasinoRigged: false,
+              rainbowCosmetics: false,
+              customAdminBadge: "Operator"
+            });
+          } catch(e) {
+             console.warn("Could not create admin_settings, maybe collection missing. Using default.", e);
+          }
+        }
+
         const user = await account.get();
         setCurrentUser(user);
         setUserId(user.$id);
@@ -34,6 +68,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setCash(doc.cash ?? 5000);
         setGems(doc.gems ?? 90);
         setPrestigeLevel(doc.prestigeLevel ?? 0);
+        
+        const lastC = doc.lastClaimed || doc.lastDailyRewardClaim;
+        if (lastC) {
+           localStorage.setItem("pf_last_claimed", lastC);
+        }
 
         // Mirror session validation flag to bypass Firefox ETP dropping the third-party cookie
         localStorage.setItem("pf_session_valid", "true");
@@ -87,18 +126,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!userId) return;
     const unsub = client.subscribe(
-      `databases.pumpforge.collections.users.documents.${userId}`,
+      [
+        `databases.pumpforge.collections.users.documents.${userId}`,
+        `databases.pumpforge.collections.admin_settings.documents.global`
+      ],
       (response: any) => {
         if (
-          response.events.includes(
-            "databases.*.collections.*.documents.*.update",
-          )
+          response.events.includes("databases.*.collections.*.documents.*.update") ||
+          response.events.includes("databases.*.collections.*.documents.*.create")
         ) {
           const updatedDoc = response.payload;
-          setCash(updatedDoc.cash);
-          setGems(updatedDoc.gems);
-          setPrestigeLevel(updatedDoc.prestigeLevel);
-          setUserStats(updatedDoc);
+          if (updatedDoc.$collectionId === "admin_settings") {
+            setAdminSettings({
+              isCasinoRigged: updatedDoc.isCasinoRigged ?? false,
+              rainbowCosmetics: updatedDoc.rainbowCosmetics ?? false,
+              customAdminBadge: updatedDoc.customAdminBadge ?? "Operator"
+            });
+          } else if (updatedDoc.$collectionId === "users") {
+            setCash(updatedDoc.cash);
+            setGems(updatedDoc.gems);
+            setPrestigeLevel(updatedDoc.prestigeLevel);
+            setUserStats(updatedDoc);
+          }
         }
       },
     );
@@ -117,6 +166,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         prestigeLevel,
         setPrestigeLevel,
         userId,
+        adminSettings,
+        setAdminSettings,
       }}
     >
       {children}
@@ -131,3 +182,4 @@ export function useAppContext() {
   }
   return context;
 }
+

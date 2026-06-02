@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { Query } from "appwrite";
+import { toast } from "sonner";
+import { databases } from "../appwrite";
 import {
   Home,
   TrendingUp,
@@ -59,6 +62,8 @@ interface SidebarProps {
   onOpenBugReportModal?: () => void;
 }
 
+import { useAppContext } from "../context/AppContext";
+
 export default function Sidebar({
   userStats,
   onClaimDailyReward,
@@ -74,6 +79,7 @@ export default function Sidebar({
   holdings = [],
   onOpenBugReportModal,
 }: SidebarProps) {
+  const { adminSettings } = useAppContext();
   const navigate = useNavigate();
   const location = useLocation();
   const activeTab =
@@ -147,27 +153,79 @@ export default function Sidebar({
 
   const totalPortfolioValue = userStats.cash + holdingsValue;
 
-  const handlePromoSubmit = (e: React.FormEvent) => {
+  const handlePromoSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const code = promoCode.trim().toUpperCase();
-    if (code === "DEGEN50K") {
-      userStats.cash += 50000;
-      setPromoSuccess("Promo applied! +$50,000 Cash!");
-      setPromoError("");
-    } else if (code === "GEMLORD") {
-      userStats.gems += 500;
-      setPromoSuccess("Promo applied! +500 Gems!");
-      setPromoError("");
-    } else if (code === "MEMEX") {
-      userStats.cash += 5000;
-      userStats.gems += 50;
-      setPromoSuccess("Promo applied! +$5,000 Cash & +50 Gems!");
-      setPromoError("");
-    } else {
-      setPromoError("Invalid or expired promo code.");
-      setPromoSuccess("");
+    if (!code) return;
+    
+    // Auth Check
+    const uid = currentUser?.uid || currentUser?.$id;
+    if (!uid) {
+      setPromoError("You must be logged in to claim promos.");
+      return;
     }
-    setPromoCode("");
+
+    setPromoError("");
+    setPromoSuccess("");
+    toast.loading("Verifying promo code...", { id: "promo-claim" });
+
+    try {
+      // Query promocodes collection for the submitted code
+      const response = await databases.listDocuments(
+        "pumpforge",
+        "promocodes",
+        [Query.equal("code", code)]
+      );
+
+      if (response.documents.length === 0) {
+         toast.error("Invalid promo code.", { id: "promo-claim" });
+         setPromoError("Invalid promo code.");
+         return;
+      }
+
+      const promoDoc = response.documents[0];
+
+      if (!promoDoc.isActive) {
+         toast.error("This promo code is expired.", { id: "promo-claim" });
+         setPromoError("This promo code is expired.");
+         return;
+      }
+
+      const claimedArray: string[] = promoDoc.claimedBy || [];
+      if (claimedArray.includes(uid)) {
+         toast.error("Code already claimed on this account", { id: "promo-claim" });
+         setPromoError("Code already claimed on this account.");
+         return;
+      }
+
+      // Valid and unused by this user!
+      const rewardAmt = Number(promoDoc.rewardAmount) || 0;
+      
+      // Update promo document
+      await databases.updateDocument("pumpforge", "promocodes", promoDoc.$id, {
+        claimedBy: [...claimedArray, uid]
+      });
+
+      // Update user document
+      if (promoDoc.rewardType === "gems") {
+        await databases.updateDocument("pumpforge", "users", uid, {
+           gems: (userStats.gems || 0) + rewardAmt
+        });
+        toast.success(`Redeemed! +${rewardAmt} Gems`, { id: "promo-claim" });
+        setPromoSuccess(`Redeemed! +${rewardAmt} Gems`);
+      } else {
+        await databases.updateDocument("pumpforge", "users", uid, {
+           cash: (userStats.cash || 0) + rewardAmt
+        });
+        toast.success(`Redeemed! +$${rewardAmt.toLocaleString()} Cash`, { id: "promo-claim" });
+        setPromoSuccess(`Redeemed! +$${rewardAmt.toLocaleString()} Cash`);
+      }
+      setPromoCode("");
+    } catch (err: any) {
+      console.error("Promo code processing error:", err);
+      toast.error("Error verifying promo code. Please check your connection.", { id: "promo-claim" });
+      setPromoError("Error verifying promo code.");
+    }
   };
 
   const toggleLightMode = () => {
@@ -562,7 +620,7 @@ export default function Sidebar({
                     <div className="flex flex-col min-w-0">
                       <div className="flex items-center gap-1">
                         <span
-                          className={`text-xs font-extrabold truncate ${userStats.rainbowCosmetics ? "text-transparent bg-clip-text bg-gradient-to-r from-rose-500 via-amber-400 via-cyan-400 to-pink-500 animate-pulse font-black" : userStats.nameColor || "text-white"}`}
+                          className={`text-xs font-extrabold truncate ${adminSettings.rainbowCosmetics ? "text-transparent bg-clip-text bg-gradient-to-r from-rose-500 via-amber-400 via-cyan-400 to-pink-500 animate-pulse font-black" : userStats.nameColor || "text-white"}`}
                         >
                           {userStats.username}
                         </span>
@@ -573,9 +631,9 @@ export default function Sidebar({
                         ) : (
                           <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                         )}
-                        {userStats.customAdminBadge && (
+                        {adminSettings.customAdminBadge && (
                           <span className="px-1.5 py-0.5 rounded border border-rose-500/30 text-rose-400 font-mono text-[7px] bg-rose-950/20 uppercase font-bold shrink-0 tracking-wider">
-                            {userStats.customAdminBadge}
+                            {adminSettings.customAdminBadge}
                           </span>
                         )}
                       </div>
