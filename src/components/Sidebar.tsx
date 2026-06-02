@@ -532,7 +532,9 @@ export default function Sidebar({
               )}
 
               {/* Core user profile button in Sidebar */}
-              {!currentUser ? (
+              {!currentUser ||
+              userStats?.handle === "@player" ||
+              userStats?.handle === "@guest_degen" ? (
                 <button
                   onClick={onGoogleSignIn}
                   className="w-full bg-gradient-to-r from-orange-500 to-rose-600 hover:from-orange-600 hover:to-rose-700 text-white font-extrabold p-3.5 rounded-2xl flex items-center justify-center gap-2.5 cursor-pointer shadow-lg active:scale-98 transition-transform font-mono text-xs uppercase tracking-wider"

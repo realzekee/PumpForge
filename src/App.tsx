@@ -1124,6 +1124,8 @@ export default function App() {
         }
       }
       keysToClear.forEach((k) => safeStorage.removeItem(k));
+      localStorage.removeItem("pf_session_valid");
+      localStorage.removeItem("pf_fallback_userId");
 
       setCurrentUser(null);
       setIsStatsLoaded(false);
