@@ -55,7 +55,7 @@ import {
 } from "lucide-react";
 
 // Appwrite imports
-import { account, databases } from "./appwrite";
+import { account, databases, client } from "./appwrite";
 import { ID } from "appwrite";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -1356,6 +1356,31 @@ export default function App() {
 
   // Removed redundant Appwrite POLLS sync here (migrated to PolymarketTab.tsx)
 
+  useEffect(() => {
+    let unsub = () => {};
+    if (currentUser?.uid || currentUser?.$id) {
+      const uid = currentUser?.uid || currentUser?.$id;
+      // Appwrite Real-time Notifications Subscription for active user
+      try {
+        unsub = client.subscribe(
+          "databases.pumpforge.collections.notifications.documents",
+          (response) => {
+            if (response.events.includes("databases.*.collections.*.documents.*.create")) {
+              const doc = response.payload as any;
+              if (doc.userId === uid) {
+                // Trigger local alert using existing helper
+                onAddNotification(doc.title, doc.message, doc.type || "info");
+              }
+            }
+          }
+        );
+      } catch (e) {
+        console.warn("Appwrite Realtime subscription failed. (Skipping)", e);
+      }
+    }
+    return () => unsub();
+  }, [currentUser]);
+
   // 4. WORKER INTERVALS
   // DAILY COOLDOWN INTERVAL WORKER
   useEffect(() => {
@@ -1521,8 +1546,14 @@ export default function App() {
   }
 
   const handleClaimDailyReward = async () => {
+    // Daily claim yields $1500 + 25% for each prestige level
+    const mult = 1 + (userStats.prestigeLevel || 0) * 0.25;
+    const cashYield = Math.floor(1500 * mult);
+
     if (!currentUser) {
-      setSignInReason("claim your $1,500 daily allowance");
+      setSignInReason(
+        `claim your $${cashYield.toLocaleString()} daily allowance`,
+      );
       setShowSignInModal(true);
       return;
     }
@@ -1537,10 +1568,6 @@ export default function App() {
         return;
       }
     }
-
-    // Daily claim yields $1200 + 25% for each prestige level
-    const mult = 1 + (userStats.prestigeLevel || 0) * 0.25;
-    const cashYield = Math.floor(1200 * mult);
 
     const nextClaimTime = new Date().toISOString();
     const nextCash = (userStats.cash || 5000) + cashYield;
@@ -2662,6 +2689,7 @@ export default function App() {
     amount: number,
     coinId: string,
   ): Promise<{ success: boolean; message: string }> => {
+    toast.loading("Processing transfer...", { id: "send-money" });
     const cleanHandle = handle.replace("@", "").toLowerCase();
     const receiver = registeredUsers.find(
       (u) => u.handle.toLowerCase() === `@${cleanHandle}`,
@@ -2670,66 +2698,95 @@ export default function App() {
     if (!receiver) {
       if (!currentUser) {
         // Return false to prevent guest offline transfers to nobody
+        toast.error(`User @${cleanHandle} not found!`, { id: "send-money" });
         return {
           success: false,
           message: `User @${cleanHandle} not found in the database!`,
         };
       }
+      toast.error(`User @${cleanHandle} not found!`, { id: "send-money" });
       return {
         success: false,
         message: `User @${cleanHandle} not found in the database!`,
       };
     }
 
-    if (receiver.uid === currentUser?.uid) {
+    if (receiver.uid === currentUser?.uid || receiver.uid === currentUser?.$id) {
+      toast.error("You cannot send to yourself.", { id: "send-money" });
       return { success: false, message: "You cannot send to yourself." };
     }
 
     try {
       if (currentUser) {
+        let sentAssetStr = "";
         const batch = writeBatch(db);
 
         if (coinId === "cash") {
           const nextCash = userStats.cash - amount;
-          if (nextCash < 0)
+          if (nextCash < 0) {
+            toast.error("Insufficient cash!", { id: "send-money" });
             return { success: false, message: "Insufficient cash!" };
+          }
+          sentAssetStr = `$${amount.toLocaleString()} cash`;
 
           // Reduce sender
-          const senderRef = doc(db, "users", currentUser.uid);
+          const senderRef = doc(db, "users", currentUser.uid || currentUser.$id);
           batch.update(senderRef, { cash: nextCash });
 
           // Increase receiver
           const receiverRef = doc(db, "users", receiver.uid);
           batch.update(receiverRef, { cash: increment(amount) });
 
+          // Also mirror in Appwrite for dual-db sync
+          try {
+             await databases.updateDocument("pumpforge", "users", currentUser.$id || currentUser.uid, { cash: nextCash });
+             await databases.updateDocument("pumpforge", "users", receiver.uid, { cash: (receiver.cash || 0) + amount });
+          } catch (appwriteErr) {
+             console.warn("Appwrite sync cash skip:", appwriteErr);
+          }
+
           setUserStats((prev) => ({ ...prev, cash: nextCash }));
         } else if (coinId === "gems") {
           const nextGems = userStats.gems - amount;
-          if (nextGems < 0)
+          if (nextGems < 0) {
+            toast.error("Insufficient gems!", { id: "send-money" });
             return { success: false, message: "Insufficient gems!" };
+          }
+          sentAssetStr = `${amount.toLocaleString()} gems`;
 
           // Reduce sender
-          const senderRef = doc(db, "users", currentUser.uid);
+          const senderRef = doc(db, "users", currentUser.uid || currentUser.$id);
           batch.update(senderRef, { gems: Math.floor(nextGems) });
 
           // Increase receiver
           const receiverRef = doc(db, "users", receiver.uid);
           batch.update(receiverRef, { gems: increment(Math.floor(amount)) });
 
+          // Appwrite mirror
+          try {
+             await databases.updateDocument("pumpforge", "users", currentUser.$id || currentUser.uid, { gems: Math.floor(nextGems) });
+             await databases.updateDocument("pumpforge", "users", receiver.uid, { gems: (receiver.gems || 0) + Math.floor(amount) });
+          } catch (appwriteErr) {
+             console.warn("Appwrite sync gems skip:", appwriteErr);
+          }
+
           setUserStats((prev) => ({ ...prev, gems: Math.floor(nextGems) }));
         } else {
           // Coin transfer
           const holding = holdings.find((h) => h.coinId === coinId);
-          if (!holding || holding.amount < amount)
+          if (!holding || holding.amount < amount) {
+            toast.error("Insufficient coins!", { id: "send-money" });
             return { success: false, message: "Insufficient coins!" };
+          }
 
           const nextAmount = holding.amount - amount;
+          sentAssetStr = `${amount.toLocaleString()} ${coinId.toUpperCase()}`;
 
           // Decrease sender holding
           const senderHoldingRef = doc(
             db,
             "users",
-            currentUser.uid,
+            currentUser.uid || currentUser.$id,
             "holdings",
             coinId,
           );
@@ -2766,8 +2823,25 @@ export default function App() {
         }
 
         await batch.commit();
+
+        // Push remote notification to Appwrite so the receiver gets it real-time
+        try {
+          await databases.createDocument("pumpforge", "notifications", ID.unique(), {
+            userId: receiver.uid,
+            title: "Incoming Transfer",
+            message: `${userStats.handle || "Someone"} sent you ${sentAssetStr}.`,
+            type: "trade",
+            timestamp: new Date().toISOString()
+          });
+        } catch (notifErr) {
+          console.warn("Failed to push Appwrite notification. Ensure 'notifications' collection exists:", notifErr);
+        }
+
+        const successMsg = `Successfully sent ${sentAssetStr} to @${cleanHandle}`;
+        toast.success(successMsg, { id: "send-money", duration: 4000 });
+        onAddNotification("Transfer Sent", successMsg, "trade");
       } else {
-        // Guest mode simulation, we just fail it since guest shouldn't distribute money to real people
+        toast.error("Guests cannot perform real transfers.", { id: "send-money" });
         return {
           success: false,
           message:
@@ -2779,6 +2853,7 @@ export default function App() {
     } catch (e) {
       console.error("Transfer error:", e);
       handleFirestoreError(e, OperationType.WRITE, "handleSendMoney");
+      toast.error("Transfer failed. Check connection.", { id: "send-money" });
       return {
         success: false,
         message: "Transfer failed. Check connection and permissions.",

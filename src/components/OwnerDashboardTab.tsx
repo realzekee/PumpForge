@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { useAppContext } from "../context/AppContext";
 import {
   ShieldAlert,
@@ -578,11 +579,17 @@ export default function OwnerDashboardTab({
   };
 
   // Modify money state
+  const [isMutatingUser, setIsMutatingUser] = useState<string | null>(null);
+
   const handleUserCashDose = async (
     playerHandle: string,
     isUser: boolean,
     isAddition: boolean,
   ) => {
+    setIsMutatingUser(playerHandle);
+    toast.loading(`Processing cash update...`, {
+      id: "mutate-" + playerHandle,
+    });
     const deltaStr = userMoneyDelta[playerHandle];
     const val =
       deltaStr !== undefined && !isNaN(Number(deltaStr))
@@ -613,6 +620,10 @@ export default function OwnerDashboardTab({
         onUpdateStats((stats) => {
           stats.cash = newCash;
         });
+        toast.success(
+          `Successfully ${isAddition ? "added" : "removed"} $${val.toLocaleString()}`,
+          { id: "mutate-" + playerHandle },
+        );
         onAddNotification(
           "💸 Balance Adjusted",
           `Your active cash reserves were forcefully ${isAddition ? "increased" : "decreased"} by $${val.toLocaleString()}.`,
@@ -629,6 +640,9 @@ export default function OwnerDashboardTab({
         ]);
       } catch (err) {
         console.error("Owner Action Appwrite user cash error:", err);
+        toast.error(`Transaction failed`, { id: "mutate-" + playerHandle });
+      } finally {
+        setIsMutatingUser(null);
       }
     } else {
       // Sync with Appwrite
@@ -652,6 +666,10 @@ export default function OwnerDashboardTab({
             cash: newCash,
           });
           queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
+          toast.success(
+            `Successfully ${isAddition ? "added" : "removed"} $${val.toLocaleString()}`,
+            { id: "mutate-" + playerHandle },
+          );
 
           onAddNotification(
             "💸 Balance Adjusted",
@@ -681,14 +699,23 @@ export default function OwnerDashboardTab({
               return p;
             }),
           );
+          toast.success(
+            `Successfully ${isAddition ? "added" : "removed"} $${val.toLocaleString()}`,
+            { id: "mutate-" + playerHandle },
+          );
           onAddNotification(
             "⚡ Player Modified",
             `Sandbox player ${playerHandle}'s total profit was ${isAddition ? "boosted" : "docked"} by $${val.toLocaleString()}`,
             "info",
           );
+        } else {
+          toast.error("User not found", { id: "mutate-" + playerHandle });
         }
       } catch (err) {
         console.error("Error adjusting registered/appwrite user money:", err);
+        toast.error(`Transaction failed`, { id: "mutate-" + playerHandle });
+      } finally {
+        setIsMutatingUser(null);
       }
     }
   };
@@ -699,6 +726,10 @@ export default function OwnerDashboardTab({
     isUser: boolean,
     isAddition: boolean,
   ) => {
+    setIsMutatingUser(playerHandle);
+    toast.loading(`Processing gems update...`, {
+      id: "mutate-gems-" + playerHandle,
+    });
     const deltaStr = userGemsDelta[playerHandle];
     const val =
       deltaStr !== undefined && !isNaN(Number(deltaStr))
@@ -729,6 +760,10 @@ export default function OwnerDashboardTab({
         onUpdateStats((stats) => {
           stats.gems = newGems;
         });
+        toast.success(
+          `Successfully ${isAddition ? "added" : "removed"} ${val.toLocaleString()} gems`,
+          { id: "mutate-gems-" + playerHandle },
+        );
         onAddNotification(
           "💎 Gems Adjusted",
           `Your gem reserves were forcefully ${isAddition ? "increased" : "decreased"} by ${val.toLocaleString()}.`,
@@ -745,6 +780,11 @@ export default function OwnerDashboardTab({
         ]);
       } catch (err) {
         console.error("Owner Action Appwrite user gems error:", err);
+        toast.error(`Transaction failed`, {
+          id: "mutate-gems-" + playerHandle,
+        });
+      } finally {
+        setIsMutatingUser(null);
       }
     } else {
       try {
@@ -767,6 +807,10 @@ export default function OwnerDashboardTab({
             gems: newGems,
           });
           queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
+          toast.success(
+            `Successfully ${isAddition ? "added" : "removed"} ${val.toLocaleString()} gems`,
+            { id: "mutate-gems-" + playerHandle },
+          );
 
           onAddNotification(
             "💎 Gems Adjusted",
@@ -774,14 +818,24 @@ export default function OwnerDashboardTab({
             "achievement",
           );
         } else if (setSimulatedPlayers) {
+          toast.error("Simulated shadow bots do not have Gem reserves.", {
+            id: "mutate-gems-" + playerHandle,
+          });
           onAddNotification(
             "❌ Invalid Target",
             "Simulated shadow bots do not have Gem reserves.",
             "crash",
           );
+        } else {
+          toast.error("User not found", { id: "mutate-gems-" + playerHandle });
         }
       } catch (err) {
         console.error("Error adjusting user gems:", err);
+        toast.error(`Transaction failed`, {
+          id: "mutate-gems-" + playerHandle,
+        });
+      } finally {
+        setIsMutatingUser(null);
       }
     }
   };
@@ -1810,7 +1864,8 @@ export default function OwnerDashboardTab({
                         onClick={() =>
                           handleUserCashDose(user.handle, user.isUser, true)
                         }
-                        className="flex-1 py-1 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 hover:border-emerald-500/50 text-emerald-400 text-[10px] font-bold rounded flex items-center justify-center gap-0.5 active:scale-95 transition-all"
+                        disabled={isMutatingUser === user.handle}
+                        className="flex-1 py-1 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 hover:border-emerald-500/50 text-emerald-400 text-[10px] font-bold rounded flex items-center justify-center gap-0.5 active:scale-95 transition-all disabled:opacity-50 disabled:pointer-events-none"
                       >
                         <Plus className="w-3 h-3" /> Add Money
                       </button>
@@ -1818,7 +1873,8 @@ export default function OwnerDashboardTab({
                         onClick={() =>
                           handleUserCashDose(user.handle, user.isUser, false)
                         }
-                        className="flex-1 py-1 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 hover:border-rose-500/50 text-rose-400 text-[10px] font-bold rounded flex items-center justify-center gap-0.5 active:scale-95 transition-all"
+                        disabled={isMutatingUser === user.handle}
+                        className="flex-1 py-1 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 hover:border-rose-500/50 text-rose-400 text-[10px] font-bold rounded flex items-center justify-center gap-0.5 active:scale-95 transition-all disabled:opacity-50 disabled:pointer-events-none"
                       >
                         <Minus className="w-3 h-3" /> Decrease Money
                       </button>
@@ -1856,7 +1912,8 @@ export default function OwnerDashboardTab({
                         onClick={() =>
                           handleUserGemsDose(user.handle, user.isUser, true)
                         }
-                        className="flex-1 py-1 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 hover:border-cyan-500/50 text-cyan-400 text-[10px] font-bold rounded flex items-center justify-center gap-0.5 active:scale-95 transition-all"
+                        disabled={isMutatingUser === user.handle}
+                        className="flex-1 py-1 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 hover:border-cyan-500/50 text-cyan-400 text-[10px] font-bold rounded flex items-center justify-center gap-0.5 active:scale-95 transition-all disabled:opacity-50 disabled:pointer-events-none"
                       >
                         <Plus className="w-3 h-3" /> Add Gems
                       </button>
@@ -1864,7 +1921,8 @@ export default function OwnerDashboardTab({
                         onClick={() =>
                           handleUserGemsDose(user.handle, user.isUser, false)
                         }
-                        className="flex-1 py-1 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 hover:border-rose-500/50 text-rose-400 text-[10px] font-bold rounded flex items-center justify-center gap-0.5 active:scale-95 transition-all"
+                        disabled={isMutatingUser === user.handle}
+                        className="flex-1 py-1 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 hover:border-rose-500/50 text-rose-400 text-[10px] font-bold rounded flex items-center justify-center gap-0.5 active:scale-95 transition-all disabled:opacity-50 disabled:pointer-events-none"
                       >
                         <Minus className="w-3 h-3" /> Decrease Gems
                       </button>

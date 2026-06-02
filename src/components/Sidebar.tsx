@@ -176,6 +176,10 @@ export default function Sidebar({
     );
   };
 
+  const claimYield = Math.floor(
+    1500 * (1 + (userStats.prestigeLevel || 0) * 0.25),
+  );
+
   return (
     <>
       {/* Mobile Header */}
@@ -300,7 +304,7 @@ export default function Sidebar({
               ) : (
                 <div className="flex items-center justify-center gap-1.5 font-bold">
                   <Gift className="w-3.5 h-3.5 animate-bounce" />
-                  <span>Claim $1,500</span>
+                  <span>Claim ${claimYield.toLocaleString()}</span>
                 </div>
               )}
             </button>
