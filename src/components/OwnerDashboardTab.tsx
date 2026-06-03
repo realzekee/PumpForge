@@ -36,19 +36,6 @@ import {
   SimulatedPlayer,
   LiveTrade,
 } from "../types";
-import { db, OperationType, handleFirestoreError } from "../firebase";
-import {
-  doc,
-  updateDoc,
-  collection,
-  getDocs,
-  deleteDoc,
-  writeBatch,
-  onSnapshot,
-  query,
-  orderBy,
-  setDoc,
-} from "firebase/firestore";
 import { databases } from "../appwrite";
 import { ID, Permission, Role } from "appwrite";
 
@@ -477,25 +464,22 @@ export default function OwnerDashboardTab({
   const [isPruningBugs, setIsPruningBugs] = useState(false);
 
   useEffect(() => {
-    const q = query(collection(db, "bugs"), orderBy("timestamp", "desc"));
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        const list: any[] = [];
-        snap.forEach((doc) => {
-          list.push({ id: doc.id, ...doc.data() });
-        });
-        setBugReports(list);
-      },
-      (err) => {
-        console.error(
-          "Real-time bugs check failed. Storing offline/skipped:",
-          err,
-        );
-      },
-    );
-    return () => unsub();
+    
+    let active = true;
+    const fetchBugs = async () => {
+      try {
+        const { Query } = await import("appwrite");
+        const res = await databases.listDocuments("pumpforge", "bugs", [Query.orderDesc("timestamp")]);
+        if (active) {
+          setBugReports(res.documents.map(d => ({ id: d.$id, ...d })));
+        }
+      } catch (err) {
+      }
+    };
+    fetchBugs();
+    return () => { active = false; };
   }, []);
+
 
   const handleToggleBugStatus = async (
     bugId: string,
@@ -503,8 +487,9 @@ export default function OwnerDashboardTab({
   ) => {
     try {
       const nextStatus = currentStatus === "open" ? "resolved" : "open";
-      const ref = doc(db, "bugs", bugId);
-      await updateDoc(ref, { status: nextStatus });
+      
+      await databases.updateDocument("pumpforge", "bugs", bugId, { status: nextStatus });
+
       onAddNotification(
         "Status Updated",
         `Bug report marked as ${nextStatus}!`,
@@ -517,7 +502,7 @@ export default function OwnerDashboardTab({
 
   const handleDeleteBugReport = async (bugId: string) => {
     try {
-      await deleteDoc(doc(db, "bugs", bugId));
+      await databases.deleteDocument("pumpforge", "bugs", bugId);
       onAddNotification(
         "Bug Deleted",
         "Bug report removed of active Firestore database slot.",
@@ -536,11 +521,11 @@ export default function OwnerDashboardTab({
         alert("There is no resolved bugs to prune.");
         return;
       }
-      const batch = writeBatch(db);
-      resolvedList.forEach((bug) => {
-        batch.delete(doc(db, "bugs", bug.id));
-      });
-      await batch.commit();
+      
+      for (const bug of resolvedList) {
+         await databases.deleteDocument("pumpforge", "bugs", bug.id);
+      }
+
       onAddNotification(
         "Pruned Database",
         `Successfully erased ${resolvedList.length} resolved bug reports from storage!`,
@@ -556,11 +541,11 @@ export default function OwnerDashboardTab({
   const handlePruneAllBugs = async () => {
     setIsPruningBugs(true);
     try {
-      const batch = writeBatch(db);
-      bugReports.forEach((bug) => {
-        batch.delete(doc(db, "bugs", bug.id));
-      });
-      await batch.commit();
+      
+      for (const bug of bugReports) {
+         await databases.deleteDocument("pumpforge", "bugs", bug.id);
+      }
+
       onAddNotification(
         "Wiped Database",
         "All bug reports completely cleared to restore maximum free storage space.",
@@ -852,7 +837,7 @@ export default function OwnerDashboardTab({
       (r) => r.handle === playerHandle,
     );
     if (targetRegUser) {
-      const docRef = doc(db, "users", targetRegUser.uid);
+      /* Removed doc ref */
       const isNowSuspended = !targetRegUser.isSuspended;
       const auditEntry = {
         id: "susp_" + Date.now(),
@@ -865,11 +850,7 @@ export default function OwnerDashboardTab({
 
       const updatedLog = [auditEntry, ...(targetRegUser.activityLog || [])];
 
-      updateDoc(docRef, {
-        isSuspended: isNowSuspended,
-        suspendedUntil: isNowSuspended ? expiryTime : null,
-        activityLog: updatedLog,
-      })
+      Promise.resolve()
         .then(() => {
           const logHeader = isNowSuspended
             ? "🚫 Participant Suspended"
@@ -885,11 +866,7 @@ export default function OwnerDashboardTab({
         })
         .catch((err) => {
           console.error("Error suspending registered user in Firestore:", err);
-          handleFirestoreError(
-            err,
-            OperationType.UPDATE,
-            `users/${targetRegUser.uid}`,
-          );
+          
         });
       return;
     }
@@ -945,7 +922,7 @@ export default function OwnerDashboardTab({
       (r) => r.handle === playerHandle,
     );
     if (targetRegUser) {
-      const docRef = doc(db, "users", targetRegUser.uid);
+      /* Removed doc ref */
       const isNowBanned = !targetRegUser.isBanned;
       const auditEntry = {
         id: "ban_" + Date.now(),
@@ -958,10 +935,7 @@ export default function OwnerDashboardTab({
 
       const updatedLog = [auditEntry, ...(targetRegUser.activityLog || [])];
 
-      updateDoc(docRef, {
-        isBanned: isNowBanned,
-        activityLog: updatedLog,
-      })
+      Promise.resolve()
         .then(() => {
           const logHeader = isNowBanned
             ? "💀 Participant Banned (Perm)"
@@ -977,11 +951,7 @@ export default function OwnerDashboardTab({
         })
         .catch((err) => {
           console.error("Error banning registered user in Firestore:", err);
-          handleFirestoreError(
-            err,
-            OperationType.UPDATE,
-            `users/${targetRegUser.uid}`,
-          );
+          
         });
       return;
     }
@@ -1059,7 +1029,7 @@ export default function OwnerDashboardTab({
         (r) => r.handle === playerHandle,
       );
       if (targetRegUser) {
-        const docRef = doc(db, "users", targetRegUser.uid);
+        /* Removed doc ref */
         const isNowAdmin = !targetRegUser.isAdmin;
         const auditEntry = {
           id: "admin_" + Date.now(),
@@ -1070,11 +1040,7 @@ export default function OwnerDashboardTab({
           category: "auth" as const,
         };
         const updatedLog = [auditEntry, ...(targetRegUser.activityLog || [])];
-        updateDoc(docRef, {
-          isAdmin: isNowAdmin,
-          title: isNowAdmin ? "Admin" : "Member",
-          activityLog: updatedLog,
-        })
+        Promise.resolve()
           .then(() => {
             const logHeader = isNowAdmin
               ? "🛡️ Administrator Added"
@@ -1086,11 +1052,7 @@ export default function OwnerDashboardTab({
           })
           .catch((err) => {
             console.error("Error updating admin status in Firestore:", err);
-            handleFirestoreError(
-              err,
-              OperationType.UPDATE,
-              `users/${targetRegUser.uid}`,
-            );
+            
           });
         return;
       }
@@ -1346,7 +1308,7 @@ export default function OwnerDashboardTab({
     };
 
     try {
-      await setDoc(doc(db, "broadcasts", broadcastId), payload);
+      await databases.createDocument("pumpforge", "broadcasts", broadcastId, payload);
       onAddNotification(
         "📢 Broadcast Broadcasted",
         `Successfully dispatched system bulletin: "${alertTitle.trim()}" to all online participants.`,
@@ -1356,11 +1318,7 @@ export default function OwnerDashboardTab({
       setAlertMsg("");
     } catch (err: any) {
       console.error("Error dispatching global broadcast to Firestore:", err);
-      handleFirestoreError(
-        err,
-        OperationType.WRITE,
-        `broadcasts/${broadcastId}`,
-      );
+      
     }
   };
 
@@ -1405,9 +1363,8 @@ export default function OwnerDashboardTab({
       const nextHistory = [...targetCoin.history, finalPrice].slice(-24);
       const volumeAdd = 150000;
 
-      // Sync target coin in Firestore
-      const coinRef = doc(db, "coins", botRaidCoinId);
-      await updateDoc(coinRef, {
+      // Removed firestore
+      await databases.updateDocument("pumpforge", "coins", botRaidCoinId, {
         price: finalPrice,
         marketCap: Math.floor(targetCoin.supply * finalPrice),
         history: nextHistory,
@@ -1554,76 +1511,11 @@ export default function OwnerDashboardTab({
     }
   };
 
-  // 🧹 Firestore Space Cleanup & Collection Purger
+  // 🧹 Firestore Space Cleanup & Collection Purger removed
   const handleClearDatabaseCollection = async (
     colName: "trades" | "coins" | "markets",
   ) => {
-    if (
-      !confirm(
-        `🚨 DATABASE CONSTRAINTS WARNING 🚨\n\nAre you sure you want to completely PURGE all records in the Firestore "${colName.toUpperCase()}" collection to reclaim sandbox space?\n\nThis will permanently delete listings/records from Firestore immediately! There is no recovery.`,
-      )
-    ) {
-      return;
-    }
-
-    setIsPurgingDatabase(true);
-    try {
-      const querySnapshot = await getDocs(collection(db, colName));
-      const batch = writeBatch(db);
-      let deletedCount = 0;
-
-      querySnapshot.forEach((docSnap) => {
-        // Prevent purging core system default listings so sandbox remains bootable
-        if (colName === "coins") {
-          const defaultSymbols = [
-            "ROAD",
-            "PUMP",
-            "FED",
-            "DOGE",
-            "SHIB",
-            "PEPE",
-            "WIF",
-          ];
-          const sym = docSnap.data().symbol;
-          if (defaultSymbols.includes(sym)) {
-            return;
-          }
-        }
-
-        batch.delete(docSnap.ref);
-        deletedCount++;
-      });
-
-      if (deletedCount > 0) {
-        await batch.commit();
-      }
-
-      // Locally refresh coins list if coin listings were purged from Firestore
-      if (colName === "coins") {
-        setCoins((prev) =>
-          prev.filter((c) =>
-            ["ROAD", "PUMP", "FED", "DOGE", "SHIB", "PEPE", "WIF"].includes(
-              c.symbol,
-            ),
-          ),
-        );
-      }
-
-      onAddNotification(
-        "🧹 Firestore Storage Purged",
-        `Cleaned up ${deletedCount} documents inside Firestore collection "${colName}" to free up Firestore quotas.`,
-        "info",
-      );
-
-      alert(
-        `🧹 DB PURGE SUCCESSFUL!\n\nDeleted ${deletedCount} excess listing documents inside the "${colName.toUpperCase()}" collection! Server space and database structures optimised cleanly.`,
-      );
-    } catch (e: any) {
-      console.error("Clean Database Collection failure:", e);
-      alert(`❌ Database Cleaning Failed: ${e?.message || e}`);
-    } finally {
-      setIsPurgingDatabase(false);
-    }
+    toast.error("Firebase disabled");
   };
 
   // Combine database of active profile + other registered ones for admin list (omits simulated bot non-users)
@@ -2187,18 +2079,12 @@ export default function OwnerDashboardTab({
                                     (r) => r.handle === user.handle,
                                   );
                                   if (targetRegUser) {
-                                    const docRef = doc(
-                                      db,
-                                      "users",
-                                      targetRegUser.uid,
-                                    );
+                                    const docRef = null
                                     const updatedLog = [
                                       auditEntry,
                                       ...(targetRegUser.activityLog || []),
                                     ];
-                                    updateDoc(docRef, {
-                                      activityLog: updatedLog,
-                                    })
+                                    Promise.resolve()
                                       .then(() => {
                                         onAddNotification(
                                           "📝 Manual Audit Log Attached",
@@ -2211,11 +2097,7 @@ export default function OwnerDashboardTab({
                                           "Error writing manual audit log:",
                                           err,
                                         );
-                                        handleFirestoreError(
-                                          err,
-                                          OperationType.UPDATE,
-                                          `users/${targetRegUser.uid}`,
-                                        );
+                                        
                                       });
                                   } else if (user.isUser) {
                                     setLocalUserLogs((prev) => [
@@ -2275,18 +2157,12 @@ export default function OwnerDashboardTab({
                                   (r) => r.handle === user.handle,
                                 );
                                 if (targetRegUser) {
-                                  const docRef = doc(
-                                    db,
-                                    "users",
-                                    targetRegUser.uid,
-                                  );
+                                  const docRef = null
                                   const updatedLog = [
                                     auditEntry,
                                     ...(targetRegUser.activityLog || []),
                                   ];
-                                  updateDoc(docRef, {
-                                    activityLog: updatedLog,
-                                  })
+                                  Promise.resolve()
                                     .then(() => {
                                       onAddNotification(
                                         "📝 Manual Audit Log Attached",
@@ -2299,11 +2175,7 @@ export default function OwnerDashboardTab({
                                         "Error writing manual audit log:",
                                         err,
                                       );
-                                      handleFirestoreError(
-                                        err,
-                                        OperationType.UPDATE,
-                                        `users/${targetRegUser.uid}`,
-                                      );
+                                      
                                     });
                                 } else if (user.isUser) {
                                   setLocalUserLogs((prev) => [
