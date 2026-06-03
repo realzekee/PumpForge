@@ -570,7 +570,6 @@ export default function App() {
       }
       setIsLoading(true);
 
-      // Secure Firebase Auth credentials to satisfy firestore.rules requirements for global writing
       
       try {
         let user: any = null;
@@ -2838,7 +2837,7 @@ export default function App() {
                   <p className="text-xs text-zinc-400 leading-relaxed mb-8">
                     Purchasing rare profile colors and high-volume Mystery
                     Crates requires a Cloud Sync Profile. Secure your progress
-                    and sync with our Firebase database.
+                    and sync with our Appwrite database.
                   </p>
                   <button
                     onClick={handleGoogleSignIn}

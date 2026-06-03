@@ -1402,7 +1402,7 @@ export default function OwnerDashboardTab({
     } catch (e: any) {
       console.error("Bot Raid update error:", e);
       alert(
-        `⚠️ Firebase Sync Error: ${e?.message || e}. Applied local updates only.`,
+        `⚠️ Cloud Sync Error: ${e?.message || e}. Applied local updates only.`,
       );
 
       setCoins((prevCoins) =>
@@ -1515,7 +1515,7 @@ export default function OwnerDashboardTab({
   const handleClearDatabaseCollection = async (
     colName: "trades" | "coins" | "markets",
   ) => {
-    toast.error("Firebase disabled");
+    toast.error("Database purge disabled via sandbox");
   };
 
   // Combine database of active profile + other registered ones for admin list (omits simulated bot non-users)
