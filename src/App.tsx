@@ -1868,7 +1868,7 @@ export default function App() {
           
           await databases.updateDocument("pumpforge", "users", uid, {
             cash: Number(nextCash.toFixed(2)),
-            totalProfit: nextProfit,
+            totalProfit: Number(nextProfit.toFixed(4)),
             tradesCount: nextTradesCount,
           });
           
@@ -2053,11 +2053,14 @@ export default function App() {
           await databases.createDocument("pumpforge", "coins", coinId, {
             coinId: coinId,
             creatorId: currentUser.uid || currentUser.$id,
+            creator: userStats.handle,
             name,
             symbol,
             description: desc,
             price: Number(listPrice),
             marketCap: 1000.0,
+            volume24h: 300,
+            change24h: 0,
           }, [
             Permission.read(Role.any()),
             Permission.update(Role.any()),

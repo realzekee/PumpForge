@@ -35,9 +35,9 @@ const DEFAULT_PRESET_COIN: MemeCoin = {
   id: "roadman_revival_default",
   name: "RoadmanRevival",
   symbol: "ROADREV",
-  creator: "🏛️ PDH (@pdh)",
+  creator: "@system",
   description:
-    "The definitive meme asset backing the PDH roadman lifestyle simulation.",
+    "The definitive meme asset backing the system.",
   avatarEmoji: "🏟️",
   avatarBg: "bg-indigo-950/85 text-indigo-400 border-indigo-500/20",
   price: 5.73,
@@ -348,7 +348,7 @@ export default function CoinDetailsTab({
                   <span className="text-[11px] text-zinc-500">
                     Created by{" "}
                     <strong className="text-zinc-300 hover:text-orange-400 transition-colors">
-                      {activeCoin.creator || "🏛️ PDH (@pdh)"}
+                      {activeCoin.creator}
                     </strong>
                   </span>
                 </div>

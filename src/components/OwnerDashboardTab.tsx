@@ -82,18 +82,16 @@ export default function OwnerDashboardTab({
   const { userStats, cash, setCash, gems, setGems, userId, adminSettings, setAdminSettings } = useAppContext();
   const queryClient = useQueryClient();
 
-  const {
-    data: usersQueryData = [],
-    isLoading: isUsersLoading,
-    isError: isUsersError,
-    error: usersError,
-  } = useQuery({
-    queryKey: ["registeredUsers"],
-    queryFn: async () => {
-      const res = await databases.listDocuments("pumpforge", "users");
-      return res.documents;
-    },
-  });
+  const { data: usersQueryData = [], isLoading: isUsersLoading, isError: isUsersError, error: usersError } = useQuery({ queryKey: ["registeredUsers"], queryFn: async () => { const res = await databases.listDocuments("pumpforge", "users"); return res.documents; } });
+
+  if (!userStats || Object.keys(userStats).length === 0) {
+    return (
+      <div className="text-zinc-400 font-mono text-center p-10 flex flex-col items-center justify-center min-h-[50vh]">
+         <div className="w-8 h-8 rounded-full border-4 border-fuchsia-500/20 border-t-fuchsia-500 animate-spin mb-4"></div>
+         <div>Loading Owner Dashboard...</div>
+      </div>
+    );
+  }
 
   useEffect(() => {
     if (isUsersError && (usersError as any)?.code === 403) {

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import {
   Award,
   CheckCircle2,
@@ -9,6 +9,8 @@ import {
   Star,
 } from "lucide-react";
 import { Achievement, UserStats } from "../types";
+import { databases } from "../appwrite";
+import { Query } from "appwrite";
 
 interface AchievementsProps {
   achievements: Achievement[];
@@ -23,8 +25,59 @@ export default function AchievementsTab({
   onClaimAchievement,
   onClaimAll,
 }: AchievementsProps) {
-  const claimedCount = achievements.filter((a) => a.claimed).length;
-  const claimableCount = achievements.filter(
+  const [localAchs, setLocalAchs] = useState<Achievement[]>(achievements);
+
+  // Sync with prop changes just in case, but avoid overriding claimed manually
+  useEffect(() => {
+    setLocalAchs((prev) => 
+       achievements.map(a => {
+         const existing = prev.find(p => p.id === a.id);
+         return { ...a, claimed: existing?.claimed || a.claimed };
+       })
+    );
+  }, [achievements]);
+
+  useEffect(() => {
+    let active = true;
+    const fetchAchs = async () => {
+      if (!userStats.uid && !userStats.handle) return;
+      try {
+        const uid = userStats.uid || userStats.handle;
+        if (!uid) return;
+        
+        const res = await databases.listDocuments("pumpforge", "achievements", [
+          Query.equal("userId", uid)
+        ]);
+        
+        if (active) {
+          setLocalAchs((prev) => prev.map(a => {
+            const dbRef = res.documents.find(doc => doc.achievementId === a.id);
+            if (dbRef) {
+              return { ...a, claimed: dbRef.claimed, current: Math.max(a.current, dbRef.current || 0) };
+            }
+            return a;
+          }));
+        }
+      } catch (err) {
+        console.error("Failed to fetch achievements for tab", err);
+      }
+    };
+    fetchAchs();
+    return () => { active = false; };
+  }, [userStats.uid, userStats.handle]);
+
+  const handleClaim = (id: string) => {
+    onClaimAchievement(id);
+    setLocalAchs((prev) => prev.map(a => a.id === id ? { ...a, claimed: true } : a));
+  };
+
+  const handleClaimAll = () => {
+    onClaimAll();
+    setLocalAchs((prev) => prev.map(a => (a.current >= a.target && !a.claimed) ? { ...a, claimed: true } : a));
+  };
+
+  const claimedCount = localAchs.filter((a) => a.claimed).length;
+  const claimableCount = localAchs.filter(
     (a) => a.current >= a.target && !a.claimed,
   ).length;
 
@@ -45,7 +98,7 @@ export default function AchievementsTab({
 
         {claimableCount > 0 ? (
           <button
-            onClick={onClaimAll}
+            onClick={handleClaimAll}
             className="bg-emerald-655 hover:bg-emerald-500 active:scale-98 transition-all font-black text-white font-mono text-xs py-2 px-4 rounded-xl flex items-center gap-1.5 shadow border border-emerald-500 shrink-0 self-start"
           >
             <Gift className="w-4 h-4 animate-bounce" /> Claim All (
@@ -76,7 +129,7 @@ export default function AchievementsTab({
 
       {/* Grid of milestones */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {(achievements || []).map((item) => {
+        {(localAchs || []).map((item) => {
           const isComplete = item.current >= item.target;
           const pct = Math.min((item.current / item.target) * 100, 100);
 
@@ -149,7 +202,7 @@ export default function AchievementsTab({
                   </span>
                 ) : isComplete ? (
                   <button
-                    onClick={() => onClaimAchievement(item.id)}
+                    onClick={() => handleClaim(item.id)}
                     className="bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold py-1.5 px-3.5 rounded-xl text-[10px] uppercase tracking-wider transition-colors animate-pulse border border-emerald-500 text-glow"
                   >
                     Claim Reward

@@ -49,6 +49,15 @@ export default function PortfolioTab({
   const [sendAmount, setSendAmount] = useState<string>("");
   const [successMsg, setSuccessMsg] = useState("");
 
+  if (!userStats || Object.keys(userStats).length === 0) {
+    return (
+      <div className="text-zinc-400 font-mono text-center p-10 flex flex-col items-center justify-center min-h-[50vh]">
+         <div className="w-8 h-8 rounded-full border-4 border-emerald-500/20 border-t-emerald-500 animate-spin mb-4"></div>
+         <div>Loading secure portfolio...</div>
+      </div>
+    );
+  }
+
   useEffect(() => {
     // Simulator loading pattern to match the video
     const timer = setTimeout(() => {
@@ -58,8 +67,8 @@ export default function PortfolioTab({
   }, []);
 
   // Calculate current holdings value (exclude list of inactive)
-  const holdingsValue = holdings.reduce((sum, h) => {
-    const coin = coins.find((c) => c.id === h.coinId);
+  const holdingsValue = (holdings || []).reduce((sum, h) => {
+    const coin = (coins || []).find((c) => c.id === h.coinId);
     if (coin && true) {
       return sum + h.amount * coin.price;
     }
@@ -76,7 +85,7 @@ export default function PortfolioTab({
     if (sendType === "gems") {
       return userStats.gems;
     }
-    const match = holdings.find((h) => h.coinId === sendType);
+    const match = (holdings || []).find((h) => h.coinId === sendType);
     return match ? match.amount : 0;
   };
 
@@ -284,7 +293,7 @@ export default function PortfolioTab({
               })}
             </span>
             <span className="text-[10px] text-zinc-550 mt-1">
-              {holdings.length} active positions
+              {(holdings || []).length} active positions
             </span>
           </div>
           <div className="w-12 h-12 bg-zinc-950 border border-zinc-850 rounded-xl flex items-center justify-center">
@@ -301,7 +310,7 @@ export default function PortfolioTab({
         </h3>
 
         <div className="bg-zinc-900/30 border border-zinc-900 rounded-2xl overflow-hidden font-mono text-xs shadow-2xl">
-          {holdings.length === 0 ? (
+          {(holdings || []).length === 0 ? (
             <div className="text-center py-12 px-4 flex flex-col items-center gap-3">
               <div className="w-12 h-12 rounded-xl bg-zinc-950 border border-zinc-850 flex items-center justify-center text-xl select-none">
                 📁

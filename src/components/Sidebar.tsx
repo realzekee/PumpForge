@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, Link } from "react-router-dom";
 import { Query } from "appwrite";
 import { toast } from "sonner";
 import { databases } from "../appwrite";
@@ -395,12 +395,13 @@ export default function Sidebar({
                   <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />
                   Live Trades
                 </span>
-                <span
+                <Link
+                  to="/trades"
+                  onClick={() => setIsOpen(false)}
                   className="text-[8px] text-zinc-400 font-mono hover:underline cursor-pointer"
-                  onClick={() => navigate("/trades")}
                 >
                   View All
-                </span>
+                </Link>
               </div>
               <div
                 className="flex flex-col gap-1.5 overflow-hidden min-h-[50px]"
