@@ -387,8 +387,8 @@ export default function Sidebar({
                   Live Trades
                 </span>
                 <span
-                  className="text-[8px] text-zinc-655 font-mono hover:underline cursor-pointer"
-                  onClick={() => navigate("/")}
+                  className="text-[8px] text-zinc-400 font-mono hover:underline cursor-pointer"
+                  onClick={() => navigate("/trades")}
                 >
                   View All
                 </span>

@@ -21,6 +21,7 @@ import NotificationsTab from "./components/NotificationsTab";
 import SettingsTab from "./components/SettingsTab";
 import AboutTab from "./components/AboutTab";
 import ProfileTab from "./components/ProfileTab";
+import { TradesHistoryTab } from "./components/TradesHistoryTab";
 import OwnerDashboardTab from "./components/OwnerDashboardTab";
 import BugReportModal from "./components/BugReportModal";
 import {
@@ -767,26 +768,28 @@ export default function App() {
             console.error("Firestore user profile sync error:", fsSyncErr);
           }
 
-          // Pre-populate holdings and achievements from safeStorage mapped by user ID for pragmatic local persistence
-          const cachedHoldings = safeStorage.getItem(
-            `memex_holdings_${user.$id}`,
-          );
-          if (active) {
-            if (cachedHoldings) {
-              setHoldings(JSON.parse(cachedHoldings));
-            } else {
-              setHoldings([]);
-            }
-          }
+          // Fetch holdings and achievements from Appwrite
+          try {
+             const { databases, Query } = await import("./appwrite");
+             const uid = user.$id;
+             
+             // Fetch holdings
+             const hDocs = await databases.listDocuments("pumpforge", "holdings", [
+                Query.equal("userId", uid)
+             ]);
+             if (active) {
+                setHoldings(hDocs.documents.map(d => ({
+                   coinId: d.coinId,
+                   amount: d.tokenAmount
+                })));
+             }
 
-          const cachedAchs = safeStorage.getItem(
-            `memex_achievements_${user.$id}`,
-          );
-          if (active) {
-            if (cachedAchs) {
-              setAchievements(JSON.parse(cachedAchs));
-            } else {
-              setAchievements([
+             // Fetch achievements
+             const aDocs = await databases.listDocuments("pumpforge", "achievements", [
+                Query.equal("userId", uid)
+             ]);
+             
+             const defaultAch = [
                 {
                   id: "a1",
                   title: "Baby's First Buy",
@@ -848,7 +851,7 @@ export default function App() {
                   description: "Accumulate $50,000 cash balance reserves.",
                   category: "wealth",
                   target: 50000,
-                  current: 10000,
+                  current: profileDoc.cash ?? 5000,
                   claimed: false,
                   cashReward: 3500,
                   gemReward: 75,
@@ -860,7 +863,7 @@ export default function App() {
                     "Reset status to activate permanent Prestige Level I.",
                   category: "prestige",
                   target: 1,
-                  current: 0,
+                  current: profileDoc.prestigeLevel ?? 0,
                   claimed: false,
                   cashReward: 10000,
                   gemReward: 250,
@@ -871,13 +874,25 @@ export default function App() {
                   description: "Advance to Prestige level 5.",
                   category: "prestige",
                   target: 5,
-                  current: 0,
+                  current: profileDoc.prestigeLevel ?? 0,
                   claimed: false,
                   cashReward: 100000,
                   gemReward: 1500,
                 },
-              ]);
-            }
+             ];
+
+             if (active) {
+                const mergedAchs = defaultAch.map(da => {
+                   const found = aDocs.documents.find(ad => ad.achievementId === da.id);
+                   if (found) {
+                      return { ...da, current: Math.max(da.current, found.current || 0), claimed: found.claimed };
+                   }
+                   return da;
+                });
+                setAchievements(mergedAchs);
+             }
+          } catch(e) {
+             console.error("Failed to fetch holdings/achievements from Appwrite", e);
           }
         } else {
           // If search for standard session failed, but we ALREADY have a valid safeStorage cached session,
@@ -2416,17 +2431,37 @@ export default function App() {
 
     if (currentUser) {
       try {
-        const batch = writeBatch(db);
-        const userRef = doc(db, "users", currentUser.uid);
-        const achRef = doc(db, "users", currentUser.uid, "achievements", id);
-
-        batch.update(userRef, {
-          cash: Number(nextCash.toFixed(2)),
+        const { databases, ID } = await import("./appwrite");
+        const uid = currentUser.uid || currentUser.$id;
+        
+        // Update user stats
+        await databases.updateDocument("pumpforge", "users", uid, {
+          cash: nextCash,
           gems: nextGems,
         });
-        batch.update(achRef, { claimed: true });
 
-        await batch.commit();
+        // Try to update or create achievement doc
+        try {
+           const { Query } = await import("appwrite");
+           const achDocs = await databases.listDocuments("pumpforge", "achievements", [
+              Query.equal("userId", uid),
+              Query.equal("achievementId", id)
+           ]);
+           if (achDocs.documents.length > 0) {
+              await databases.updateDocument("pumpforge", "achievements", achDocs.documents[0].$id, {
+                 claimed: true
+              });
+           } else {
+              await databases.createDocument("pumpforge", "achievements", ID.unique(), {
+                 userId: uid,
+                 achievementId: id,
+                 claimed: true,
+                 current: ach.current
+              });
+           }
+        } catch (e) {
+           console.error("Failed to update achievement in Appwrite", e);
+        }
 
         setAchievements((prev) =>
           prev.map((a) => (a.id === id ? { ...a, claimed: true } : a)),
@@ -2438,11 +2473,7 @@ export default function App() {
           gems: nextGems,
         }));
       } catch (e) {
-        handleFirestoreError(
-          e,
-          OperationType.UPDATE,
-          `users/${currentUser.uid}/achievements/${id}`,
-        );
+        console.error("Failed to process achievement claim", e);
       }
     } else {
       setAchievements((prev) =>
@@ -2480,33 +2511,57 @@ export default function App() {
 
     if (currentUser) {
       try {
-        const batch = writeBatch(db);
-        const userRef = doc(db, "users", currentUser.uid);
+        const { databases, ID, Query } = await import("./appwrite");
+        const uid = currentUser.uid || currentUser.$id;
 
-        claimable.forEach((ach) => {
+        for (const ach of claimable) {
           totalCash += ach.cashReward;
           totalGems += ach.gemReward;
-          const achRef = doc(
-            db,
-            "users",
-            currentUser.uid,
-            "achievements",
-            ach.id,
-          );
-          batch.update(achRef, { claimed: true });
-        });
+          
+          try {
+             // Try to update or create achievement
+             const achDocs = await databases.listDocuments("pumpforge", "achievements", [
+                Query.equal("userId", uid),
+                Query.equal("achievementId", ach.id)
+             ]);
+             if (achDocs.documents.length > 0) {
+                await databases.updateDocument("pumpforge", "achievements", achDocs.documents[0].$id, {
+                   claimed: true
+                });
+             } else {
+                await databases.createDocument("pumpforge", "achievements", ID.unique(), {
+                   userId: uid,
+                   achievementId: ach.id,
+                   claimed: true,
+                   current: ach.current
+                });
+             }
+          } catch(e) {
+             console.error("Failed to claim achievement part", e);
+          }
+        }
 
         const nextCash = userStats.cash + totalCash;
         const nextGems = userStats.gems + totalGems;
 
-        batch.update(userRef, {
-          cash: Number(nextCash.toFixed(2)),
+        await databases.updateDocument("pumpforge", "users", uid, {
+          cash: nextCash,
           gems: nextGems,
         });
 
-        await batch.commit();
+        setAchievements((prev) =>
+          prev.map((a) => {
+            if (claimable.find((c) => c.id === a.id)) return { ...a, claimed: true };
+            return a;
+          })
+        );
+        setUserStats((prev) => ({
+          ...prev,
+          cash: nextCash,
+          gems: nextGems,
+        }));
       } catch (e) {
-        handleFirestoreError(e, OperationType.WRITE, `claimAllAchievements`);
+        console.error("claimAllAchievements failed", e);
       }
     } else {
       setAchievements((prev) =>
@@ -3506,6 +3561,7 @@ export default function App() {
           />
 
           <Route path="/about" element={<AboutTab />} />
+          <Route path="/trades" element={<TradesHistoryTab coins={coins} />} />
 
           <Route
             path="/profile"

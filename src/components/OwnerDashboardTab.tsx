@@ -3033,7 +3033,7 @@ export default function OwnerDashboardTab({
                     Force crash
                   </button>
                   <button
-                    onClick={() => handleDeleteCoin(coin.id)}
+                    onClick={() => handleDeleteCoin((coin as any).$id || coin.id)}
                     className="flex-1 py-1.5 bg-red-950/20 hover:bg-red-950/50 border border-red-900/30 hover:border-red-500/50 text-red-500 rounded-lg text-[10px] font-bold transition-all uppercase flex items-center justify-center"
                   >
                     Delete

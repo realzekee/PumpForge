@@ -3,6 +3,7 @@ export interface MemeCoin {
   name: string;
   symbol: string;
   creator: string;
+  creatorId?: string;
   description: string;
   avatarEmoji: string;
   avatarBg: string;
@@ -19,6 +20,7 @@ export interface MemeCoin {
 export interface UserStats {
   username: string;
   handle: string;
+  uid?: string;
   title: string;
   email?: string;
   isPremium: boolean;

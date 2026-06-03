@@ -182,9 +182,6 @@ export default function CreateCoinTab({ setCoins, coins }: CreateCoinProps) {
             <PlusCircle className="text-orange-500 w-4.5 h-4.5" /> Launch custom
             meme coin
           </h3>
-          <span className="text-[10px] bg-emerald-950 font-bold font-mono text-emerald-400 px-2 py-1.5 rounded-xl border border-emerald-900">
-            Dev privilege enabled
-          </span>
         </div>
 
         {success ? (
@@ -199,9 +196,6 @@ export default function CreateCoinTab({ setCoins, coins }: CreateCoinProps) {
               Your logo has been listed on the main Market! Watch dynamic droll
               users in the Shill Room discuss and trade your coin.
             </p>
-            <span className="text-[10.5px] text-orange-400 font-bold bg-orange-950/20 px-2 py-1 border border-orange-900/30 rounded mt-1">
-              Dev feature active: Click delist on market to cashout!
-            </span>
           </div>
         ) : (
           <form

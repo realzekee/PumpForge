@@ -48,46 +48,6 @@ const DEFAULT_PRESET_COIN: MemeCoin = {
   history: [5.68, 5.7, 5.69, 5.71, 5.7, 5.72, 5.73],
 };
 
-// Top Holders simulation list matching visual requirements
-const TOP_HOLDERS_SIMULATED = [
-  {
-    rank: 1,
-    name: "🏛️ PDH",
-    handle: "@pdh",
-    weight: "50.1%",
-    balance: "$2,870.73",
-    emoji: "🏛️",
-    bg: "bg-amber-950 text-amber-400",
-  },
-  {
-    rank: 2,
-    name: "Zeus Degen",
-    handle: "@zeus_deg",
-    weight: "15.4%",
-    balance: "$882.42",
-    emoji: "⚡",
-    bg: "bg-orange-950 text-orange-400",
-  },
-  {
-    rank: 3,
-    name: "Chad Capital",
-    handle: "@chadcap",
-    weight: "10.2%",
-    balance: "$584.46",
-    emoji: "💪",
-    bg: "bg-emerald-950 text-emerald-400",
-  },
-  {
-    rank: 4,
-    name: "Roadman Admin",
-    handle: "@road_adm",
-    weight: "8.5%",
-    balance: "$487.05",
-    emoji: "🕶️",
-    bg: "bg-rose-950 text-rose-400",
-  },
-];
-
 export default function CoinDetailsTab({
   coin,
   userStats,
@@ -116,7 +76,7 @@ export default function CoinDetailsTab({
 
   // Fair Launch Anti-Bot 60s cooldown
   const [launchTimer, setLaunchTimer] = useState<number>(0);
-  const isCreator = userStats?.handle?.toLowerCase() === activeCoin?.creator?.toLowerCase();
+  const isCreator = (userStats?.uid && activeCoin?.creatorId && userStats.uid === activeCoin.creatorId) || userStats?.handle?.toLowerCase() === activeCoin?.creator?.toLowerCase();
   const [topHolders, setTopHolders] = useState<any[]>([]);
 
   useEffect(() => {
@@ -864,7 +824,8 @@ export default function CoinDetailsTab({
             </h3>
 
             <div className="flex flex-col gap-2.5">
-              {((topHolders || []).length > 0 ? (topHolders || []) : TOP_HOLDERS_SIMULATED).map((holder) => (
+              {(topHolders || []).length > 0 ? (
+                (topHolders || []).map((holder) => (
                 <div
                   key={holder.rank}
                   className="bg-zinc-950/50 border border-zinc-900 p-3 rounded-2xl flex items-center justify-between gap-3 hover:bg-zinc-950 transition-all"
@@ -895,7 +856,10 @@ export default function CoinDetailsTab({
                     </span>
                   </div>
                 </div>
-              ))}
+              ))
+              ) : (
+                <div className="text-center font-mono text-zinc-500 text-xs py-4">No holders found.</div>
+              )}
             </div>
           </div>
         </div>
