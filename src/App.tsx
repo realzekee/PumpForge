@@ -127,9 +127,59 @@ function CoinRouteWrapper({
 }) {
   const { coinId } = useParams();
   const navigate = useNavigate();
-  const selectedCoin = coins.find((c) => c.id === coinId);
+  const [localCoin, setLocalCoin] = useState<MemeCoin | null>(coins.find((c) => c.id === coinId) || null);
+  const [loading, setLoading] = useState(!localCoin);
 
-  if (!selectedCoin) {
+  useEffect(() => {
+    const c = coins.find((c) => c.id === coinId);
+    if (c) {
+      setLocalCoin(c);
+      setLoading(false);
+    }
+  }, [coins, coinId]);
+
+  useEffect(() => {
+    if (!coinId) return;
+    import("./appwrite").then(({ databases }) => {
+      databases.getDocument("pumpforge", "coins", coinId)
+        .then((doc: any) => {
+          setLocalCoin({
+            id: doc.$id,
+            coinId: doc.$id,
+            creatorId: doc.creatorId,
+            creatorName: doc.creatorName,
+            creator: doc.creator,
+            name: doc.name,
+            symbol: doc.symbol,
+            description: doc.description,
+            price: doc.price,
+            supply: doc.supply,
+            totalLiquidity: doc.totalLiquidity,
+            marketCap: doc.marketCap,
+            volume24h: doc.volume24h,
+            change24h: doc.change24h,
+            avatarEmoji: doc.avatarEmoji,
+            createdAt: doc.createdAt,
+            history: doc.history,
+          });
+          setLoading(false);
+        })
+        .catch((e: any) => {
+          console.error("Coin fetch error", e);
+          setLoading(false);
+        });
+    });
+  }, [coinId]);
+
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center h-full text-zinc-500 font-mono text-sm animate-pulse">
+        Loading token core details...
+      </div>
+    );
+  }
+
+  if (!localCoin) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center py-20 px-4 text-center font-mono animate-fade-in text-white">
         <h2>Coin not found or loading...</h2>
@@ -141,7 +191,7 @@ function CoinRouteWrapper({
   return (
     <div className="flex-1 p-2 md:p-6 lg:p-8 animate-fade-in">
       <CoinDetailsTab
-        coin={selectedCoin}
+        coin={localCoin}
         userStats={userStats}
         currentUser={currentUser}
         holdings={holdings}
@@ -1440,35 +1490,8 @@ export default function App() {
     }
   }, [userStats?.isSuspended, userStats?.suspendedUntil, currentUser]);
 
-  // LIVE MARKET TICKING INTERVAL
-  // Simulates market transactions by other bots every 4 seconds, fluctuating pricing history!
-  useEffect(() => {
-    const marketTick = setInterval(() => {
-      setCoins((prevCoins) => {
-        return prevCoins.map((coin) => {
-          // Normal pricing updates
-          const isPump = Math.random() < 0.52; // slightly bullish bias
-          const variance = Math.random() * 0.15 + 0.01; // up to 15% fluctuation
-          const delta = isPump ? 1 + variance : 1 - variance;
-
-          const nextPrice = Number((coin.price * delta).toFixed(7));
-          const nextHistory = [...coin.history.slice(-14), nextPrice];
-          const calculated24h =
-            ((nextPrice - coin.history[0]) / (coin.history[0] || 1)) * 105;
-
-          return {
-            ...coin,
-            price: nextPrice,
-            marketCap: Math.floor(coin.supply * nextPrice),
-            change24h: calculated24h,
-            history: nextHistory,
-          };
-        });
-      });
-    }, 4500);
-
-    return () => clearInterval(marketTick);
-  }, []);
+  // LIVE MARKET TICKING INTERVAL (removed to use real database)
+  // [Removed interval]
 
   function onAddNotification(
     title: string,
