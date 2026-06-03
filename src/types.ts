@@ -11,6 +11,7 @@ export interface MemeCoin {
   marketCap: number;
   supply: number;
   volume24h: number;
+  totalLiquidity?: number;
   change24h: number;
   history: number[]; // Price history ticks
   isUserCreated?: boolean;
@@ -61,10 +62,12 @@ export interface LiveTrade {
   type: "BUY" | "SELL" | "CREATE" | "TRANSFER";
   coinId: string;
   coinSymbol: string;
+  coinTicker?: string;
   coinName: string;
   amountUsd: number;
   amountTokens?: number;
   userHandle: string;
+  userName?: string;
   userId?: string;
   message?: string;
 }

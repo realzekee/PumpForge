@@ -717,9 +717,9 @@ export default function App() {
             cash: Number(profileDoc.cash ?? 5000.0),
             gems: parseInt(String(profileDoc.gems ?? 90), 10),
             prestigeLevel: parseInt(String(profileDoc.prestigeLevel ?? 0), 10),
-            totalProfit: 0.0,
-            coinsCreatedCount: Number(profileDoc.coins ?? 0.0),
-            tradesCount: 0.0,
+            totalProfit: profileDoc.totalProfit || profileDoc.total_value || 0.0,
+            coinsCreatedCount: profileDoc.coins ?? 0.0,
+            tradesCount: profileDoc.tradesCount ?? 0.0,
             lastDailyRewardClaim: profileDoc.lastDailyRewardClaim || null,
             createdAt: user.$createdAt || new Date().toISOString(),
           };
@@ -756,7 +756,7 @@ export default function App() {
                 cash: profileDoc.cash ?? 5000.0,
                 gems: profileDoc.gems ?? 90,
                 prestigeLevel: profileDoc.prestigeLevel ?? 0,
-                totalProfit: profileDoc.total_value ?? 0,
+                totalProfit: profileDoc.totalProfit || profileDoc.total_value || 0,
                 coinsCreatedCount: profileDoc.coins ?? 0,
                 tradesCount: profileDoc.tradesCount ?? 0,
                 lastDailyRewardClaim: profileDoc.lastDailyRewardClaim || null,
@@ -1382,11 +1382,13 @@ export default function App() {
                  timestamp: new Date(d.$createdAt).toLocaleTimeString(),
                  type: d.type as any,
                  coinId: d.coinId,
-                 coinSymbol: coinDetails?.symbol || "UNKNOWN", 
+                 coinSymbol: d.coinTicker || coinDetails?.symbol || "UNKNOWN",
+                 coinTicker: d.coinTicker,
                  coinName: coinDetails?.name || "Unknown",
                  amountTokens: 0,
                  amountUsd: d.amount, 
-                 userHandle: d.userId, // We'll just display ID trunc'd if handle not available
+                 userHandle: d.userName || d.userId, // use userName if available
+                 userName: d.userName,
                  userId: d.userId
              };
         });
@@ -1759,6 +1761,9 @@ export default function App() {
               await databases.updateDocument("pumpforge", "coins", coinId, {
                 price: finalPrice,
                 marketCap: Math.floor(coin.supply * finalPrice),
+                totalLiquidity: (coin.totalLiquidity || 0) + totalUsdVal,
+                volume24h: coin.volume24h + totalUsdVal,
+                history: nextHistory
               });
             } catch (err) {
                console.warn("Failed to update coin (it may not exist in Appwrite yet):", err);
@@ -1769,6 +1774,8 @@ export default function App() {
             await databases.createDocument("pumpforge", "trades", ID.unique(), {
               coinId: coinId,
               userId: uid,
+              userName: userStats.username || "Unknown",
+              coinTicker: coin.symbol || "UNKNOWN",
               type: "BUY",
               amount: totalUsdVal,
               isSimulated: false
@@ -1891,6 +1898,9 @@ export default function App() {
               await databases.updateDocument("pumpforge", "coins", coinId, {
                 price: finalPrice,
                 marketCap: Math.floor(coin.supply * finalPrice),
+                totalLiquidity: Math.max(0, (coin.totalLiquidity || 0) - totalUsdVal),
+                volume24h: coin.volume24h + totalUsdVal,
+                history: nextHistory
               });
             } catch (err) {
                console.warn("Failed to update coin (it may not exist in Appwrite yet):", err);
@@ -1901,6 +1911,8 @@ export default function App() {
             await databases.createDocument("pumpforge", "trades", ID.unique(), {
               coinId: coinId,
               userId: uid,
+              userName: userStats.username || "Unknown",
+              coinTicker: coin.symbol || "UNKNOWN",
               type: "SELL",
               amount: totalUsdVal,
               isSimulated: false
@@ -2972,6 +2984,8 @@ export default function App() {
             await databases.createDocument("pumpforge", "trades", ID.unique(), {
               coinId: "CASH_TRANSFER",
               userId: currentUser.$id || currentUser.uid,
+              userName: userStats.username || "Unknown",
+              coinTicker: "CASH",
               type: "TRANSFER",
               amount: amount,
               isSimulated: false

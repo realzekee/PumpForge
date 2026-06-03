@@ -59,7 +59,8 @@ export function TradesHistoryTab({
              trades.map(trade => {
                  const coin = coins.find(c => c.id === trade.coinId);
                  const amountUsd = coin ? trade.amount * coin.price : trade.amount;
-                 const resolvedHandle = registeredUsers.find((u: any) => u.uid === trade.userId)?.handle || trade.userId.substring(0, 8);
+                 const resolvedHandle = trade.userName || registeredUsers.find((u: any) => u.uid === trade.userId)?.handle || trade.userId.substring(0, 8);
+                 const resolvedSymbol = trade.coinTicker || (coin ? coin.symbol : "UNKNOWN");
                  return (
                      <div key={trade.$id} className="flex justify-between items-center bg-zinc-950/50 p-3 rounded-lg border border-zinc-900">
                          <div className="flex flex-col">
@@ -68,7 +69,8 @@ export function TradesHistoryTab({
                          </div>
                          <div className="flex items-center gap-4">
                              <span className="font-mono text-zinc-400">{(amountUsd >= 1000 ? (amountUsd/1000).toFixed(2) + "K" : amountUsd.toFixed(2))} USD</span>
-                             <span className={`font-mono text-xs px-2 py-1 uppercase rounded font-bold ${trade.type === 'BUY' ? 'text-emerald-400 bg-emerald-950/40' : 'text-rose-450 bg-rose-950/40'}`}>{trade.type}</span>
+                             <span className="font-mono text-zinc-500 text-xs">*{resolvedSymbol}</span>
+                             <span className={`font-mono text-xs px-2 py-1 uppercase rounded font-bold overflow-hidden ${trade.type === 'BUY' ? 'text-emerald-400 bg-emerald-950/40' : trade.type === 'TRANSFER' ? 'text-fuchsia-400 bg-fuchsia-950/30' : 'text-rose-450 bg-rose-950/40'}`}>{trade.type}</span>
                          </div>
                      </div>
                  )
