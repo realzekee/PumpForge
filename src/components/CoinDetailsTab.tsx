@@ -92,15 +92,19 @@ export default function CoinDetailsTab({
           Query.limit(5)
         ]);
         if (active) {
-          const list = res.documents.map((d, index) => ({
-             rank: index + 1,
-             name: "User " + d.userId.substring(0, 4),
-             handle: d.userId, 
-             weight: activeCoin.supply ? ((d.tokenAmount / activeCoin.supply) * 100).toFixed(1) + "%" : "0.0%",
-             balance: "$" + (d.tokenAmount * (activeCoin.price || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-             emoji: ["🏛️", "⚡", "💪", "🕶️", "👑"][index % 5],
-             bg: ["bg-amber-950 text-amber-400", "bg-orange-950 text-orange-400", "bg-emerald-950 text-emerald-400", "bg-rose-950 text-rose-400", "bg-indigo-950 text-indigo-400"][index % 5]
-          }));
+          const list = res.documents.map((d, index) => {
+             const tokenCount = Number(d.tokenAmount) || 0;
+             const totalSupply = Number(activeCoin.supply) || 1;
+             return {
+              rank: index + 1,
+              name: "User " + d.userId.substring(0, 4),
+              handle: d.userId, 
+              weight: ((tokenCount / totalSupply) * 100).toFixed(1) + "%",
+              balance: "$" + (tokenCount * (activeCoin.price || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+              emoji: ["🏛️", "⚡", "💪", "🕶️", "👑"][index % 5],
+              bg: ["bg-amber-950 text-amber-400", "bg-orange-950 text-orange-400", "bg-emerald-950 text-emerald-400", "bg-rose-950 text-rose-400", "bg-indigo-950 text-indigo-400"][index % 5]
+           };
+          });
           setTopHolders(list);
         }
       } catch (err) {

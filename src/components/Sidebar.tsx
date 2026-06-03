@@ -394,43 +394,47 @@ export default function Sidebar({
                 </span>
               </div>
               <div
-                className="flex flex-col gap-1.5 overflow-hidden"
+                className="flex flex-col gap-1.5 overflow-hidden min-h-[50px]"
                 id="live-activity-ticker"
               >
-                {(liveTrades || []).slice(0, 3).map((trade, idx) => (
-                  <div
-                    key={trade.id + "-" + idx}
-                    className="text-[10px] bg-zinc-900/10 border border-zinc-900/30 p-2 rounded-lg flex flex-col gap-0.5 hover:bg-zinc-900/20"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono text-zinc-400 font-bold truncate max-w-[85px]">
-                        {trade.userHandle}
-                      </span>
-                      <span
-                        className={`font-mono font-black text-[9px] px-1 rounded uppercase tracking-wider ${
-                          trade.type === "BUY"
-                            ? "text-emerald-400 bg-emerald-950/30"
-                            : trade.type === "SELL"
-                              ? "text-rose-450 bg-rose-955/30"
-                              : "text-cyan-400 bg-cyan-950/30"
-                        }`}
-                      >
-                        {trade.type}
-                      </span>
+                {(!liveTrades || liveTrades.length === 0) ? (
+                  <div className="text-[10px] text-zinc-500 font-mono text-center py-4">No recent trades</div>
+                ) : (
+                  (liveTrades || []).slice(0, 3).map((trade, idx) => (
+                    <div
+                      key={trade.id + "-" + idx}
+                      className="text-[10px] bg-zinc-900/10 border border-zinc-900/30 p-2 rounded-lg flex flex-col gap-0.5 hover:bg-zinc-900/20"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-zinc-400 font-bold truncate max-w-[85px]">
+                          {trade.userHandle}
+                        </span>
+                        <span
+                          className={`font-mono font-black text-[9px] px-1 rounded uppercase tracking-wider ${
+                            trade.type === "BUY"
+                              ? "text-emerald-400 bg-emerald-950/30"
+                              : trade.type === "SELL"
+                                ? "text-rose-450 bg-rose-955/30"
+                                : "text-cyan-400 bg-cyan-950/30"
+                          }`}
+                        >
+                          {trade.type}
+                        </span>
+                      </div>
+                      <div className="font-mono text-zinc-400 truncate flex items-center justify-between">
+                        <span>
+                          $
+                          {trade.amountUsd >= 1000
+                            ? `${(trade.amountUsd / 1000).toFixed(2)}K`
+                            : typeof trade.amountUsd === 'number' ? trade.amountUsd.toFixed(2) : "0.00"}
+                        </span>
+                        <span className="text-zinc-500 text-[9px]">
+                          *{trade.coinSymbol}
+                        </span>
+                      </div>
                     </div>
-                    <div className="font-mono text-zinc-400 truncate flex items-center justify-between">
-                      <span>
-                        $
-                        {trade.amountUsd >= 1000
-                          ? `${(trade.amountUsd / 1000).toFixed(2)}K`
-                          : trade.amountUsd.toFixed(2)}
-                      </span>
-                      <span className="text-zinc-500 text-[9px]">
-                        *{trade.coinSymbol}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
 

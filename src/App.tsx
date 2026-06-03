@@ -1373,7 +1373,6 @@ export default function App() {
           Query.limit(15)
         ]);
         
-        // We will map these in the component render, or we can fetch the user/coin
         const list: LiveTrade[] = res.documents.map((d: any) => {
              const coinDetails = coins.find(c => c.id === d.coinId);
              
@@ -1384,8 +1383,8 @@ export default function App() {
                  coinId: d.coinId,
                  coinSymbol: coinDetails?.symbol || "UNKNOWN", 
                  coinName: coinDetails?.name || "Unknown",
-                 amountTokens: d.amount,
-                 amountUsd: coinDetails ? d.amount * coinDetails.price : 0, 
+                 amountTokens: 0,
+                 amountUsd: d.amount, 
                  userHandle: d.userId, // We'll just display ID trunc'd if handle not available
                  userId: d.userId
              };
@@ -1571,35 +1570,6 @@ export default function App() {
           const nextHistory = [...coin.history.slice(-14), nextPrice];
           const calculated24h =
             ((nextPrice - coin.history[0]) / (coin.history[0] || 1)) * 105;
-
-          // Randomly trigger live tick log
-          if (Math.random() < 0.18) {
-            const handlers = [
-              "@stonks",
-              "@degen_ape",
-              "@pump_master",
-              "@moon_boy",
-              "@josh_rich",
-              "@alpha_whale",
-            ];
-            const botHandle =
-              handlers[Math.floor(Math.random() * handlers.length)];
-            const sizeUsd = Math.floor(Math.random() * 4500) + 150;
-            const actionType = Math.random() < 0.6 ? "BUY" : "SELL";
-
-            const newTrade: LiveTrade = {
-              id: "ticker-" + Math.random().toString(36).substring(3),
-              timestamp: new Date().toLocaleTimeString(),
-              type: actionType,
-              coinId: coin.id,
-              coinSymbol: coin.symbol,
-              coinName: coin.name,
-              amountUsd: sizeUsd,
-              userHandle: botHandle,
-            };
-
-            setLiveTrades((prev) => [newTrade, ...prev.slice(0, 18)]);
-          }
 
           return {
             ...coin,
@@ -1794,7 +1764,7 @@ export default function App() {
             coinId: coinId,
             userId: uid,
             type: "BUY",
-            amount: amountCoins,
+            amount: totalUsdVal,
             isSimulated: false
           }, [
             Permission.read(Role.any()), Permission.update(Role.any()), Permission.delete(Role.any())
@@ -1918,7 +1888,7 @@ export default function App() {
             coinId: coinId,
             userId: uid,
             type: "SELL",
-            amount: amountCoins,
+            amount: totalUsdVal,
             isSimulated: false
           }, [
             Permission.read(Role.any()), Permission.update(Role.any()), Permission.delete(Role.any())
