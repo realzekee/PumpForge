@@ -1527,6 +1527,7 @@ export default function OwnerDashboardTab({
   const [promoPubCode, setPromoPubCode] = useState("");
   const [promoPubType, setPromoPubType] = useState<"cash" | "gems">("cash");
   const [promoPubAmount, setPromoPubAmount] = useState("");
+  const [promoPubExpiresAt, setPromoPubExpiresAt] = useState("");
 
   const handlePublishPromoCode = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1540,7 +1541,8 @@ export default function OwnerDashboardTab({
         rewardType: promoPubType,
         rewardAmount: Number(promoPubAmount),
         isActive: true,
-        claimedBy: []
+        claimedBy: [],
+        expiresAt: promoPubExpiresAt ? new Date(promoPubExpiresAt).toISOString() : null
       }, [
         Permission.read(Role.any()),
         Permission.update(Role.any()),
@@ -1549,6 +1551,7 @@ export default function OwnerDashboardTab({
       toast.success(`Promo code ${promoPubCode.toUpperCase()} published!`, { id: "promo-publish" });
       setPromoPubCode("");
       setPromoPubAmount("");
+      setPromoPubExpiresAt("");
     } catch (e: any) {
       console.error(e);
       toast.error(`Failed to publish: ${e.message}`, { id: "promo-publish" });
@@ -2520,6 +2523,13 @@ export default function OwnerDashboardTab({
                   required
                 />
               </div>
+              <input
+                type="datetime-local"
+                value={promoPubExpiresAt}
+                onChange={(e) => setPromoPubExpiresAt(e.target.value)}
+                className="bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-xs text-white focus:outline-none focus:border-fuchsia-500 font-mono w-full"
+                title="Expiration Date (Optional)"
+              />
               <button
                 type="submit"
                 disabled={promoPubIsLoading}

@@ -770,7 +770,8 @@ export default function App() {
 
           // Fetch holdings and achievements from Appwrite
           try {
-             const { databases, Query } = await import("./appwrite");
+             const { databases } = await import("./appwrite");
+             const { Query } = await import("appwrite");
              const uid = user.$id;
              
              // Fetch holdings
@@ -1729,24 +1730,28 @@ export default function App() {
 
           // Check if holding exists in Appwrite to get its ID, or we can use ID.unique() and query it.
           // Since local state doesn't have document IDs yet, let's query Appwrite holdings.
-          const { Query } = await import("appwrite");
-          const holdingDocs = await databases.listDocuments("pumpforge", "holdings", [
-            Query.equal("userId", uid),
-            Query.equal("coinId", coinId)
-          ]);
-
-          if (holdingDocs.documents.length > 0) {
-            await databases.updateDocument("pumpforge", "holdings", holdingDocs.documents[0].$id, {
-              tokenAmount: nextAmount
-            });
-          } else {
-            await databases.createDocument("pumpforge", "holdings", ID.unique(), {
-              userId: uid,
-              coinId: coinId,
-              tokenAmount: nextAmount
-            }, [
-               Permission.read(Role.any()), Permission.update(Role.any()), Permission.delete(Role.any())
+          try {
+            const { Query } = await import("appwrite");
+            const holdingDocs = await databases.listDocuments("pumpforge", "holdings", [
+              Query.equal("userId", uid),
+              Query.equal("coinId", coinId)
             ]);
+
+            if (holdingDocs.documents.length > 0) {
+              await databases.updateDocument("pumpforge", "holdings", holdingDocs.documents[0].$id, {
+                tokenAmount: nextAmount
+              });
+            } else {
+              await databases.createDocument("pumpforge", "holdings", ID.unique(), {
+                userId: uid,
+                coinId: coinId,
+                tokenAmount: nextAmount
+              }, [
+                 Permission.read(Role.any()), Permission.update(Role.any()), Permission.delete(Role.any())
+              ]);
+            }
+          } catch (appwriteHoldingsErr) {
+             console.warn("Appwrite holdings update skipped/failed:", appwriteHoldingsErr);
           }
 
           if (coinId && typeof coinId === "string") {
@@ -1760,15 +1765,19 @@ export default function App() {
             }
           }
 
-          await databases.createDocument("pumpforge", "trades", ID.unique(), {
-            coinId: coinId,
-            userId: uid,
-            type: "BUY",
-            amount: totalUsdVal,
-            isSimulated: false
-          }, [
-            Permission.read(Role.any()), Permission.update(Role.any()), Permission.delete(Role.any())
-          ]);
+          try {
+            await databases.createDocument("pumpforge", "trades", ID.unique(), {
+              coinId: coinId,
+              userId: uid,
+              type: "BUY",
+              amount: totalUsdVal,
+              isSimulated: false
+            }, [
+              Permission.read(Role.any()), Permission.update(Role.any()), Permission.delete(Role.any())
+            ]);
+          } catch (tradeErr) {
+            console.warn("Appwrite trade log skipped:", tradeErr);
+          }
 
           setHoldings((prev) => {
             if (existingHolding) {
@@ -1856,21 +1865,25 @@ export default function App() {
             tradesCount: nextTradesCount,
           });
           
-          const { Query } = await import("appwrite");
-          const holdingDocs = await databases.listDocuments("pumpforge", "holdings", [
-            Query.equal("userId", uid),
-            Query.equal("coinId", coinId)
-          ]);
+          try {
+            const { Query } = await import("appwrite");
+            const holdingDocs = await databases.listDocuments("pumpforge", "holdings", [
+              Query.equal("userId", uid),
+              Query.equal("coinId", coinId)
+            ]);
 
-          if (holdingDocs.documents.length > 0) {
-            const holdingId = holdingDocs.documents[0].$id;
-            if (nextAmount <= 0) {
-              await databases.deleteDocument("pumpforge", "holdings", holdingId);
-            } else {
-              await databases.updateDocument("pumpforge", "holdings", holdingId, {
-                tokenAmount: nextAmount
-              });
+            if (holdingDocs.documents.length > 0) {
+              const holdingId = holdingDocs.documents[0].$id;
+              if (nextAmount <= 0) {
+                await databases.deleteDocument("pumpforge", "holdings", holdingId);
+              } else {
+                await databases.updateDocument("pumpforge", "holdings", holdingId, {
+                  tokenAmount: nextAmount
+                });
+              }
             }
+          } catch (sellHoldErr) {
+             console.warn("Appwrite sell holdings sync skipped:", sellHoldErr);
           }
 
           if (coinId && typeof coinId === "string") {
@@ -1884,15 +1897,19 @@ export default function App() {
             }
           }
 
-          await databases.createDocument("pumpforge", "trades", ID.unique(), {
-            coinId: coinId,
-            userId: uid,
-            type: "SELL",
-            amount: totalUsdVal,
-            isSimulated: false
-          }, [
-            Permission.read(Role.any()), Permission.update(Role.any()), Permission.delete(Role.any())
-          ]);
+          try {
+            await databases.createDocument("pumpforge", "trades", ID.unique(), {
+              coinId: coinId,
+              userId: uid,
+              type: "SELL",
+              amount: totalUsdVal,
+              isSimulated: false
+            }, [
+              Permission.read(Role.any()), Permission.update(Role.any()), Permission.delete(Role.any())
+            ]);
+          } catch (tradeErr) {
+            console.warn("Appwrite sell trade log skipped:", tradeErr);
+          }
 
           setHoldings((prev) => {
             return prev
@@ -2401,7 +2418,7 @@ export default function App() {
 
     if (currentUser) {
       try {
-        const { databases, ID } = await import("./appwrite");
+        const { databases } = await import("./appwrite");
         const uid = currentUser.uid || currentUser.$id;
         
         // Update user stats
@@ -2412,7 +2429,7 @@ export default function App() {
 
         // Try to update or create achievement doc
         try {
-           const { Query } = await import("appwrite");
+           const { Query, ID } = await import("appwrite");
            const achDocs = await databases.listDocuments("pumpforge", "achievements", [
               Query.equal("userId", uid),
               Query.equal("achievementId", id)
@@ -2481,7 +2498,7 @@ export default function App() {
 
     if (currentUser) {
       try {
-        const { databases, ID, Query } = await import("./appwrite");
+        const { databases } = await import("./appwrite");
         const uid = currentUser.uid || currentUser.$id;
 
         for (const ach of claimable) {
@@ -2490,6 +2507,7 @@ export default function App() {
           
           try {
              // Try to update or create achievement
+             const { Query, ID } = await import("appwrite");
              const achDocs = await databases.listDocuments("pumpforge", "achievements", [
                 Query.equal("userId", uid),
                 Query.equal("achievementId", ach.id)
@@ -2948,6 +2966,23 @@ export default function App() {
 
         await batch.commit();
 
+        // Log peer-to-peer cash transfer to live trades
+        if (coinId === "cash") {
+          try {
+            await databases.createDocument("pumpforge", "trades", ID.unique(), {
+              coinId: "CASH_TRANSFER",
+              userId: currentUser.$id || currentUser.uid,
+              type: "TRANSFER",
+              amount: amount,
+              isSimulated: false
+            }, [
+              Permission.read(Role.any()), Permission.update(Role.any()), Permission.delete(Role.any())
+            ]);
+          } catch (transferErr) {
+            console.warn("Failed to log transfer to Appwrite trades:", transferErr);
+          }
+        }
+
         // Push remote notification to Appwrite so the receiver gets it real-time
         try {
           await databases.createDocument("pumpforge", "notifications", ID.unique(), {
@@ -3159,6 +3194,7 @@ export default function App() {
         achievements={achievements}
         onClaimDailyReward={handleClaimDailyReward}
         liveTrades={liveTrades}
+        registeredUsers={registeredUsers}
         onOpenPrestigeModal={() => setShowPrestigeModal(true)}
         onResetProgress={handleHardResetGame}
         dailyRewardTimer={dailyRewardTimer}
@@ -3531,7 +3567,7 @@ export default function App() {
           />
 
           <Route path="/about" element={<AboutTab />} />
-          <Route path="/trades" element={<TradesHistoryTab coins={coins} />} />
+          <Route path="/trades" element={<TradesHistoryTab coins={coins} registeredUsers={registeredUsers} />} />
 
           <Route
             path="/profile"

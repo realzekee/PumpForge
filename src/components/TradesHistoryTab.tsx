@@ -5,9 +5,11 @@ import { Query } from "appwrite";
 import { MemeCoin } from "../types";
 
 export function TradesHistoryTab({
-  coins
+  coins,
+  registeredUsers = []
 }: {
   coins: MemeCoin[];
+  registeredUsers?: any[];
 }) {
   const [trades, setTrades] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -56,12 +58,13 @@ export function TradesHistoryTab({
         ) : trades.length > 0 ? (
              trades.map(trade => {
                  const coin = coins.find(c => c.id === trade.coinId);
-                 const amountUsd = coin ? trade.amount * coin.price : 0;
+                 const amountUsd = coin ? trade.amount * coin.price : trade.amount;
+                 const resolvedHandle = registeredUsers.find((u: any) => u.uid === trade.userId)?.handle || trade.userId.substring(0, 8);
                  return (
                      <div key={trade.$id} className="flex justify-between items-center bg-zinc-950/50 p-3 rounded-lg border border-zinc-900">
                          <div className="flex flex-col">
                              <div className="text-xs text-zinc-500 flex items-center gap-1.5"><Clock className="w-3.5 h-3.5"/> {new Date(trade.$createdAt).toLocaleString()}</div>
-                             <div className="text-zinc-300 font-mono text-sm mt-1">{trade.userId}</div>
+                             <div className="text-zinc-300 font-mono text-sm mt-1 truncate max-w-[120px]">{resolvedHandle}</div>
                          </div>
                          <div className="flex items-center gap-4">
                              <span className="font-mono text-zinc-400">{(amountUsd >= 1000 ? (amountUsd/1000).toFixed(2) + "K" : amountUsd.toFixed(2))} USD</span>

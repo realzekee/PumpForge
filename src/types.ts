@@ -58,13 +58,14 @@ export interface PortfolioHolding {
 export interface LiveTrade {
   id: string;
   timestamp: string;
-  type: "BUY" | "SELL" | "CREATE";
+  type: "BUY" | "SELL" | "CREATE" | "TRANSFER";
   coinId: string;
   coinSymbol: string;
   coinName: string;
   amountUsd: number;
   amountTokens?: number;
   userHandle: string;
+  userId?: string;
   message?: string;
 }
 

@@ -61,6 +61,7 @@ interface SidebarProps {
   holdings?: PortfolioHolding[];
   achievements?: any[];
   onOpenBugReportModal?: () => void;
+  registeredUsers?: Array<UserStats & { uid: string }>;
 }
 
 import { useAppContext } from "../context/AppContext";
@@ -80,6 +81,7 @@ export default function Sidebar({
   holdings = [],
   achievements = [],
   onOpenBugReportModal,
+  registeredUsers = [],
 }: SidebarProps) {
   const { adminSettings } = useAppContext();
   const navigate = useNavigate();
@@ -191,7 +193,14 @@ export default function Sidebar({
 
       if (!promoDoc.isActive) {
          toast.error("This promo code is expired.", { id: "promo-claim" });
-         setPromoError("This promo code is expired.");
+         setPromoError("This promo code is inactive/expired.");
+         return;
+      }
+
+      const nowTime = new Date().getTime();
+      if (promoDoc.expiresAt && new Date(promoDoc.expiresAt).getTime() < nowTime) {
+         toast.error("This promo code has expired.", { id: "promo-claim" });
+         setPromoError("This promo code has expired.");
          return;
       }
 
@@ -400,14 +409,16 @@ export default function Sidebar({
                 {(!liveTrades || liveTrades.length === 0) ? (
                   <div className="text-[10px] text-zinc-500 font-mono text-center py-4">No recent trades</div>
                 ) : (
-                  (liveTrades || []).slice(0, 3).map((trade, idx) => (
+                  (liveTrades || []).slice(0, 3).map((trade, idx) => {
+                    const resolvedHandle = registeredUsers.find(u => u.uid === trade.userId || u.handle === trade.userHandle)?.handle || trade.userHandle;
+                    return (
                     <div
                       key={trade.id + "-" + idx}
                       className="text-[10px] bg-zinc-900/10 border border-zinc-900/30 p-2 rounded-lg flex flex-col gap-0.5 hover:bg-zinc-900/20"
                     >
                       <div className="flex items-center justify-between">
                         <span className="font-mono text-zinc-400 font-bold truncate max-w-[85px]">
-                          {trade.userHandle}
+                          {resolvedHandle}
                         </span>
                         <span
                           className={`font-mono font-black text-[9px] px-1 rounded uppercase tracking-wider ${
@@ -429,11 +440,12 @@ export default function Sidebar({
                             : typeof trade.amountUsd === 'number' ? trade.amountUsd.toFixed(2) : "0.00"}
                         </span>
                         <span className="text-zinc-500 text-[9px]">
-                          *{trade.coinSymbol}
+                          {trade.coinSymbol === 'CASH_TRANSFER' ? '💵' : '*'}{trade.coinSymbol === 'CASH_TRANSFER' ? 'TRANSFER' : trade.coinSymbol}
                         </span>
                       </div>
                     </div>
-                  ))
+                  );
+                 })
                 )}
               </div>
             </div>
