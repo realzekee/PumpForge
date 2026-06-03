@@ -217,7 +217,7 @@ export default function HomeTab({
                   </div>
                   <div className="flex flex-col items-end">
                     <span className="text-xs text-zinc-500 truncate font-mono max-w-[80px] text-right">
-                      {coin.creator}
+                      {coin.creatorName || coin.creator}
                     </span>
                     <span className="text-[10px] bg-emerald-950/60 text-emerald-400 px-1 border border-emerald-900/60 rounded font-bold font-mono">
                       +{coin.change24h.toFixed(1)}%

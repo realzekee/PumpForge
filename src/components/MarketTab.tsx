@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Search,
   ArrowUpDown,
@@ -40,6 +41,7 @@ export default function MarketTab({
   onDeleteOwnCoin,
   initialCoinId,
 }: MarketTabProps) {
+  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCoin, setSelectedCoin] = useState<MemeCoin | null>(null);
   const [tradeType, setTradeType] = useState<"BUY" | "SELL">("BUY");
@@ -259,7 +261,7 @@ export default function MarketTab({
                             </span>
                             <span>•</span>
                             <span className="truncate max-w-[100px]">
-                              {coin.creator}
+                              {coin.creatorName || coin.creator}
                             </span>
                           </div>
                         </div>
@@ -342,7 +344,7 @@ export default function MarketTab({
                           {isCreator ? (
                             <div className="flex gap-1.5">
                               <button
-                                onClick={() => setSelectedCoin(coin)}
+                                onClick={() => navigate(`/coin/${coin.id}`)}
                                 disabled={false}
                                 className={`font-black py-1.5 px-3 rounded-lg text-[10px] select-none tracking-widest uppercase transition-all duration-205 leading-none ${
                                   false
@@ -364,7 +366,7 @@ export default function MarketTab({
                             </div>
                           ) : (
                             <button
-                              onClick={() => setSelectedCoin(coin)}
+                              onClick={() => navigate(`/coin/${coin.id}`)}
                               disabled={false}
                               className={`font-black py-1.5 px-3 rounded-lg text-[10px] select-none tracking-widest uppercase transition-all duration-205 leading-none ${
                                 false
@@ -427,7 +429,7 @@ export default function MarketTab({
                         </span>
                         <span>•</span>
                         <span className="truncate max-w-[70px]">
-                          {coin.creator}
+                          {coin.creatorName || coin.creator}
                         </span>
                       </div>
                       {holds > 0 && (
@@ -483,7 +485,7 @@ export default function MarketTab({
                     {isCreator ? (
                       <div className="flex gap-1">
                         <button
-                          onClick={() => setSelectedCoin(coin)}
+                          onClick={() => navigate(`/coin/${coin.id}`)}
                           disabled={false}
                           className={`font-black py-1.5 px-2.5 rounded-lg text-[9px] select-none tracking-widest uppercase transition-all duration-205 leading-none ${
                             false
@@ -505,7 +507,7 @@ export default function MarketTab({
                       </div>
                     ) : (
                       <button
-                        onClick={() => setSelectedCoin(coin)}
+                        onClick={() => navigate(`/coin/${coin.id}`)}
                         disabled={false}
                         className={`font-black py-2 px-3 rounded-lg text-[10px] select-none tracking-widest uppercase transition-all duration-205 leading-none ${
                           false

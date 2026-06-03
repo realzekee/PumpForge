@@ -4,11 +4,12 @@
  */
 
 import React, { useState, useEffect, useRef } from "react";
-import { Routes, Route, useNavigate } from "react-router-dom";
+import { Routes, Route, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import Sidebar from "./components/Sidebar";
 import HomeTab from "./components/HomeTab";
 import MarketTab from "./components/MarketTab";
+import CoinDetailsTab from "./components/CoinDetailsTab";
 import PolymarketTab from "./components/PolymarketTab";
 import ArcadeTab from "./components/ArcadeTab";
 import LeaderboardTab from "./components/LeaderboardTab";
@@ -110,6 +111,46 @@ const safeStorage = {
     }
   },
 };
+
+function CoinRouteWrapper({
+  coins,
+  userStats,
+  currentUser,
+  holdings,
+  onTradeAction,
+}: {
+  coins: MemeCoin[];
+  userStats: UserStats;
+  currentUser: any;
+  holdings: PortfolioHolding[];
+  onTradeAction: any;
+}) {
+  const { coinId } = useParams();
+  const navigate = useNavigate();
+  const selectedCoin = coins.find((c) => c.id === coinId);
+
+  if (!selectedCoin) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center py-20 px-4 text-center font-mono animate-fade-in text-white">
+        <h2>Coin not found or loading...</h2>
+        <button onClick={() => navigate("/market")} className="mt-4 text-orange-500 underline uppercase text-xs font-bold font-mono">Return to Market</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 p-2 md:p-6 lg:p-8 animate-fade-in">
+      <CoinDetailsTab
+        coin={selectedCoin}
+        userStats={userStats}
+        currentUser={currentUser}
+        holdings={holdings}
+        onTradeAction={onTradeAction}
+        onBackToList={() => navigate("/market")}
+      />
+    </div>
+  );
+}
 
 export default function App() {
   const queryClient = useQueryClient();
@@ -1562,8 +1603,9 @@ export default function App() {
       if (currentUser) {
         try {
           const uid = currentUser.uid || currentUser.$id;
-          const priceImpact = coin.price * (1 + 0.005 * (amountCoins / coin.supply));
-          const finalPrice = Math.min(priceImpact, coin.price * 3);
+          const priceImpact = (totalUsdVal / (coin.totalLiquidity || 1000)) * 0.1;
+          const finalPrice = coin.price * (1 + priceImpact);
+          const newLiquidity = (coin.totalLiquidity || 0) + totalUsdVal;
           const nextHistory = [...coin.history.slice(-14), finalPrice];
           
           await databases.updateDocument("pumpforge", "users", uid, {
@@ -1602,7 +1644,7 @@ export default function App() {
               await databases.updateDocument("pumpforge", "coins", coinId, {
                 price: finalPrice,
                 marketCap: Math.floor(coin.supply * finalPrice),
-                totalLiquidity: (coin.totalLiquidity || 0) + totalUsdVal,
+                totalLiquidity: newLiquidity,
                 volume24h: coin.volume24h + totalUsdVal,
                 history: nextHistory
               });
@@ -1649,7 +1691,7 @@ export default function App() {
           }));
           
           // Update local coin price
-          setCoins(prev => prev.map(c => c.id === coinId ? { ...c, price: finalPrice, marketCap: Math.floor(c.supply * finalPrice), history: nextHistory, volume24h: c.volume24h + totalUsdVal } : c));
+          setCoins(prev => prev.map(c => c.id === coinId ? { ...c, price: finalPrice, totalLiquidity: newLiquidity, marketCap: Math.floor(c.supply * finalPrice), history: nextHistory, volume24h: c.volume24h + totalUsdVal } : c));
         } catch (e: any) {
           console.error("Appwrite trade buy error:", e);
           toast.error("Trade failed: " + e.message);
@@ -1703,8 +1745,9 @@ export default function App() {
       if (currentUser) {
         try {
           const uid = currentUser.uid || currentUser.$id;
-          const priceImpact = coin.price * (1 - 0.005 * (amountCoins / coin.supply));
-          const finalPrice = Math.max(0.0000001, priceImpact);
+          const priceImpact = (totalUsdVal / (coin.totalLiquidity || 1000)) * 0.1;
+          const finalPrice = Math.max(0.000001, coin.price * (1 - priceImpact));
+          const newLiquidity = Math.max(100, (coin.totalLiquidity || 0) - totalUsdVal);
           const nextHistory = [...coin.history.slice(-14), finalPrice];
           
           await databases.updateDocument("pumpforge", "users", uid, {
@@ -1739,7 +1782,7 @@ export default function App() {
               await databases.updateDocument("pumpforge", "coins", coinId, {
                 price: finalPrice,
                 marketCap: Math.floor(coin.supply * finalPrice),
-                totalLiquidity: Math.max(0, (coin.totalLiquidity || 0) - totalUsdVal),
+                totalLiquidity: newLiquidity,
                 volume24h: coin.volume24h + totalUsdVal,
                 history: nextHistory
               });
@@ -1782,7 +1825,7 @@ export default function App() {
             tradesCount: nextTradesCount,
           }));
           
-          setCoins(prev => prev.map(c => c.id === coinId ? { ...c, price: finalPrice, marketCap: Math.floor(c.supply * finalPrice), history: nextHistory, volume24h: c.volume24h + totalUsdVal } : c));
+          setCoins(prev => prev.map(c => c.id === coinId ? { ...c, price: finalPrice, totalLiquidity: newLiquidity, marketCap: Math.floor(c.supply * finalPrice), history: nextHistory, volume24h: c.volume24h + totalUsdVal } : c));
         } catch (e: any) {
           console.error("Appwrite trade sell error:", e);
           toast.error("Trade failed: " + e.message);
@@ -1909,8 +1952,8 @@ export default function App() {
         try {
           await databases.createDocument("pumpforge", "coins", coinId, {
             coinId: coinId,
-            creatorId: currentUser.$id || currentUser.uid || currentUser.id,
-            creatorName: currentUser.name || userStats.username || "Unknown",
+            creatorId: currentUser.$id,
+            creatorName: currentUser.name || "Zeke",
             creator: userStats.handle,
             name,
             symbol,
@@ -2734,12 +2777,21 @@ export default function App() {
                 achievements={achievements}
                 onClaimAchievement={claimAchievement}
                 onTradeCoin={(coinId) => {
-                  const cn = coins.find((c) => c.id === coinId);
-                  if (cn) {
-                    setSelectedCoinIdForMarket(coinId);
-                    navigate("/market");
-                  }
+                  navigate(`/coin/${coinId}`);
                 }}
+              />
+            }
+          />
+
+          <Route
+            path="/coin/:coinId"
+            element={
+              <CoinRouteWrapper
+                coins={coins}
+                userStats={userStats}
+                currentUser={currentUser}
+                holdings={holdings}
+                onTradeAction={tradeAction}
               />
             }
           />
@@ -2754,7 +2806,6 @@ export default function App() {
                 holdings={holdings}
                 onTradeAction={tradeAction}
                 onDeleteOwnCoin={handleDeleteOwnCoin}
-                initialCoinId={selectedCoinIdForMarket}
               />
             }
           />
@@ -2891,8 +2942,7 @@ export default function App() {
               <TreemapTab
                 coins={coins}
                 onTradeCoin={(coinId) => {
-                  setSelectedCoinIdForMarket(coinId);
-                  navigate("/market");
+                  navigate(`/coin/${coinId}`);
                 }}
               />
             }

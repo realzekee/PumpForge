@@ -162,6 +162,14 @@ export default function CoinDetailsTab({
       return;
     }
 
+    if (launchTimer > 0 && !isCreator) {
+       setFeedback({
+         type: "error",
+         msg: `Fair Launch cooldown active. Please wait ${launchTimer} seconds.`,
+       });
+       return;
+    }
+
     if (activeTradeMode === "BUY") {
       const totalCost = numericAmt * activeCoin.price;
       if (userStats.cash < totalCost) {
@@ -350,7 +358,7 @@ export default function CoinDetailsTab({
                   <span className="text-[11px] text-zinc-500">
                     Created by{" "}
                     <strong className="text-zinc-300 hover:text-orange-400 transition-colors">
-                      {activeCoin.creator}
+                      {activeCoin.creatorName || activeCoin.creator}
                     </strong>
                   </span>
                 </div>

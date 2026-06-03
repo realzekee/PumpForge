@@ -5,17 +5,15 @@ export function SkeletonLoader({ type }: { type: "list" | "portfolio" | "chart" 
     return (
       <div className="flex flex-col gap-3 w-full animate-pulse">
         {[...Array(6)].map((_, i) => (
-          <div key={i} className="flex justify-between items-center bg-zinc-900 shadow p-4 rounded-xl border border-zinc-800">
-            <div className="flex items-center gap-4">
-              <div className="w-10 h-10 bg-zinc-800 rounded-lg"></div>
-              <div className="flex flex-col gap-2">
-                <div className="h-4 w-32 bg-zinc-800 rounded"></div>
-                <div className="h-3 w-48 bg-zinc-800/80 rounded"></div>
-              </div>
+          <div key={i} className="flex justify-between items-center bg-zinc-950/50 p-3 rounded-lg border border-zinc-900">
+            <div className="flex flex-col gap-2">
+              <div className="h-4 w-28 bg-zinc-800/60 rounded"></div>
+              <div className="h-3 w-20 bg-zinc-800/40 rounded"></div>
             </div>
             <div className="flex gap-4 items-center">
-              <div className="h-4 w-12 bg-zinc-800 rounded"></div>
-              <div className="h-8 w-20 bg-zinc-800 rounded-lg"></div>
+              <div className="h-4 w-16 bg-zinc-800/60 rounded"></div>
+              <div className="h-3 w-12 bg-zinc-800/60 rounded"></div>
+              <div className="h-6 w-14 bg-zinc-800/80 rounded"></div>
             </div>
           </div>
         ))}

@@ -29,7 +29,6 @@ export default function AchievementsTab({
 }: AchievementsProps) {
   const [localAchs, setLocalAchs] = useState<Achievement[]>(achievements);
 
-  // Sync with prop changes just in case, but avoid overriding claimed manually
   useEffect(() => {
     setLocalAchs((prev) => 
        achievements.map(a => {
@@ -45,6 +44,7 @@ export default function AchievementsTab({
       const uid = currentUser?.$id || currentUser?.uid || userStats.uid;
       if (!uid) return;
       try {
+        const { Query } = await import("appwrite");
         const res = await databases.listDocuments("pumpforge", "achievements", [
           Query.equal("userId", uid)
         ]);
@@ -64,7 +64,7 @@ export default function AchievementsTab({
     };
     fetchAchs();
     return () => { active = false; };
-  }, [currentUser, userStats.uid, achievements]);
+  }, [currentUser, userStats.uid]);
 
   const handleClaim = (id: string) => {
     onClaimAchievement(id);
