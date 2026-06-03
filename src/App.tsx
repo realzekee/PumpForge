@@ -706,6 +706,7 @@ export default function App() {
           };
 
           const finalUserStats = {
+            uid: mappedUser.uid,
             username: finalUsername,
             handle: finalHandle,
             title: isOwnerEmail ? "Owner" : "Member",
@@ -1721,9 +1722,11 @@ export default function App() {
       if (currentUser) {
         try {
           const uid = currentUser.uid || currentUser.$id;
-          const priceImpact = coin.price * (1 + 0.005 * (amountCoins / coin.supply));
-          const finalPrice = Math.min(priceImpact, coin.price * 3);
-          const nextHistory = [...coin.history.slice(-14), finalPrice];
+          const safeSupply = Math.max(1, coin.supply || 1000);
+          const priceImpact = coin.price * (1 + 0.05 * (amountCoins / safeSupply));
+          const finalPrice = Math.min(priceImpact, coin.price * 10);
+          if (isNaN(finalPrice) || !isFinite(finalPrice)) throw new Error("AMM Math Error");
+          const nextHistory = [...(coin.history || []).slice(-14), finalPrice];
           
           await databases.updateDocument("pumpforge", "users", uid, {
             cash: Number(nextCash.toFixed(2)),
@@ -1862,9 +1865,11 @@ export default function App() {
       if (currentUser) {
         try {
           const uid = currentUser.uid || currentUser.$id;
-          const priceImpact = coin.price * (1 - 0.005 * (amountCoins / coin.supply));
+          const safeSupply = Math.max(1, coin.supply || 1000);
+          const priceImpact = coin.price * (1 - 0.05 * (amountCoins / safeSupply));
           const finalPrice = Math.max(0.0000001, priceImpact);
-          const nextHistory = [...coin.history.slice(-14), finalPrice];
+          if (isNaN(finalPrice) || !isFinite(finalPrice)) throw new Error("AMM Math Error");
+          const nextHistory = [...(coin.history || []).slice(-14), finalPrice];
           
           await databases.updateDocument("pumpforge", "users", uid, {
             cash: Number(nextCash.toFixed(2)),

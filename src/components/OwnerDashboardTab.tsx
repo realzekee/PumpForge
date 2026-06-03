@@ -67,6 +67,7 @@ interface OwnerDashboardProps {
 }
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { SkeletonLoader } from "./SkeletonLoader";
 
 export default function OwnerDashboardTab({
   coins,
@@ -84,13 +85,8 @@ export default function OwnerDashboardTab({
 
   const { data: usersQueryData = [], isLoading: isUsersLoading, isError: isUsersError, error: usersError } = useQuery({ queryKey: ["registeredUsers"], queryFn: async () => { const res = await databases.listDocuments("pumpforge", "users"); return res.documents; } });
 
-  if (!userStats || Object.keys(userStats).length === 0) {
-    return (
-      <div className="text-zinc-400 font-mono text-center p-10 flex flex-col items-center justify-center min-h-[50vh]">
-         <div className="w-8 h-8 rounded-full border-4 border-fuchsia-500/20 border-t-fuchsia-500 animate-spin mb-4"></div>
-         <div>Loading Owner Dashboard...</div>
-      </div>
-    );
+  if (isUsersLoading || !userStats || Object.keys(userStats).length === 0) {
+    return <SkeletonLoader type="owner" />;
   }
 
   useEffect(() => {

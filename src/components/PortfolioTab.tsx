@@ -32,6 +32,8 @@ interface PortfolioProps {
   registeredUsers?: (UserStats & { uid: string })[];
 }
 
+import { SkeletonLoader } from "./SkeletonLoader";
+
 export default function PortfolioTab({
   userStats,
   holdings,
@@ -50,12 +52,7 @@ export default function PortfolioTab({
   const [successMsg, setSuccessMsg] = useState("");
 
   if (!userStats || Object.keys(userStats).length === 0) {
-    return (
-      <div className="text-zinc-400 font-mono text-center p-10 flex flex-col items-center justify-center min-h-[50vh]">
-         <div className="w-8 h-8 rounded-full border-4 border-emerald-500/20 border-t-emerald-500 animate-spin mb-4"></div>
-         <div>Loading secure portfolio...</div>
-      </div>
-    );
+    return <SkeletonLoader type="portfolio" />;
   }
 
   useEffect(() => {
