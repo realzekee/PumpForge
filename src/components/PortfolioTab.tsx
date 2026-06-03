@@ -32,8 +32,6 @@ interface PortfolioProps {
   registeredUsers?: (UserStats & { uid: string })[];
 }
 
-import { SkeletonLoader } from "./SkeletonLoader";
-
 export default function PortfolioTab({
   userStats,
   holdings,
@@ -52,7 +50,36 @@ export default function PortfolioTab({
   const [successMsg, setSuccessMsg] = useState("");
 
   if (!userStats || Object.keys(userStats).length === 0) {
-    return <SkeletonLoader type="portfolio" />;
+    return (
+      <div className="animate-pulse flex flex-col gap-6 p-4">
+        {/* Header Skeleton */}
+        <div className="flex justify-between items-start">
+          <div className="flex flex-col gap-2">
+            <div className="h-4 w-24 bg-zinc-800 rounded"></div>
+            <div className="h-8 w-48 bg-zinc-800 rounded"></div>
+            <div className="h-4 w-32 bg-zinc-800 rounded"></div>
+          </div>
+          <div className="h-12 w-12 bg-zinc-800 rounded-xl"></div>
+        </div>
+
+        {/* Chart/Main Card Skeleton */}
+        <div className="h-48 w-full bg-zinc-900/50 rounded-2xl border border-zinc-800 p-6 flex flex-col justify-end">
+           <div className="flex gap-2 items-end h-32">
+             {[...Array(12)].map((_, i) => (
+                <div key={i} className="flex-1 bg-zinc-800 rounded-t" style={{ height: `${20 + (i * 7) % 80}%` }}></div>
+             ))}
+           </div>
+        </div>
+
+        {/* List Skeleton */}
+        <div className="flex flex-col gap-3">
+          <div className="h-4 w-32 bg-zinc-800 rounded mb-2"></div>
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="h-16 w-full bg-zinc-900/40 rounded-xl border border-zinc-800"></div>
+          ))}
+        </div>
+      </div>
+    );
   }
 
   useEffect(() => {

@@ -706,7 +706,6 @@ export default function App() {
           };
 
           const finalUserStats = {
-            uid: mappedUser.uid,
             username: finalUsername,
             handle: finalHandle,
             title: isOwnerEmail ? "Owner" : "Member",
@@ -1722,11 +1721,9 @@ export default function App() {
       if (currentUser) {
         try {
           const uid = currentUser.uid || currentUser.$id;
-          const safeSupply = Math.max(1, coin.supply || 1000);
-          const priceImpact = coin.price * (1 + 0.05 * (amountCoins / safeSupply));
-          const finalPrice = Math.min(priceImpact, coin.price * 10);
-          if (isNaN(finalPrice) || !isFinite(finalPrice)) throw new Error("AMM Math Error");
-          const nextHistory = [...(coin.history || []).slice(-14), finalPrice];
+          const priceImpact = coin.price * (1 + 0.005 * (amountCoins / coin.supply));
+          const finalPrice = Math.min(priceImpact, coin.price * 3);
+          const nextHistory = [...coin.history.slice(-14), finalPrice];
           
           await databases.updateDocument("pumpforge", "users", uid, {
             cash: Number(nextCash.toFixed(2)),
@@ -1865,11 +1862,9 @@ export default function App() {
       if (currentUser) {
         try {
           const uid = currentUser.uid || currentUser.$id;
-          const safeSupply = Math.max(1, coin.supply || 1000);
-          const priceImpact = coin.price * (1 - 0.05 * (amountCoins / safeSupply));
+          const priceImpact = coin.price * (1 - 0.005 * (amountCoins / coin.supply));
           const finalPrice = Math.max(0.0000001, priceImpact);
-          if (isNaN(finalPrice) || !isFinite(finalPrice)) throw new Error("AMM Math Error");
-          const nextHistory = [...(coin.history || []).slice(-14), finalPrice];
+          const nextHistory = [...coin.history.slice(-14), finalPrice];
           
           await databases.updateDocument("pumpforge", "users", uid, {
             cash: Number(nextCash.toFixed(2)),
@@ -3072,13 +3067,54 @@ export default function App() {
     });
   };
 
-  if (isCheckingRedirect) {
+  if (isCheckingRedirect || isLoading) {
     return (
-      <div className="min-h-screen bg-black text-white flex items-center justify-center font-mono">
-        <div className="flex flex-col items-center gap-4 animate-pulse">
-          <div className="w-12 h-12 border-4 border-rose-500 border-t-transparent rounded-full animate-spin"></div>
-          <div>Loading User Session...</div>
-        </div>
+      <div className="flex min-h-screen bg-zinc-950 p-5 md:p-8 animate-pulse gap-6">
+         {/* Sidebar Skeleton */}
+         <div className="hidden md:flex flex-col min-w-[250px] w-[250px] h-[calc(100vh-40px)] bg-zinc-900/40 border border-zinc-800/60 rounded-2xl p-4 gap-6">
+            <div className="w-full h-12 bg-zinc-800 rounded-lg border border-zinc-700/50"></div>
+            <div className="w-2/3 h-8 bg-zinc-800 rounded mt-4"></div>
+            <div className="flex flex-col gap-3 mt-4">
+               {[...Array(6)].map((_, i) => (
+                  <div key={i} className="w-full h-10 bg-zinc-800/50 rounded-lg border border-zinc-700/30"></div>
+               ))}
+            </div>
+         </div>
+         {/* Main Content Skeleton */}
+         <div className="flex-1 w-full max-w-7xl mx-auto flex flex-col gap-6 overflow-hidden">
+           {/* Top Stats */}
+           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[...Array(4)].map((_, i) => (
+                <div key={i} className="h-24 bg-zinc-900/60 border border-zinc-800/60 rounded-2xl"></div>
+              ))}
+           </div>
+           
+           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1">
+              <div className="lg:col-span-2 flex flex-col gap-6">
+                 {/* Chart Skeleton */}
+                 <div className="w-full h-[400px] bg-zinc-900/60 border border-zinc-800/60 rounded-2xl p-6 flex flex-col justify-end gap-2">
+                    <div className="flex justify-between w-full opacity-50">
+                       <div className="h-6 w-32 bg-zinc-800 rounded"></div>
+                       <div className="h-6 w-24 bg-zinc-800 rounded"></div>
+                    </div>
+                    <div className="w-full flex-1 flex items-end gap-2 mt-4">
+                       {[...Array(15)].map((_, i) => (
+                         <div key={i} className="flex-1 bg-zinc-800 rounded-t" style={{ height: `${20 + (i * 7) % 60}%` }}></div>
+                       ))}
+                    </div>
+                 </div>
+              </div>
+              <div className="flex flex-col gap-6">
+                 {/* Sidebar / Leaderboard Skeleton */}
+                 <div className="w-full h-[400px] bg-zinc-900/60 border border-zinc-800/60 rounded-2xl p-4 flex flex-col gap-4">
+                   <div className="h-6 w-32 bg-zinc-800 rounded mb-2"></div>
+                   {[...Array(5)].map((_, i) => (
+                      <div key={i} className="h-12 w-full bg-zinc-800/50 rounded-xl"></div>
+                   ))}
+                 </div>
+              </div>
+           </div>
+         </div>
       </div>
     );
   }

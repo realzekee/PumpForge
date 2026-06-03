@@ -67,7 +67,6 @@ interface OwnerDashboardProps {
 }
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { SkeletonLoader } from "./SkeletonLoader";
 
 export default function OwnerDashboardTab({
   coins,
@@ -85,8 +84,26 @@ export default function OwnerDashboardTab({
 
   const { data: usersQueryData = [], isLoading: isUsersLoading, isError: isUsersError, error: usersError } = useQuery({ queryKey: ["registeredUsers"], queryFn: async () => { const res = await databases.listDocuments("pumpforge", "users"); return res.documents; } });
 
-  if (isUsersLoading || !userStats || Object.keys(userStats).length === 0) {
-    return <SkeletonLoader type="owner" />;
+  if (!userStats || Object.keys(userStats).length === 0) {
+    return (
+      <div className="animate-pulse flex flex-col gap-6 p-4">
+        {/* Header Skeleton */}
+        <div className="flex items-center gap-4">
+          <div className="h-10 w-10 bg-zinc-800 rounded-lg"></div>
+          <div className="h-6 w-48 bg-zinc-800 rounded"></div>
+        </div>
+
+        {/* Stats Grid Skeleton */}
+        <div className="grid grid-cols-2 gap-4">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="h-24 bg-zinc-900/60 rounded-xl border border-zinc-800"></div>
+          ))}
+        </div>
+
+        {/* Complex Panel Skeleton */}
+        <div className="h-64 mt-4 w-full bg-zinc-900/40 rounded-2xl border border-zinc-800"></div>
+      </div>
+    );
   }
 
   useEffect(() => {
@@ -1819,8 +1836,19 @@ export default function OwnerDashboardTab({
         {/* Profiles Admin List */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[420px] overflow-y-auto pr-1">
           {isUsersLoading ? (
-            <div className="md:col-span-2 text-center py-8 text-xs text-zinc-500 bg-zinc-950/60 rounded-xl border border-zinc-800 border-dashed animate-pulse">
-              Loading player data directory...
+            <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+               {[...Array(6)].map((_, i) => (
+                 <div key={i} className="bg-zinc-950/60 p-4 rounded-xl border border-zinc-800 animate-pulse flex flex-col gap-3">
+                    <div className="flex justify-between items-center">
+                       <div className="h-4 w-32 bg-zinc-800 rounded"></div>
+                       <div className="h-4 w-16 bg-zinc-800 rounded"></div>
+                    </div>
+                    <div className="flex gap-2">
+                       <div className="h-6 flex-1 bg-zinc-800 rounded"></div>
+                       <div className="h-6 flex-1 bg-zinc-800 rounded"></div>
+                    </div>
+                 </div>
+               ))}
             </div>
           ) : isUsersError ? (
             <div className="md:col-span-2 text-center py-8 text-xs text-rose-500 bg-rose-950/20 rounded-xl border border-rose-900 border-dashed">
