@@ -28,6 +28,7 @@ import {
   Eye,
   EyeOff,
 } from "lucide-react";
+import { SkeletonLoader } from "./SkeletonLoader";
 import {
   UserStats,
   MemeCoin,
@@ -85,25 +86,7 @@ export default function OwnerDashboardTab({
   const { data: usersQueryData = [], isLoading: isUsersLoading, isError: isUsersError, error: usersError } = useQuery({ queryKey: ["registeredUsers"], queryFn: async () => { const res = await databases.listDocuments("pumpforge", "users"); return res.documents; } });
 
   if (!userStats || Object.keys(userStats).length === 0) {
-    return (
-      <div className="animate-pulse flex flex-col gap-6 p-4">
-        {/* Header Skeleton */}
-        <div className="flex items-center gap-4">
-          <div className="h-10 w-10 bg-zinc-800 rounded-lg"></div>
-          <div className="h-6 w-48 bg-zinc-800 rounded"></div>
-        </div>
-
-        {/* Stats Grid Skeleton */}
-        <div className="grid grid-cols-2 gap-4">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="h-24 bg-zinc-900/60 rounded-xl border border-zinc-800"></div>
-          ))}
-        </div>
-
-        {/* Complex Panel Skeleton */}
-        <div className="h-64 mt-4 w-full bg-zinc-900/40 rounded-2xl border border-zinc-800"></div>
-      </div>
-    );
+    return <SkeletonLoader type="dashboard" />;
   }
 
   useEffect(() => {
@@ -2545,13 +2528,30 @@ export default function OwnerDashboardTab({
                   required
                 />
               </div>
-              <input
-                type="datetime-local"
-                value={promoPubExpiresAt}
-                onChange={(e) => setPromoPubExpiresAt(e.target.value)}
-                className="bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-xs text-white focus:outline-none focus:border-fuchsia-500 font-mono w-full"
-                title="Expiration Date (Optional)"
-              />
+              <div className="flex flex-col gap-2">
+                <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-black">Expiration</span>
+                <div className="flex bg-zinc-950 border border-zinc-800 rounded p-1 gap-1 w-full max-w-full overflow-x-auto overflow-y-hidden no-scrollbar">
+                  {[
+                    { label: "1 HR", val: new Date(Date.now() + 3600000).toISOString() },
+                    { label: "24 HR", val: new Date(Date.now() + 86400000).toISOString() },
+                    { label: "1 WK", val: new Date(Date.now() + 604800000).toISOString() },
+                    { label: "Never", val: "" }
+                  ].map((opt) => (
+                    <button
+                      key={opt.label}
+                      type="button"
+                      onClick={() => setPromoPubExpiresAt(opt.val)}
+                      className={`flex-1 min-w-[50px] py-1.5 rounded text-[10px] uppercase font-black tracking-widest transition-all ${
+                         (opt.val === "" && promoPubExpiresAt === "") || (opt.val !== "" && promoPubExpiresAt !== "" && Math.abs(new Date(promoPubExpiresAt).getTime() - new Date(opt.val).getTime()) < 10000)
+                           ? "bg-fuchsia-600 text-white shadow shadow-fuchsia-900/50"
+                           : "bg-zinc-900 text-zinc-500 hover:bg-zinc-800 hover:text-white"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <button
                 type="submit"
                 disabled={promoPubIsLoading}

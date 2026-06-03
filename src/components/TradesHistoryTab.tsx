@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { SkeletonLoader } from "./SkeletonLoader";
 import { Activity, Clock } from "lucide-react";
 import { databases } from "../appwrite";
 import { Query } from "appwrite";
@@ -54,21 +55,7 @@ export function TradesHistoryTab({
 
       <div className="bg-zinc-900 shadow-xl rounded-2xl border border-zinc-900/50 p-6 flex flex-col gap-3">
         {loading ? (
-             <div className="flex flex-col gap-3">
-               {[...Array(8)].map((_, i) => (
-                 <div key={i} className="flex justify-between items-center bg-zinc-950/50 p-3 rounded-lg border border-zinc-900 animate-pulse">
-                    <div className="flex flex-col gap-2">
-                       <div className="h-4 w-24 bg-zinc-800 rounded"></div>
-                       <div className="h-3 w-16 bg-zinc-800/80 rounded"></div>
-                    </div>
-                    <div className="flex gap-4 items-center">
-                       <div className="h-4 w-16 bg-zinc-800 rounded"></div>
-                       <div className="h-4 w-12 bg-zinc-800 rounded"></div>
-                       <div className="h-6 w-16 bg-zinc-800 rounded"></div>
-                    </div>
-                 </div>
-               ))}
-             </div>
+             <SkeletonLoader type="list" />
         ) : trades.length > 0 ? (
              trades.map(trade => {
                  const coin = coins.find(c => c.id === trade.coinId);

@@ -99,7 +99,9 @@ export default function CreateCoinTab({ setCoins, coins }: CreateCoinProps) {
       const newCoinId = ID.unique();
       const payload = {
         coinId: newCoinId,
-        creatorId: currentUser.uid || currentUser.$id,
+        creatorId: currentUser?.$id || currentUser?.uid || "unknown",
+        creatorName: currentUser?.name || userStats.username || "Unknown",
+        creator: userStats.handle || "@system",
         name: name.trim(),
         symbol: symbol.trim().toUpperCase(),
         description: desc.trim(),

@@ -21,6 +21,7 @@ import { MemeCoin, UserStats, PortfolioHolding } from "../types";
 interface CoinDetailsTabProps {
   coin: MemeCoin | null;
   userStats: UserStats;
+  currentUser?: any;
   holdings: PortfolioHolding[];
   onTradeAction: (
     coinId: string,
@@ -51,6 +52,7 @@ const DEFAULT_PRESET_COIN: MemeCoin = {
 export default function CoinDetailsTab({
   coin,
   userStats,
+  currentUser,
   holdings,
   onTradeAction,
   onBackToList,
@@ -76,7 +78,7 @@ export default function CoinDetailsTab({
 
   // Fair Launch Anti-Bot 60s cooldown
   const [launchTimer, setLaunchTimer] = useState<number>(0);
-  const isCreator = (userStats?.uid && activeCoin?.creatorId && userStats.uid === activeCoin.creatorId) || userStats?.handle?.toLowerCase() === activeCoin?.creator?.toLowerCase();
+  const isCreator = (currentUser?.$id === activeCoin?.creatorId) || (currentUser?.uid === activeCoin?.creatorId) || (userStats?.uid && activeCoin?.creatorId && userStats.uid === activeCoin.creatorId) || userStats?.handle?.toLowerCase() === activeCoin?.creator?.toLowerCase();
   const [topHolders, setTopHolders] = useState<any[]>([]);
 
   useEffect(() => {

@@ -15,6 +15,7 @@ import { Query } from "appwrite";
 interface AchievementsProps {
   achievements: Achievement[];
   userStats: UserStats;
+  currentUser?: any;
   onClaimAchievement: (id: string) => void;
   onClaimAll: () => void;
 }
@@ -22,6 +23,7 @@ interface AchievementsProps {
 export default function AchievementsTab({
   achievements,
   userStats,
+  currentUser,
   onClaimAchievement,
   onClaimAll,
 }: AchievementsProps) {
@@ -40,11 +42,9 @@ export default function AchievementsTab({
   useEffect(() => {
     let active = true;
     const fetchAchs = async () => {
-      if (!userStats.uid && !userStats.handle) return;
+      const uid = currentUser?.$id || currentUser?.uid || userStats.uid;
+      if (!uid) return;
       try {
-        const uid = userStats.uid || userStats.handle;
-        if (!uid) return;
-        
         const res = await databases.listDocuments("pumpforge", "achievements", [
           Query.equal("userId", uid)
         ]);
@@ -64,7 +64,7 @@ export default function AchievementsTab({
     };
     fetchAchs();
     return () => { active = false; };
-  }, [userStats.uid, userStats.handle]);
+  }, [currentUser, userStats.uid, achievements]);
 
   const handleClaim = (id: string) => {
     onClaimAchievement(id);

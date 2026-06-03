@@ -1969,18 +1969,33 @@ export default function App() {
       if (profitDelta < 0) {
         if (currentUser) {
           try {
-            await updateDoc(
-              doc(db, "users", currentUser.uid, "achievements", "a2"),
-              { current: 1 },
-            );
+            const { Query, ID, databases } = await import("appwrite");
+            const uid = currentUser.$id || currentUser.uid;
+            const achDocs = await databases.listDocuments("pumpforge", "achievements", [
+               Query.equal("userId", uid),
+               Query.equal("achievementId", "a2")
+            ]);
+            if (achDocs.documents.length > 0) {
+              await databases.updateDocument("pumpforge", "achievements", achDocs.documents[0].$id, {
+                current: 1
+              });
+            } else {
+              await databases.createDocument("pumpforge", "achievements", ID.unique(), {
+                userId: uid,
+                achievementId: "a2",
+                claimed: false,
+                current: 1
+              });
+            }
           } catch (e) {
             console.error("Achievement update failure: ", e);
           }
-        } else {
-          setAchievements((p) =>
-            p.map((ach) => (ach.id === "a2" ? { ...ach, current: 1 } : ach)),
-          );
         }
+        setAchievements((p) =>
+          p.map((ach) =>
+            ach.id === "a2" ? { ...ach, current: 1 } : ach,
+          ),
+        );
       }
 
       onAddNotification(
@@ -2052,7 +2067,8 @@ export default function App() {
         try {
           await databases.createDocument("pumpforge", "coins", coinId, {
             coinId: coinId,
-            creatorId: currentUser.uid || currentUser.$id,
+            creatorId: currentUser.$id || currentUser.uid || currentUser.id,
+            creatorName: currentUser.name || userStats.username || "Unknown",
             creator: userStats.handle,
             name,
             symbol,
@@ -3376,6 +3392,7 @@ export default function App() {
               <MarketTab
                 coins={coins}
                 userStats={userStats}
+                currentUser={currentUser}
                 holdings={holdings}
                 onTradeAction={tradeAction}
                 onDeleteOwnCoin={handleDeleteOwnCoin}
@@ -3488,6 +3505,7 @@ export default function App() {
               <AchievementsTab
                 achievements={achievements}
                 userStats={userStats}
+                currentUser={currentUser}
                 onClaimAchievement={claimAchievement}
                 onClaimAll={claimAllAchievements}
               />

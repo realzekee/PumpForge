@@ -20,6 +20,7 @@ import CoinDetailsTab from "./CoinDetailsTab";
 interface MarketTabProps {
   coins: MemeCoin[];
   userStats: UserStats;
+  currentUser?: any;
   holdings: PortfolioHolding[];
   onTradeAction: (
     coinId: string,
@@ -33,6 +34,7 @@ interface MarketTabProps {
 export default function MarketTab({
   coins,
   userStats,
+  currentUser,
   holdings,
   onTradeAction,
   onDeleteOwnCoin,
@@ -142,6 +144,7 @@ export default function MarketTab({
       <CoinDetailsTab
         coin={selectedCoin}
         userStats={userStats}
+        currentUser={currentUser}
         holdings={holdings}
         onTradeAction={onTradeAction}
         onBackToList={() => setSelectedCoin(null)}
