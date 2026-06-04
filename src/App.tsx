@@ -10,6 +10,7 @@ import Sidebar from "./components/Sidebar";
 import HomeTab from "./components/HomeTab";
 import MarketTab from "./components/MarketTab";
 import CoinDetailsTab from "./components/CoinDetailsTab";
+import PolymarketTab from "./components/PolymarketTab";
 import ArcadeTab from "./components/ArcadeTab";
 import LeaderboardTab from "./components/LeaderboardTab";
 import ShopTab from "./components/ShopTab";
@@ -270,6 +271,10 @@ export default function App() {
   });
   const [holdings, setHoldings] = useState<PortfolioHolding[]>([]);
   const [liveTrades, setLiveTrades] = useState<LiveTrade[]>([]);
+  const [markets, setMarkets] = useState<PredictionMarket[]>([]);
+  const [userBets, setUserBets] = useState<{
+    [marketId: string]: { side: "YES" | "NO"; amount: number };
+  }>({});
   const [achievements, setAchievements] = useState<Achievement[]>([]);
   const [registeredUsers, setRegisteredUsers] = useState<
     (UserStats & { uid: string })[]
@@ -1296,6 +1301,47 @@ export default function App() {
        fetchCoins();
     });
 
+    // Prediction markets global listener
+    const DEFAULT_MARKETS = [
+            {
+              id: "m1",
+              question: "Will *ROAD hit a $150K valuation by Friday?",
+              description: "Based on shill room hype, ROAD represents the premium culture asset.",
+              yesPool: 4500,
+              noPool: 3200,
+              yesPercentage: 58,
+              resolved: false,
+              resolvedOutcome: null,
+              endTime: "Next Friday",
+              category: "trading",
+            },
+            {
+              id: "m2",
+              question: "Will the Slots return a grand Jackpot win on next 10 attempts?",
+              description: "Probabilities dictate slot engines have a high variance output.",
+              yesPool: 150,
+              noPool: 6400,
+              yesPercentage: 2,
+              resolved: false,
+              resolvedOutcome: null,
+              endTime: "Within 2 hours",
+              category: "arcade",
+            },
+            {
+              id: "m3",
+              question: "Will Zeke reach Prestige I status inside the next 12 hours?",
+              description: "Requires $100K liquid cash balance to trigger Prestige system.",
+              yesPool: 8500,
+              noPool: 1000,
+              yesPercentage: 89,
+              resolved: true,
+              resolvedOutcome: "YES",
+              endTime: "Completed",
+              category: "general",
+            },
+          ];
+          setMarkets(DEFAULT_MARKETS as any[]);
+          
     // Trades live feed Appwrite Real-Time
     const fetchTrades = async () => {
       try {
@@ -2035,6 +2081,47 @@ export default function App() {
     );
   };
 
+  const handlePlacePolymarketBet = async (
+    marketId: string,
+    side: "YES" | "NO",
+    amount: number,
+  ) => {
+    if (!currentUser) {
+      setSignInReason("place prediction bets and earn money");
+      setShowSignInModal(true);
+      return;
+    }
+
+    const market = markets.find((m) => m.id === marketId);
+    if (!market) return;
+
+    const nextCash = userStats.cash - amount;
+
+    if (currentUser) {
+      try {
+        const { databases } = await import("./appwrite");
+        const uid = currentUser.$id || currentUser.uid;
+        
+        await databases.updateDocument("pumpforge", "users", uid, {
+          cash: nextCash
+        });
+      } catch (e) {
+        console.error("Polymarket bet err", e);
+      }
+    }
+    
+    // Fallback UI update
+    setUserBets((prev) => ({
+      ...prev,
+      [marketId]: { side, amount },
+    }));
+
+    setUserStats((prev) => ({
+      ...prev,
+      cash: nextCash,
+    }));
+  };
+
   const claimAchievement = async (id: string) => {
     const ach = achievements.find((a) => a.id === id);
     if (!ach || ach.claimed) return;
@@ -2515,8 +2602,26 @@ export default function App() {
   const handleHardResetGame = async () => {
     setUserStats(prev => ({ ...prev, cash: 5000, gems: 0, coinsCreatedCount: 0, totalProfit: 0, tradesCount: 0, prestigeLevel: 0 }));
     setHoldings([]);
+    setUserBets({});
     setAchievements(prev => prev.map(a => ({ ...a, claimed: false, current: 0 })));
     toast.success("Game reset to defaults.");
+  };
+
+  const mergedMarkets = markets.map((m) => {
+    const userBet = userBets[m.id];
+    if (userBet) {
+      return {
+        ...m,
+        userBetAmount: userBet.amount,
+        userBetSide: userBet.side,
+      };
+    }
+    return m;
+  });
+
+  const handleCreatePredictionLocal = async (market: any) => {
+    setMarkets(prev => [market, ...prev]);
+    toast.success("Prediction market created.");
   };
 
   const handleSendMoney = async (handle: string, amount: number, type: string) => {
@@ -2699,6 +2804,17 @@ export default function App() {
                 holdings={holdings}
                 onTradeAction={tradeAction}
                 onDeleteOwnCoin={handleDeleteOwnCoin}
+              />
+            }
+          />
+
+          <Route
+            path="/polymarket"
+            element={
+              <PolymarketTab
+                markets={mergedMarkets}
+                onPlaceBet={handlePlacePolymarketBet}
+                onCreateMarket={handleCreatePredictionLocal}
               />
             }
           />

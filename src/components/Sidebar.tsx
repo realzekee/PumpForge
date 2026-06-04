@@ -132,6 +132,7 @@ export default function Sidebar({
   const menuItems = [
     { id: "home", label: "Home", icon: Home },
     { id: "market", label: "Market", icon: TrendingUp },
+    { id: "polymarket", label: "Polymarket", icon: Brain },
     { id: "arcade", label: "Arcade", icon: Gamepad2 },
     { id: "leaderboard", label: "Leaderboard", icon: Trophy },
     { id: "shop", label: "Shop", icon: ShoppingBag },
