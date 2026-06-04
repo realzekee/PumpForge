@@ -144,7 +144,8 @@ export default function Sidebar({
     { id: "settings", label: "Settings", icon: SettingsIcon },
     { id: "about", label: "About", icon: Info },
     ...(hasOwnerDashboard
-      ? [{ id: "owner-dashboard", label: "Owner Panel", icon: ShieldAlert }]
+      ? [{ id: "owner-dashboard", label: "Owner Panel", icon: ShieldAlert },
+         { id: "owner/polymarket-resolve", label: "Resolve Markets", icon: ShieldAlert }]
       : []),
   ];
 

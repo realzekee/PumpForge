@@ -23,6 +23,7 @@ import SettingsTab from "./components/SettingsTab";
 import AboutTab from "./components/AboutTab";
 import ProfileTab from "./components/ProfileTab";
 import { TradesHistoryTab } from "./components/TradesHistoryTab";
+import PolymarketAdminTab from "./components/PolymarketAdminTab";
 import OwnerDashboardTab from "./components/OwnerDashboardTab";
 import BugReportModal from "./components/BugReportModal";
 import {
@@ -3045,6 +3046,32 @@ export default function App() {
                   currentUserEmail={currentUser?.email}
                 />
               );
+            })()}
+          />
+
+          <Route
+            path="/owner/polymarket-resolve"
+            element={(() => {
+              const isOwnerEmail =
+                (currentUser?.email || "").trim().toLowerCase() ===
+                  "realzekeee@gmail.com" ||
+                (currentUser?.email || "").trim().toLowerCase() ===
+                  "realzekee@gmail.com";
+              const isStaff =
+                userStats.title.toLowerCase() === "owner" ||
+                userStats.title.toLowerCase() === "admin";
+              const hasOwnerDashboard = isOwnerEmail || isStaff;
+
+              if (!hasOwnerDashboard) {
+                return (
+                  <div className="flex flex-col items-center justify-center min-h-[500px] border border-red-950/40 bg-zinc-950 rounded-2xl p-8 font-mono text-center max-w-lg mx-auto my-12 animate-fade-in">
+                    <div className="text-red-500 font-extrabold text-3xl mb-4">🚨 ACCESS DENIED</div>
+                    <button onClick={() => navigate("/")} className="px-6 py-2.5 bg-zinc-900 border border-zinc-800 text-white font-bold text-xs rounded-xl uppercase">Return to Safe Zone</button>
+                  </div>
+                );
+              }
+
+              return <PolymarketAdminTab />;
             })()}
           />
 
