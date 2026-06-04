@@ -211,7 +211,7 @@ export default function CoinDetailsTab({
         setFeedback({
           type: "error",
           msg:
-            err?.message || "Transaction could not be verified by simulations.",
+            err?.message || "Transaction could not be verified.",
         });
       } finally {
         setExecutingState(false);
@@ -285,7 +285,7 @@ export default function CoinDetailsTab({
             </h2>
             <div className="flex items-center gap-2">
               <span className="text-[10px] text-zinc-400">
-                Viewing asset profiles in simulation realm.
+                Viewing asset profiles in real-time realm.
               </span>
             </div>
           </div>
@@ -390,7 +390,7 @@ export default function CoinDetailsTab({
                   </span>
                 </div>
                 <span className="text-[10px] text-zinc-550 mt-1">
-                  Updated sub-seconds via simulation nodes
+                  Updated in real-time
                 </span>
               </div>
             </div>
@@ -409,7 +409,7 @@ export default function CoinDetailsTab({
                   Price Chart ({timeframe})
                 </span>
                 <span className="text-[10px] text-zinc-500 font-semibold hidden md:inline">
-                  | REAL-TIME SIMULATION FEED
+                  | REAL-TIME FEED
                 </span>
               </div>
 
@@ -641,7 +641,7 @@ export default function CoinDetailsTab({
                   ⚡ Sell ${activeCoin.symbol}
                 </button>
                 <p className="text-[9px] text-zinc-500 text-center leading-normal mt-1">
-                  100% simulation risk. Operations are mapped directly to
+                  Real market risk. Operations are mapped directly to
                   Appwrite databases nodes securely.
                 </p>
               </div>

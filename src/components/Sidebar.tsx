@@ -132,7 +132,6 @@ export default function Sidebar({
   const menuItems = [
     { id: "home", label: "Home", icon: Home },
     { id: "market", label: "Market", icon: TrendingUp },
-    { id: "polymarket", label: "Polymarket", icon: Brain },
     { id: "arcade", label: "Arcade", icon: Gamepad2 },
     { id: "leaderboard", label: "Leaderboard", icon: Trophy },
     { id: "shop", label: "Shop", icon: ShoppingBag },
@@ -303,7 +302,7 @@ export default function Sidebar({
               PumpForge
             </span>
             <span className="text-[10px] text-zinc-500 font-mono tracking-widest uppercase">
-              Simulation Engine
+              Trading Engine
             </span>
           </div>
         </div>
@@ -334,11 +333,6 @@ export default function Sidebar({
                   <span className="flex-1 text-left truncate">
                     {item.label}
                   </span>
-                  {item.id === "polymarket" && (
-                    <span className="text-[9px] bg-orange-950 border border-orange-900/60 text-orange-400 px-1 py-0.2 rounded font-mono font-bold tracking-widest uppercase">
-                      AI
-                    </span>
-                  )}
                   {item.id === "create-coin" && (
                     <span className="text-[9px] bg-emerald-950 border border-emerald-900/60 text-emerald-400 px-1 py-0.2 rounded font-mono font-bold uppercase">
                       New
@@ -696,7 +690,7 @@ export default function Sidebar({
               <Gift className="w-4 h-4" /> Enter Promo Code
             </h3>
             <p className="text-[11px] text-zinc-400 mb-4 tracking-normal leading-relaxed">
-              Unlock simulation credit bonuses or cosmetics crate items
+              Unlock market credit bonuses or cosmetics crate items
               instantly. Use <strong className="text-zinc-200">DEGEN50K</strong>{" "}
               or <strong className="text-zinc-200">GEMLORD</strong> to test!
             </p>

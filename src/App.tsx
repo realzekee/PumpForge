@@ -10,7 +10,6 @@ import Sidebar from "./components/Sidebar";
 import HomeTab from "./components/HomeTab";
 import MarketTab from "./components/MarketTab";
 import CoinDetailsTab from "./components/CoinDetailsTab";
-import PolymarketTab from "./components/PolymarketTab";
 import ArcadeTab from "./components/ArcadeTab";
 import LeaderboardTab from "./components/LeaderboardTab";
 import ShopTab from "./components/ShopTab";
@@ -140,41 +139,56 @@ function CoinRouteWrapper({
 
   useEffect(() => {
     if (!coinId) return;
-    import("./appwrite").then(({ databases }) => {
+    let unsub: (() => void) | undefined;
+    import("./appwrite").then(({ databases, client }) => {
+      const updateCoinState = (doc: any) => {
+        setLocalCoin({
+          id: doc.$id,
+          coinId: doc.$id,
+          creatorId: doc.creatorId,
+          creatorName: doc.creatorName,
+          creator: doc.creator,
+          name: doc.name,
+          symbol: doc.symbol,
+          description: doc.description,
+          price: doc.price,
+          supply: doc.supply,
+          totalLiquidity: doc.total_value || doc.totalLiquidity || 0,
+          marketCap: doc.marketCap,
+          volume24h: doc.volume24h,
+          change24h: doc.change24h,
+          avatarEmoji: doc.avatarEmoji,
+          createdAt: doc.createdAt,
+          history: doc.history,
+        });
+        setLoading(false);
+      };
+
       databases.getDocument("pumpforge", "coins", coinId)
-        .then((doc: any) => {
-          setLocalCoin({
-            id: doc.$id,
-            coinId: doc.$id,
-            creatorId: doc.creatorId,
-            creatorName: doc.creatorName,
-            creator: doc.creator,
-            name: doc.name,
-            symbol: doc.symbol,
-            description: doc.description,
-            price: doc.price,
-            supply: doc.supply,
-            totalLiquidity: doc.totalLiquidity,
-            marketCap: doc.marketCap,
-            volume24h: doc.volume24h,
-            change24h: doc.change24h,
-            avatarEmoji: doc.avatarEmoji,
-            createdAt: doc.createdAt,
-            history: doc.history,
-          });
-          setLoading(false);
-        })
+        .then(updateCoinState)
         .catch((e: any) => {
           console.error("Coin fetch error", e);
           setLoading(false);
         });
+
+      unsub = client.subscribe(`databases.pumpforge.collections.coins.documents.${coinId}`, (response) => {
+        updateCoinState(response.payload);
+      });
     });
+
+    return () => {
+      if (unsub) unsub();
+    };
   }, [coinId]);
 
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center h-full text-zinc-500 font-mono text-sm animate-pulse">
-        Loading token core details...
+      <div className="flex-1 flex items-center justify-center min-h-[50vh]">
+        <div className="relative flex items-center justify-center w-16 h-16">
+          <div className="absolute inset-0 border-4 border-fuchsia-500/20 rounded-full"></div>
+          <div className="absolute inset-0 border-4 border-fuchsia-500 border-t-transparent rounded-full animate-spin"></div>
+          <div className="absolute w-2 h-2 bg-fuchsia-400 rounded-full animate-ping"></div>
+        </div>
       </div>
     );
   }
@@ -256,10 +270,6 @@ export default function App() {
   });
   const [holdings, setHoldings] = useState<PortfolioHolding[]>([]);
   const [liveTrades, setLiveTrades] = useState<LiveTrade[]>([]);
-  const [markets, setMarkets] = useState<PredictionMarket[]>([]);
-  const [userBets, setUserBets] = useState<{
-    [marketId: string]: { side: "YES" | "NO"; amount: number };
-  }>({});
   const [achievements, setAchievements] = useState<Achievement[]>([]);
   const [registeredUsers, setRegisteredUsers] = useState<
     (UserStats & { uid: string })[]
@@ -1265,6 +1275,7 @@ export default function App() {
              // Fallback for missing fields since some coins inserted dynamically lack them
              c.supply = c.supply || 1000000;
              c.marketCap = c.marketCap || 1000;
+             c.totalLiquidity = d.total_value || c.totalLiquidity || 0;
              c.volume24h = c.volume24h || 0;
              c.change24h = c.change24h || 0;
              c.history = c.history && Array.isArray(c.history) && c.history.length > 0 ? c.history : [c.price || 5];
@@ -1284,48 +1295,6 @@ export default function App() {
     const coinsUnsub = client.subscribe("databases.pumpforge.collections.coins.documents", () => {
        fetchCoins();
     });
-
-    // Prediction markets global listener
-    const DEFAULT_MARKETS = [
-            {
-              id: "m1",
-              question: "Will *ROAD hit a $150K valuation by Friday?",
-              description: "Based on shill room hype, ROAD represents the premium culture asset.",
-              yesPool: 4500,
-              noPool: 3200,
-              yesPercentage: 58,
-              resolved: false,
-              resolvedOutcome: null,
-              endTime: "Next Friday",
-              category: "trading",
-            },
-            {
-              id: "m2",
-              question: "Will Slots simulation return a grand Jackpot win on next 10 attempts?",
-              description: "Probabilities dictate slot engines have a high variance output.",
-              yesPool: 150,
-              noPool: 6400,
-              yesPercentage: 2,
-              resolved: false,
-              resolvedOutcome: null,
-              endTime: "Within 2 hours",
-              category: "arcade",
-            },
-            {
-              id: "m3",
-              question: "Will Zeke reach Prestige I status inside the next 12 hours?",
-              description: "Requires $100K liquid cash balance to trigger Prestige system.",
-              yesPool: 8500,
-              noPool: 1000,
-              yesPercentage: 89,
-              resolved: true,
-              resolvedOutcome: "YES",
-              endTime: "Completed",
-              category: "general",
-            },
-          ];
-          setMarkets(DEFAULT_MARKETS);
-          const marketsUnsub = () => {};
 
     // Trades live feed Appwrite Real-Time
     const fetchTrades = async () => {
@@ -1377,7 +1346,6 @@ export default function App() {
 
     return () => {
       coinsUnsub();
-      marketsUnsub();
       tradesUnsub();
       usersUnsub();
       broadcastsUnsub();
@@ -2067,47 +2035,6 @@ export default function App() {
     );
   };
 
-  const handlePlacePolymarketBet = async (
-    marketId: string,
-    side: "YES" | "NO",
-    amount: number,
-  ) => {
-    if (!currentUser) {
-      setSignInReason("place speculation bets and earn money");
-      setShowSignInModal(true);
-      return;
-    }
-
-    const market = markets.find((m) => m.id === marketId);
-    if (!market) return;
-
-    const nextCash = userStats.cash - amount;
-
-    if (currentUser) {
-      try {
-        const { databases } = await import("./appwrite");
-        const uid = currentUser.$id || currentUser.uid;
-        
-        await databases.updateDocument("pumpforge", "users", uid, {
-          cash: nextCash
-        });
-      } catch (e) {
-        console.error("Polymarket bet err", e);
-      }
-    }
-    
-    // Fallback UI update
-    setUserBets((prev) => ({
-      ...prev,
-      [marketId]: { side, amount },
-    }));
-
-    setUserStats((prev) => ({
-      ...prev,
-      cash: nextCash,
-    }));
-  };
-
   const claimAchievement = async (id: string) => {
     const ach = achievements.find((a) => a.id === id);
     if (!ach || ach.claimed) return;
@@ -2332,7 +2259,7 @@ export default function App() {
         );
       }
 
-      // Reset local simulation holdings cleanly
+      // Reset local holdings cleanly
       setHoldings([]);
 
       setUserStats((prev) => ({
@@ -2461,52 +2388,12 @@ export default function App() {
 
   if (isCheckingRedirect || isLoading) {
     return (
-      <div className="flex min-h-screen bg-zinc-950 p-5 md:p-8 animate-pulse gap-6">
-         {/* Sidebar Skeleton */}
-         <div className="hidden md:flex flex-col min-w-[250px] w-[250px] h-[calc(100vh-40px)] bg-zinc-900/40 border border-zinc-800/60 rounded-2xl p-4 gap-6">
-            <div className="w-full h-12 bg-zinc-800 rounded-lg border border-zinc-700/50"></div>
-            <div className="w-2/3 h-8 bg-zinc-800 rounded mt-4"></div>
-            <div className="flex flex-col gap-3 mt-4">
-               {[...Array(6)].map((_, i) => (
-                  <div key={i} className="w-full h-10 bg-zinc-800/50 rounded-lg border border-zinc-700/30"></div>
-               ))}
-            </div>
-         </div>
-         {/* Main Content Skeleton */}
-         <div className="flex-1 w-full max-w-7xl mx-auto flex flex-col gap-6 overflow-hidden">
-           {/* Top Stats */}
-           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {[...Array(4)].map((_, i) => (
-                <div key={i} className="h-24 bg-zinc-900/60 border border-zinc-800/60 rounded-2xl"></div>
-              ))}
-           </div>
-           
-           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1">
-              <div className="lg:col-span-2 flex flex-col gap-6">
-                 {/* Chart Skeleton */}
-                 <div className="w-full h-[400px] bg-zinc-900/60 border border-zinc-800/60 rounded-2xl p-6 flex flex-col justify-end gap-2">
-                    <div className="flex justify-between w-full opacity-50">
-                       <div className="h-6 w-32 bg-zinc-800 rounded"></div>
-                       <div className="h-6 w-24 bg-zinc-800 rounded"></div>
-                    </div>
-                    <div className="w-full flex-1 flex items-end gap-2 mt-4">
-                       {[...Array(15)].map((_, i) => (
-                         <div key={i} className="flex-1 bg-zinc-800 rounded-t" style={{ height: `${20 + (i * 7) % 60}%` }}></div>
-                       ))}
-                    </div>
-                 </div>
-              </div>
-              <div className="flex flex-col gap-6">
-                 {/* Sidebar / Leaderboard Skeleton */}
-                 <div className="w-full h-[400px] bg-zinc-900/60 border border-zinc-800/60 rounded-2xl p-4 flex flex-col gap-4">
-                   <div className="h-6 w-32 bg-zinc-800 rounded mb-2"></div>
-                   {[...Array(5)].map((_, i) => (
-                      <div key={i} className="h-12 w-full bg-zinc-800/50 rounded-xl"></div>
-                   ))}
-                 </div>
-              </div>
-           </div>
-         </div>
+      <div className="flex items-center justify-center min-h-screen bg-zinc-950">
+        <div className="relative flex items-center justify-center w-24 h-24">
+          <div className="absolute inset-0 border-4 border-fuchsia-500/20 rounded-full"></div>
+          <div className="absolute inset-0 border-4 border-fuchsia-500 border-t-transparent rounded-full animate-spin"></div>
+          <div className="absolute w-3 h-3 bg-fuchsia-400 rounded-full animate-ping"></div>
+        </div>
       </div>
     );
   }
@@ -2599,7 +2486,7 @@ export default function App() {
                   temporarily suspended
                 </span>{" "}
                 by administrative operators due to safety, risk auditing, or
-                trading-volume simulation parameters. Administrators can lift
+                trading-volume parameters. Administrators can lift
                 this state at any time."
               </span>
             )}
@@ -2625,28 +2512,11 @@ export default function App() {
     );
   }
 
-  const mergedMarkets = markets.map((m) => {
-    const userBet = userBets[m.id];
-    if (userBet) {
-      return {
-        ...m,
-        userBetAmount: userBet.amount,
-        userBetSide: userBet.side,
-      };
-    }
-    return m;
-  });
-
   const handleHardResetGame = async () => {
     setUserStats(prev => ({ ...prev, cash: 5000, gems: 0, coinsCreatedCount: 0, totalProfit: 0, tradesCount: 0, prestigeLevel: 0 }));
     setHoldings([]);
     setAchievements(prev => prev.map(a => ({ ...a, claimed: false, current: 0 })));
     toast.success("Game reset to defaults.");
-  };
-
-  const handleCreatePredictionLocal = async (market: any) => {
-    setMarkets(prev => [market, ...prev]);
-    toast.success("Prediction market created.");
   };
 
   const handleSendMoney = async (handle: string, amount: number, type: string) => {
@@ -2829,17 +2699,6 @@ export default function App() {
                 holdings={holdings}
                 onTradeAction={tradeAction}
                 onDeleteOwnCoin={handleDeleteOwnCoin}
-              />
-            }
-          />
-
-          <Route
-            path="/polymarket"
-            element={
-              <PolymarketTab
-                markets={mergedMarkets}
-                onPlaceBet={handlePlacePolymarketBet}
-                onCreateMarket={handleCreatePredictionLocal}
               />
             }
           />
@@ -3108,7 +2967,7 @@ export default function App() {
               Prestige Reset System
             </h3>
             <p className="text-xs text-zinc-400 mb-4 leading-relaxed font-semibold">
-              Ready to reset your current simulation gains to lock in permanent
+              Ready to reset your current gains to lock in permanent
               perks? Resetting requires{" "}
               <strong className="text-zinc-200">
                 $100,000.00 cash reserves

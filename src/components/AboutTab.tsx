@@ -20,7 +20,7 @@ export default function AboutTab() {
           <HelpCircle className="w-5 h-5 text-orange-500" /> About PumpForge
         </h2>
         <p className="text-xs text-zinc-500 font-mono tracking-wide mt-0.5">
-          The ultimate decentralized meme-coin sandbox and simulation engine
+          The ultimate decentralized meme-coin sandbox and trading engine
         </p>
       </div>
 
@@ -30,9 +30,9 @@ export default function AboutTab() {
             <PlayCircle className="w-4 h-4" /> Welcome Degen!
           </h3>
           <p className="text-xs text-zinc-300 leading-relaxed">
-            PumpForge is an active live-market simulation environment. You start
+            PumpForge is an active live-market environment. You start
             with standard startup credits to trade, shill, bet, test, or trigger
-            arcade simulations. Monitor values carefully because some token
+            arcade events. Monitor values carefully because some token
             developers are shady dev scampers.
           </p>
           <p className="text-xs text-zinc-400 leading-relaxed">
