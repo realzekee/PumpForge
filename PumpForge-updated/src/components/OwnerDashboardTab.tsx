@@ -1634,7 +1634,6 @@ export default function OwnerDashboardTab({
 
   return (
     <div className="flex-1 flex flex-col gap-6 animate-fade-in text-zinc-100 font-mono">
-      {/* Header banner */}
       <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-zinc-900 pb-5 gap-4">
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 rounded-xl bg-red-500/10 border border-red-500/30 flex items-center justify-center shadow-[0_0_15px_rgba(239,68,68,0.15)] text-red-400">

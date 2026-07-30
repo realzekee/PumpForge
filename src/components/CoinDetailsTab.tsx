@@ -267,7 +267,6 @@ export default function CoinDetailsTab({
       className="w-full text-zinc-300 font-mono flex flex-col gap-6"
       id="coin-details-view-container"
     >
-      {/* Header section with Navigation controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-900/50 pb-5">
         <div className="flex items-center gap-3">
           {onBackToList && (
@@ -323,7 +322,6 @@ export default function CoinDetailsTab({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Left Side: 7 Column Grid containing Aesthetics + Candlestick Module */}
         <div className="lg:col-span-12 xl:col-span-8 flex flex-col gap-6">
-          {/* 1. Visual & Header Aesthetics Module */}
           <div
             className="bg-gradient-to-br from-zinc-90 w-full bg-zinc-900/60 border border-zinc-850 p-6 rounded-3xl relative overflow-hidden shadow-xl"
             id="token-head-metadata-card"
@@ -364,7 +362,6 @@ export default function CoinDetailsTab({
                 </div>
               </div>
 
-              {/* Action pricing blocks */}
               <div className="flex flex-col sm:items-end">
                 <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-black">
                   INDEX DEGEN PRICE
@@ -396,12 +393,10 @@ export default function CoinDetailsTab({
             </div>
           </div>
 
-          {/* 2. Interactive Candlestick Chart Module */}
           <div
             className="bg-zinc-900 border border-zinc-850 p-6 rounded-3xl flex flex-col gap-4 relative"
             id="charts-module-candlestick"
           >
-            {/* Header info for Chart */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800/60 pb-4">
               <div className="flex items-center gap-2.5">
                 <div className="w-2.5 h-2.5 bg-rose-500 rounded-full animate-pulse shadow-md shadow-rose-950"></div>
@@ -431,7 +426,6 @@ export default function CoinDetailsTab({
               </div>
             </div>
 
-            {/* Interactive Candlestick Diagram Frame */}
             <div className="relative h-64 bg-zinc-950/80 rounded-2xl border border-zinc-900 overflow-hidden flex flex-col justify-end p-4">
               {/* Vertical Grid Lines Background overlay */}
               <div className="absolute inset-0 flex flex-col justify-between pointer-events-none py-6 px-1 z-0">
@@ -537,7 +531,6 @@ export default function CoinDetailsTab({
                 })}
               </div>
 
-              {/* Interactive candle metadata hover readout */}
               <div className="h-7 w-full border-t border-zinc-900/60 mt-3 pt-2 flex items-center justify-between text-[9px] text-zinc-500 select-none">
                 {hoveredCandle !== null ? (
                   <div className="flex items-center gap-3 w-full justify-between animate-fade-in font-mono text-zinc-300">
@@ -590,7 +583,6 @@ export default function CoinDetailsTab({
 
         {/* Right Side: 5 Column Grid for Transaction Execution & Liquidity / Holder structures */}
         <div className="lg:col-span-12 xl:col-span-4 flex flex-col gap-6">
-          {/* 3. Transaction Execution Panel */}
           <div
             className="bg-zinc-900 border-2 border-zinc-805 p-6 rounded-3xl flex flex-col gap-4 shadow-xl select-none"
             id="buy-sell-trade-dashboard"
@@ -761,7 +753,6 @@ export default function CoinDetailsTab({
             )}
           </div>
 
-          {/* 4. Liquidity Pool Composition Card */}
           <div
             className="bg-zinc-900 border border-zinc-850 p-6 rounded-3xl flex flex-col gap-4 shadow-xl"
             id="pool-composition-stats"
@@ -836,7 +827,6 @@ export default function CoinDetailsTab({
             </div>
           </div>
 
-          {/* 5. Top Holders profile rows */}
           <div
             className="bg-zinc-900 border border-zinc-850 p-6 rounded-3xl flex flex-col gap-4 shadow-xl"
             id="token-top-holders-panel"
@@ -888,12 +878,10 @@ export default function CoinDetailsTab({
         </div>
       </div>
 
-      {/* 4. Bottom Stats Matrix Grid (4 Bordered metrics modules at layout base) */}
       <div
         className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-2"
         id="bottom-stats-matrix-layout-grid"
       >
-        {/* Metric 1: Market Cap */}
         <div className="bg-zinc-900 border border-zinc-850 p-5 rounded-3xl flex flex-col gap-1 shadow-md hover:border-zinc-700/65 transition-colors">
           <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-black leading-none mb-1">
             MARKET CAP VALUATION
@@ -910,7 +898,6 @@ export default function CoinDetailsTab({
           </span>
         </div>
 
-        {/* Metric 2: 24h Volume */}
         <div className="bg-zinc-900 border border-zinc-850 p-5 rounded-3xl flex flex-col gap-1 shadow-md hover:border-zinc-700/65 transition-colors">
           <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-black leading-none mb-1">
             24H TRADING VOLUME
@@ -926,7 +913,6 @@ export default function CoinDetailsTab({
           </span>
         </div>
 
-        {/* Metric 3: Circulating Supply */}
         <div className="bg-zinc-900 border border-zinc-850 p-5 rounded-3xl flex flex-col gap-1 shadow-md hover:border-zinc-700/65 transition-colors">
           <div className="flex justify-between items-center text-[9px] text-zinc-500 uppercase tracking-widest font-black leading-none mb-1">
             <span>CIRCULATING SUPPLY</span>
@@ -946,7 +932,6 @@ export default function CoinDetailsTab({
           </span>
         </div>
 
-        {/* Metric 4: 24h Change trajectory ticker with colored icon */}
         <div className="bg-zinc-900 border border-zinc-850 p-5 rounded-3xl flex flex-col gap-1 shadow-md hover:border-zinc-700/65 transition-colors">
           <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-black leading-none mb-1">
             24H TRAJECTORY TICKER

@@ -808,7 +808,6 @@ export default function ArcadeTab({
 
         {/* Dynamic Game Workspace view */}
         <div className="flex-1 flex flex-col justify-center items-center py-4 bg-zinc-950/40 p-4 border border-zinc-900/50 rounded-2xl">
-          {/* 1. COINFLIP DISPLAY */}
           {selectedGame === "coinflip" && (
             <div className="flex flex-col items-center gap-5 w-full max-w-xs font-mono">
               <div className="flex bg-zinc-950 p-1 rounded-xl border border-zinc-900 gap-1 w-full text-center text-xs font-bold uppercase select-none">
@@ -950,7 +949,6 @@ export default function ArcadeTab({
             </div>
           )}
 
-          {/* 2. SLOTS DISPLAY */}
           {selectedGame === "slots" && (
             <div className="flex flex-col items-center gap-5 w-full max-w-xs font-mono">
               {/* Reels Display box */}
@@ -1068,7 +1066,6 @@ export default function ArcadeTab({
             </div>
           )}
 
-          {/* 3. MINES DISPLAY */}
           {selectedGame === "mines" && (
             <div className="flex flex-col md:flex-row gap-6 w-full max-w-md items-center justify-between font-mono">
               {/* Mines 5x5 grid */}
@@ -1255,7 +1252,6 @@ export default function ArcadeTab({
             </div>
           )}
 
-          {/* 4. DICE ROLL DISPLAY (1-6 choice with amazing 3D animation rollout!) */}
           {selectedGame === "dice" && (
             <div className="flex flex-col items-center gap-6 w-full max-w-sm font-mono select-none">
               {/* Centered Balance Indicator */}
@@ -1478,7 +1474,6 @@ export default function ArcadeTab({
             </div>
           )}
 
-          {/* 5. TOWER COLUMN STEP CLIMBER */}
           {selectedGame === "tower" && (
             <div className="flex flex-col gap-6 w-full max-w-md mx-auto items-center font-mono select-none">
               <div className="text-center w-full max-w-sm mb-2">

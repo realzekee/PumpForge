@@ -507,7 +507,6 @@ export default function Sidebar({
                   className="absolute bottom-full left-0 right-0 mb-2 bg-zinc-900 border border-zinc-800 rounded-2xl py-1.5 px-1.5 shadow-2xl z-50 flex flex-col gap-0.5 select-none animate-slide-up max-h-[360px] overflow-y-auto pointer-events-auto"
                   id="profile-popover-options"
                 >
-                  {/* Header info user inside popup */}
                   <div className="flex items-center gap-2.5 p-2 border-b border-zinc-800/80 mb-1 shrink-0">
                     <div className="w-8 h-8 rounded-lg bg-orange-600/15 text-orange-500 border border-orange-500/20 flex items-center justify-center text-sm font-black select-none">
                       Z

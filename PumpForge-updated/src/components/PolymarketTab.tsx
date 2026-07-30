@@ -58,7 +58,6 @@ export default function PolymarketTab({
 
   return (
     <div className="flex flex-col gap-6 w-full h-full animate-fade-in relative">
-      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-zinc-900 border border-zinc-800 p-6 rounded-2xl">
         <div className="flex flex-col gap-2">
           <h2 className="text-2xl font-black text-rose-500 flex items-center gap-2">

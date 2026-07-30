@@ -64,25 +64,25 @@ export default function PortfolioTab({
 
   // Calculate current holdings value (exclude list of inactive)
   const holdingsValue = (holdings || []).reduce((sum, h) => {
-    const coin = (coins || []).find((c) => c.id === h.coinId);
-    if (coin && true) {
-      return sum + h.amount * coin.price;
+    const coin = (coins || []).find((c) => c && c.id === h.coinId);
+    if (coin) {
+      return sum + (Number(h.amount) || 0) * (Number(coin.price) || 0);
     }
     return sum;
   }, 0);
 
-  const totalPortfolioValue = userStats.cash + holdingsValue;
+  const totalPortfolioValue = (Number(userStats?.cash) || 0) + holdingsValue;
 
   // Selected asset available balance
   const getSelectedAvailable = () => {
     if (sendType === "cash") {
-      return userStats.cash;
+      return Number(userStats?.cash) || 0;
     }
     if (sendType === "gems") {
-      return userStats.gems;
+      return Number(userStats?.gems) || 0;
     }
-    const match = (holdings || []).find((h) => h.coinId === sendType);
-    return match ? match.amount : 0;
+    const match = (holdings || []).find((h) => h && h.coinId === sendType);
+    return match ? (Number(match.amount) || 0) : 0;
   };
 
   const handleMaxClick = () => {
@@ -156,7 +156,7 @@ export default function PortfolioTab({
         `💎 Sent ${numericAmount.toLocaleString("en-US")} gems to @${sendHandle.replace("@", "")}!`,
       );
     } else {
-      const coin = coins.find((c) => c.id === sendType);
+      const coin = (coins || []).find((c) => c && c.id === sendType);
       const symbol = coin ? coin.symbol : sendType.toUpperCase();
 
       onAddNotification(
@@ -261,7 +261,7 @@ export default function PortfolioTab({
             </span>
             <span className="text-2xl font-black text-emerald-400 mt-2 tracking-tight">
               $
-              {userStats.cash.toLocaleString("en-US", {
+              {(Number(userStats?.cash) || 0).toLocaleString("en-US", {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2,
               })}
@@ -283,7 +283,7 @@ export default function PortfolioTab({
             </span>
             <span className="text-2xl font-black text-cyan-405 mt-2 tracking-tight">
               $
-              {holdingsValue.toLocaleString("en-US", {
+              {(holdingsValue || 0).toLocaleString("en-US", {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2,
               })}
@@ -335,11 +335,13 @@ export default function PortfolioTab({
                   </thead>
                   <tbody className="divide-y divide-zinc-905 font-semibold text-zinc-300">
                     {(holdings || []).map((h) => {
-                      const coin = coins.find((c) => c.id === h.coinId);
+                      const coin = (coins || []).find((c) => c && c.id === h.coinId);
                       if (!coin) return null;
 
-                      const totalCost = h.amount * h.avgBuyPrice;
-                      const currentVal = false ? 0 : h.amount * coin.price;
+                      const amount = Number(h.amount) || 0;
+                      const avgBuyPrice = Number(h.avgBuyPrice) || Number(coin.price) || 0;
+                      const totalCost = amount * avgBuyPrice;
+                      const currentVal = amount * (Number(coin.price) || 0);
                       const valueDiff = currentVal - totalCost;
 
                       return (
@@ -348,30 +350,26 @@ export default function PortfolioTab({
                           className="hover:bg-zinc-950/20 transition-colors"
                         >
                           <td className="px-5 py-3.5 flex items-center gap-2.5">
-                            <span className="text-lg">{coin.avatarEmoji}</span>
+                            <span className="text-lg">{coin.avatarEmoji || "🪙"}</span>
                             <div className="flex flex-col">
                               <span className="font-extrabold text-white text-[13px] leading-tight">
-                                {coin.name}
+                                {coin.name || "Coin"}
                               </span>
                               <span className="text-[10px] text-zinc-500 font-bold mt-0.5 uppercase mb-1">
-                                *{coin.symbol}
+                                *{coin.symbol || "TOKEN"}
                               </span>
                             </div>
                           </td>
                           <td className="px-5 py-3.5 text-right font-mono font-extrabold text-zinc-200">
-                            {h.amount.toLocaleString("en-US", {
+                            {amount.toLocaleString("en-US", {
                               maximumFractionDigits: 2,
                             })}
                           </td>
                           <td className="px-5 py-3.5 text-right font-mono text-zinc-500 text-xs">
-                            ${h.avgBuyPrice.toFixed(4)}
+                            ${avgBuyPrice.toFixed(4)}
                           </td>
                           <td className="px-5 py-3.5 text-right font-mono text-zinc-300 text-xs">
-                            {false ? (
-                              <span className="text-red-500">crashed</span>
-                            ) : (
-                              `$${coin.price.toFixed(4)}`
-                            )}
+                            ${(Number(coin.price) || 0).toFixed(4)}
                           </td>
                           <td className="px-5 py-3.5 text-right font-mono">
                             <div className="flex flex-col items-end">
@@ -382,14 +380,12 @@ export default function PortfolioTab({
                                   maximumFractionDigits: 2,
                                 })}
                               </span>
-                              {true && (
-                                <span
-                                  className={`text-[10px] font-bold ${valueDiff >= 0 ? "text-emerald-400" : "text-rose-400"}`}
-                                >
-                                  {valueDiff >= 0 ? "+" : ""}$
-                                  {valueDiff.toFixed(2)}
-                                </span>
-                              )}
+                              <span
+                                className={`text-[10px] font-bold ${valueDiff >= 0 ? "text-emerald-400" : "text-rose-400"}`}
+                              >
+                                {valueDiff >= 0 ? "+" : ""}$
+                                {valueDiff.toFixed(2)}
+                              </span>
                             </div>
                           </td>
                         </tr>
@@ -402,11 +398,13 @@ export default function PortfolioTab({
               {/* Mobile View lists */}
               <div className="block sm:hidden divide-y divide-zinc-900">
                 {(holdings || []).map((h) => {
-                  const coin = coins.find((c) => c.id === h.coinId);
+                  const coin = (coins || []).find((c) => c && c.id === h.coinId);
                   if (!coin) return null;
 
-                  const totalCost = h.amount * h.avgBuyPrice;
-                  const currentVal = false ? 0 : h.amount * coin.price;
+                  const amount = Number(h.amount) || 0;
+                  const avgBuyPrice = Number(h.avgBuyPrice) || Number(coin.price) || 0;
+                  const totalCost = amount * avgBuyPrice;
+                  const currentVal = amount * (Number(coin.price) || 0);
                   const valueDiff = currentVal - totalCost;
 
                   return (
@@ -416,19 +414,19 @@ export default function PortfolioTab({
                     >
                       <div className="flex items-center gap-2.5 min-w-0 flex-1">
                         <span className="text-lg shrink-0">
-                          {coin.avatarEmoji}
+                          {coin.avatarEmoji || "🪙"}
                         </span>
                         <div className="flex flex-col min-w-0">
                           <span className="font-extrabold text-white text-[12px] leading-tight truncate">
-                            {coin.name}
+                            {coin.name || "Coin"}
                           </span>
                           <span className="text-[9px] text-zinc-500 font-bold mt-0.5 uppercase">
-                            *{coin.symbol}
+                            *{coin.symbol || "TOKEN"}
                           </span>
                           <div className="text-[9.5px] text-zinc-400 mt-1 leading-none font-medium">
                             Qty:{" "}
                             <span className="font-extrabold text-zinc-200">
-                              {h.amount.toLocaleString("en-US", {
+                              {amount.toLocaleString("en-US", {
                                 maximumFractionDigits: 1,
                               })}
                             </span>
@@ -440,7 +438,7 @@ export default function PortfolioTab({
                         <div className="text-[9px] text-zinc-500">
                           Avg:{" "}
                           <span className="font-extrabold">
-                            ${h.avgBuyPrice.toFixed(4)}
+                            ${avgBuyPrice.toFixed(4)}
                           </span>
                         </div>
                         <div className="text-[12px] font-extrabold text-teal-400 mt-0.5">
@@ -451,17 +449,11 @@ export default function PortfolioTab({
                           })}
                         </div>
                         <div className="mt-0.5">
-                          {false ? (
-                            <span className="text-red-500 text-[8px] uppercase tracking-wider bg-red-955/35 px-1 py-0.2 rounded font-extrabold border border-red-900/30">
-                              crashed
-                            </span>
-                          ) : (
-                            <span
-                              className={`text-[9.5px] font-bold ${valueDiff >= 0 ? "text-emerald-400" : "text-rose-455"}`}
-                            >
-                              {valueDiff >= 0 ? "+" : ""}${valueDiff.toFixed(2)}
-                            </span>
-                          )}
+                          <span
+                            className={`text-[9.5px] font-bold ${valueDiff >= 0 ? "text-emerald-400" : "text-rose-455"}`}
+                          >
+                            {valueDiff >= 0 ? "+" : ""}${valueDiff.toFixed(2)}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -592,7 +584,7 @@ export default function PortfolioTab({
                     <div className="absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-500 font-bold uppercase tracking-widest text-[9px]">
                       {sendType === "cash"
                         ? "USD"
-                        : coins.find((c) => c.id === sendType)?.symbol ||
+                        : (coins || []).find((c) => c && c.id === sendType)?.symbol ||
                           "TOKEN"}
                     </div>
                   </div>

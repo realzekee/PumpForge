@@ -338,7 +338,6 @@ export default function MarketTab({
                         )}
                       </td>
 
-                      {/* Action Col */}
                       <td className="px-5 py-3.5 text-center">
                         <div className="flex items-center justify-center gap-1.5 font-mono">
                           {isCreator ? (

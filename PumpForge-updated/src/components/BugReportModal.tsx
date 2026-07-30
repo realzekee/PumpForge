@@ -94,7 +94,6 @@ export default function BugReportModal({
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            {/* Header */}
             <div className="flex items-center gap-2.5 border-b border-zinc-800 pb-3 mb-1 shrink-0">
               <div className="w-9 h-9 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-500 flex items-center justify-center">
                 <AlertTriangle className="w-5 h-5 animate-pulse text-rose-450" />

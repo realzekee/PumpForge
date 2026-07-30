@@ -83,7 +83,6 @@ export default function AchievementsTab({
 
   return (
     <div className="flex flex-col gap-6 animate-fade-in select-none">
-      {/* Interactive header banner */}
       <div className="relative overflow-hidden rounded-2xl bg-zinc-90 w-full flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div className="flex flex-col gap-1.5">
           <h2 className="text-sm font-extrabold text-zinc-400 font-mono tracking-widest uppercase flex items-center gap-1.5 leading-none">
