@@ -1675,22 +1675,24 @@ export default function App() {
     }
 
     // Dynamic bonding curve price impact calculation
-    // Base pool liquidity for pricing responsiveness (allows smooth price growth past $0.50, $1.00, $10.00, $100.00+)
-    const baseLiquidity = Math.max(1000, coin.totalLiquidity || 2500);
-    const tradeRatio = totalUsdVal / baseLiquidity;
+    // Reference pool liquidity scaling factor for high-volatility meme coin trading
+    const refLiquidity = Math.min(Math.max(200, coin.totalLiquidity || 500), 2000);
+    const tradeRatio = totalUsdVal / refLiquidity;
 
     let finalPrice: number;
     let newLiquidity: number;
 
     if (type === "BUY") {
-      // Smooth price impact multiplier relative to trade USD size
-      const priceImpact = Math.min(3.0, tradeRatio * 0.4);
+      // Responsive price impact multiplier for buys
+      const rawImpact = tradeRatio * 1.5;
+      const priceImpact = Math.min(10.0, Math.max(0.05, rawImpact));
       finalPrice = Number((coin.price * (1 + priceImpact)).toFixed(6));
-      newLiquidity = (coin.totalLiquidity || baseLiquidity) + totalUsdVal;
+      newLiquidity = (coin.totalLiquidity || refLiquidity) + totalUsdVal;
     } else {
-      const priceImpact = Math.min(0.85, tradeRatio * 0.4);
-      finalPrice = Math.max(0.000001, Number((coin.price * (1 - priceImpact)).toFixed(6)));
-      newLiquidity = Math.max(100, (coin.totalLiquidity || baseLiquidity) - totalUsdVal);
+      const rawSellImpact = tradeRatio * 1.2;
+      const sellPriceImpact = Math.min(0.85, Math.max(0.05, rawSellImpact));
+      finalPrice = Math.max(0.000001, Number((coin.price * (1 - sellPriceImpact)).toFixed(6)));
+      newLiquidity = Math.max(100, (coin.totalLiquidity || refLiquidity) - totalUsdVal);
     }
 
     const newMarketCap = Math.floor((coin.supply || 1000000) * finalPrice);
