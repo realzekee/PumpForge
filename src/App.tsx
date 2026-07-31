@@ -1308,7 +1308,29 @@ export default function App() {
           }
         });
 
-        setCoins(mergedCoins);
+        setCoins((prev) => {
+          if (!prev || prev.length === 0) return mergedCoins;
+          const mergedMap = new Map(mergedCoins.map((c) => [c.id, c]));
+          
+          return prev.map((prevCoin) => {
+            const fetched = mergedMap.get(prevCoin.id);
+            if (!fetched) return prevCoin;
+            // Retain the higher price between local state and Appwrite so background sync never drops price
+            const bestPrice = Math.max(prevCoin.price || 0, fetched.price || 0);
+            const bestCap = Math.floor((fetched.supply || 1000000) * bestPrice);
+            return {
+              ...fetched,
+              ...prevCoin,
+              price: bestPrice,
+              marketCap: bestCap,
+              volume24h: Math.max(prevCoin.volume24h || 0, fetched.volume24h || 0),
+              history:
+                prevCoin.history && prevCoin.history.length > 0
+                  ? prevCoin.history
+                  : fetched.history,
+            };
+          });
+        });
       } catch (err) {
         console.error("Appwrite coins fetch error:", err);
       }
@@ -1653,23 +1675,22 @@ export default function App() {
     }
 
     // Dynamic bonding curve price impact calculation
-    const poolCap =
-      Number(coin.marketCap) > 0
-        ? Number(coin.marketCap)
-        : Number(coin.price) * Number(coin.supply || 1000000) || 1000;
-    const tradeRatio = totalUsdVal / Math.max(100, poolCap);
+    // Base pool liquidity for pricing responsiveness (allows smooth price growth past $0.50, $1.00, $10.00, $100.00+)
+    const baseLiquidity = Math.max(1000, coin.totalLiquidity || 2500);
+    const tradeRatio = totalUsdVal / baseLiquidity;
 
     let finalPrice: number;
     let newLiquidity: number;
 
     if (type === "BUY") {
-      const priceImpact = Math.min(2.0, tradeRatio);
+      // Smooth price impact multiplier relative to trade USD size
+      const priceImpact = Math.min(3.0, tradeRatio * 0.4);
       finalPrice = Number((coin.price * (1 + priceImpact)).toFixed(6));
-      newLiquidity = (coin.totalLiquidity || poolCap) + totalUsdVal;
+      newLiquidity = (coin.totalLiquidity || baseLiquidity) + totalUsdVal;
     } else {
-      const priceImpact = Math.min(0.9, tradeRatio);
+      const priceImpact = Math.min(0.85, tradeRatio * 0.4);
       finalPrice = Math.max(0.000001, Number((coin.price * (1 - priceImpact)).toFixed(6)));
-      newLiquidity = Math.max(100, (coin.totalLiquidity || poolCap) - totalUsdVal);
+      newLiquidity = Math.max(100, (coin.totalLiquidity || baseLiquidity) - totalUsdVal);
     }
 
     const newMarketCap = Math.floor((coin.supply || 1000000) * finalPrice);

@@ -232,11 +232,23 @@ export default function CoinDetailsTab({
   };
 
   // Generate interactive mock candlestick candles dataset based on tick prices
+  const currentPrice = activeCoin?.price || 0.01;
   const candlesData = useMemo(() => {
+    const historyArr = activeCoin?.history || [];
     const ticks =
-      (activeCoin?.history || []).length > 5
-        ? (activeCoin?.history || [])
-        : [5.68, 5.72, 5.69, 5.71, 5.7, 5.74, 5.73, 5.75, 5.72, 5.76];
+      historyArr.length >= 3
+        ? historyArr
+        : [
+            currentPrice * 0.92,
+            currentPrice * 0.94,
+            currentPrice * 0.93,
+            currentPrice * 0.96,
+            currentPrice * 0.95,
+            currentPrice * 0.98,
+            currentPrice * 0.97,
+            currentPrice * 0.99,
+            currentPrice,
+          ];
 
     return ticks.map((tick, index) => {
       const prev = ticks[index - 1] || tick;
@@ -244,9 +256,9 @@ export default function CoinDetailsTab({
       const close = tick;
       const isUp = close >= open;
 
-      const wiggle = activeCoin.price * 0.005;
+      const wiggle = currentPrice * 0.008;
       const high = Math.max(open, close) + (isUp ? wiggle : wiggle * 0.4);
-      const low = Math.min(open, close) - (!isUp ? wiggle : wiggle * 0.4);
+      const low = Math.max(0.000001, Math.min(open, close) - (!isUp ? wiggle : wiggle * 0.4));
       const volume = Math.round(15000 + ((tick * 2000 * (index + 1)) % 40000));
 
       return {
@@ -260,7 +272,25 @@ export default function CoinDetailsTab({
         isUp,
       };
     });
-  }, [activeCoin]);
+  }, [activeCoin, currentPrice]);
+
+  const { chartMax, chartMin, chartRange } = useMemo(() => {
+    const allPrices = candlesData.flatMap((c) => [c.open, c.close, c.high, c.low]);
+    const max = Math.max(...allPrices);
+    const min = Math.min(...allPrices);
+    const padding = (max - min) * 0.1 || max * 0.05 || 0.001;
+    const chartMax = max + padding;
+    const chartMin = Math.max(0, min - padding);
+    const chartRange = chartMax - chartMin || 0.001;
+    return { chartMax, chartMin, chartRange };
+  }, [candlesData]);
+
+  const formatPriceLabel = (p: number) => {
+    if (p >= 1000) return `$${(p / 1000).toFixed(2)}K`;
+    if (p >= 10) return `$${p.toFixed(2)}`;
+    if (p >= 1) return `$${p.toFixed(3)}`;
+    return `$${p.toFixed(4)}`;
+  };
 
   return (
     <div
@@ -430,23 +460,23 @@ export default function CoinDetailsTab({
               {/* Vertical Grid Lines Background overlay */}
               <div className="absolute inset-0 flex flex-col justify-between pointer-events-none py-6 px-1 z-0">
                 <div className="border-b border-zinc-900 w-full flex justify-between text-[8px] text-zinc-650">
-                  <span>$6.00</span>
+                  <span>{formatPriceLabel(chartMax)}</span>
                   <div className="border-l border-zinc-900/40 h-full"></div>
                 </div>
                 <div className="border-b border-zinc-900 w-full flex justify-between text-[8px] text-zinc-650">
-                  <span>$5.80</span>
+                  <span>{formatPriceLabel(chartMin + chartRange * 0.75)}</span>
                   <div className="border-l border-zinc-900/40 h-full"></div>
                 </div>
                 <div className="border-b border-zinc-900 w-full flex justify-between text-[8px] text-zinc-650">
-                  <span>$5.60</span>
+                  <span>{formatPriceLabel(chartMin + chartRange * 0.50)}</span>
                   <div className="border-l border-zinc-900/40 h-full"></div>
                 </div>
                 <div className="border-b border-zinc-900 w-full flex justify-between text-[8px] text-zinc-650">
-                  <span>$5.40</span>
+                  <span>{formatPriceLabel(chartMin + chartRange * 0.25)}</span>
                   <div className="border-l border-zinc-900/40 h-full"></div>
                 </div>
                 <div className="w-full flex justify-between text-[8px] text-zinc-655 font-bold font-mono">
-                  <span>$5.20</span>
+                  <span>{formatPriceLabel(chartMin)}</span>
                   <div className="border-l border-zinc-900/40 h-full"></div>
                 </div>
               </div>
@@ -454,25 +484,34 @@ export default function CoinDetailsTab({
               {/* Candle layout block */}
               <div className="relative z-10 w-full h-44 flex items-end justify-between px-2 gap-1.5 md:gap-3">
                 {candlesData.map((candle, idx) => {
-                  const maxHigh = 6.0;
-                  const minLow = 5.2;
-                  const range = maxHigh - minLow;
-
-                  const bottomPercent =
-                    ((Math.min(candle.open, candle.close) - minLow) / range) *
-                    100;
-                  const topPercent =
-                    ((Math.max(candle.open, candle.close) - minLow) / range) *
-                    100;
-                  const bodyHeight = Math.max(topPercent - bottomPercent, 3);
-
-                  const wickBottomPercent =
-                    ((candle.low - minLow) / range) * 100;
-                  const wickTopPercent = ((candle.high - minLow) / range) * 100;
-                  const wickHeight = Math.max(
-                    wickTopPercent - wickBottomPercent,
-                    5,
+                  const bottomPercent = Math.min(
+                    95,
+                    Math.max(
+                      0,
+                      ((Math.min(candle.open, candle.close) - chartMin) / chartRange) * 100,
+                    ),
                   );
+                  const topPercent = Math.min(
+                    100,
+                    Math.max(
+                      bottomPercent + 2,
+                      ((Math.max(candle.open, candle.close) - chartMin) / chartRange) * 100,
+                    ),
+                  );
+                  const bodyHeight = Math.max(topPercent - bottomPercent, 4);
+
+                  const wickBottomPercent = Math.min(
+                    95,
+                    Math.max(0, ((candle.low - chartMin) / chartRange) * 100),
+                  );
+                  const wickTopPercent = Math.min(
+                    100,
+                    Math.max(
+                      wickBottomPercent + 3,
+                      ((candle.high - chartMin) / chartRange) * 100,
+                    ),
+                  );
+                  const wickHeight = Math.max(wickTopPercent - wickBottomPercent, 6);
 
                   const isHovered = hoveredCandle === idx;
 
