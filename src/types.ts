@@ -4,6 +4,7 @@ export interface MemeCoin {
   symbol: string;
   creator: string;
   creatorId?: string;
+  creatorName?: string;
   description: string;
   avatarEmoji: string;
   avatarBg: string;

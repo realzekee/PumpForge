@@ -401,6 +401,8 @@ export default function CoinDetailsTab({
                     $
                     {(activeCoin?.price || 0) >= 1000
                       ? `${((activeCoin?.price || 0) / 1000).toFixed(2)}K`
+                      : (activeCoin?.price || 0) >= 1
+                      ? (activeCoin?.price || 0).toFixed(2)
                       : (activeCoin?.price || 0).toFixed(4)}
                   </span>
 

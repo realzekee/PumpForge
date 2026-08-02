@@ -62,6 +62,79 @@ import { account, databases, client } from "./appwrite";
 import { ID, Permission, Role } from "appwrite";
 import { useQueryClient } from "@tanstack/react-query";
 
+const syncCoinToAppwrite = async (coinId: string, updatedCoin: MemeCoin) => {
+  try {
+    const { Query } = await import("appwrite");
+    const payload = {
+      price: Number(updatedCoin.price),
+      marketCap: Math.floor(updatedCoin.marketCap),
+      totalLiquidity: Number(updatedCoin.totalLiquidity || 0),
+      total_value: Number(updatedCoin.totalLiquidity || 0),
+      volume24h: Number(updatedCoin.volume24h || 0),
+      change24h: Number(updatedCoin.change24h || 0),
+      history: Array.isArray(updatedCoin.history) ? updatedCoin.history : [updatedCoin.price],
+    };
+
+    try {
+      await databases.updateDocument("pumpforge", "coins", coinId, payload);
+      return;
+    } catch (err1) {
+      try {
+        const queryRes = await databases.listDocuments("pumpforge", "coins", [
+          Query.equal("coinId", coinId),
+        ]);
+        if (queryRes.documents.length > 0) {
+          await databases.updateDocument(
+            "pumpforge",
+            "coins",
+            queryRes.documents[0].$id,
+            payload
+          );
+          return;
+        }
+      } catch (err2) {
+        // Fall through to create document
+      }
+    }
+
+    const createPayload = {
+      coinId: coinId,
+      creator: updatedCoin.creator || "@system",
+      creatorId: updatedCoin.creatorId || "system",
+      creatorName: updatedCoin.creatorName || "System",
+      name: updatedCoin.name,
+      symbol: updatedCoin.symbol,
+      description: updatedCoin.description || "",
+      price: Number(updatedCoin.price),
+      marketCap: Math.floor(updatedCoin.marketCap),
+      totalLiquidity: Number(updatedCoin.totalLiquidity || 0),
+      total_value: Number(updatedCoin.totalLiquidity || 0),
+      volume24h: Number(updatedCoin.volume24h || 0),
+      change24h: Number(updatedCoin.change24h || 0),
+      history: Array.isArray(updatedCoin.history) ? updatedCoin.history : [updatedCoin.price],
+      avatarEmoji: updatedCoin.avatarEmoji || "🪙",
+      avatarBg: updatedCoin.avatarBg || "bg-zinc-900 border-zinc-800",
+      supply: updatedCoin.supply || 1000000,
+    };
+
+    try {
+      await databases.createDocument("pumpforge", "coins", coinId, createPayload, [
+        Permission.read(Role.any()),
+        Permission.update(Role.any()),
+        Permission.delete(Role.any()),
+      ]);
+    } catch (err3) {
+      await databases.createDocument("pumpforge", "coins", ID.unique(), createPayload, [
+        Permission.read(Role.any()),
+        Permission.update(Role.any()),
+        Permission.delete(Role.any()),
+      ]);
+    }
+  } catch (outerErr) {
+    console.warn("syncCoinToAppwrite error:", outerErr);
+  }
+};
+
 const PRESTIGE_NAMES = [
   "Degen Level I",
   "Ape Prestige II",
@@ -134,7 +207,16 @@ function CoinRouteWrapper({
   useEffect(() => {
     const c = coins.find((c) => c.id === coinId);
     if (c) {
-      setLocalCoin(c);
+      setLocalCoin((prev) => {
+        if (!prev) return c;
+        const bestPrice = Math.max(prev.price || 0, c.price || 0);
+        return {
+          ...prev,
+          ...c,
+          price: bestPrice,
+          marketCap: Math.floor((c.supply || 1000000) * bestPrice),
+        };
+      });
       setLoading(false);
     }
   }, [coins, coinId]);
@@ -144,32 +226,41 @@ function CoinRouteWrapper({
     let unsub: (() => void) | undefined;
     import("./appwrite").then(({ databases, client }) => {
       const updateCoinState = (doc: any) => {
-        setLocalCoin({
-          id: doc.$id,
-          coinId: doc.$id,
-          creatorId: doc.creatorId,
-          creatorName: doc.creatorName,
-          creator: doc.creator,
-          name: doc.name,
-          symbol: doc.symbol,
-          description: doc.description,
-          price: doc.price,
-          supply: doc.supply,
-          totalLiquidity: doc.total_value || doc.totalLiquidity || 0,
-          marketCap: doc.marketCap,
-          volume24h: doc.volume24h,
-          change24h: doc.change24h,
-          avatarEmoji: doc.avatarEmoji,
-          createdAt: doc.createdAt,
-          history: doc.history,
+        if (!doc) return;
+        setLocalCoin((prev) => {
+          const docPrice = Number(doc.price || 0);
+          const currentPrice = prev?.price || 0;
+          const bestPrice = Math.max(docPrice, currentPrice);
+          return {
+            id: doc.$id || prev?.id || coinId,
+            coinId: doc.coinId || doc.$id || coinId,
+            creatorId: doc.creatorId || prev?.creatorId,
+            creatorName: doc.creatorName || prev?.creatorName,
+            creator: doc.creator || prev?.creator || "@system",
+            name: doc.name || prev?.name || "Meme Coin",
+            symbol: doc.symbol || prev?.symbol || "COIN",
+            description: doc.description || prev?.description || "",
+            price: bestPrice > 0 ? bestPrice : currentPrice || 0.01,
+            supply: doc.supply || prev?.supply || 1000000,
+            totalLiquidity: doc.total_value || doc.totalLiquidity || prev?.totalLiquidity || 0,
+            marketCap: Math.floor((doc.supply || prev?.supply || 1000000) * (bestPrice || currentPrice || 0.01)),
+            volume24h: Math.max(doc.volume24h || 0, prev?.volume24h || 0),
+            change24h: doc.change24h || prev?.change24h || 0,
+            avatarEmoji: doc.avatarEmoji || prev?.avatarEmoji || "🪙",
+            avatarBg: doc.avatarBg || prev?.avatarBg || "bg-zinc-900 border-zinc-800",
+            createdAt: doc.createdAt || prev?.createdAt,
+            history:
+              doc.history && Array.isArray(doc.history) && doc.history.length > 0
+                ? doc.history
+                : prev?.history || [bestPrice || 0.01],
+          };
         });
         setLoading(false);
       };
 
       databases.getDocument("pumpforge", "coins", coinId)
         .then(updateCoinState)
-        .catch((e: any) => {
-          console.error("Coin fetch error", e);
+        .catch(() => {
           setLoading(false);
         });
 
@@ -242,7 +333,20 @@ export default function App() {
   });
 
   // Core local states (fallbacks/synced depending on auth)
-  const [coins, setCoins] = useState<MemeCoin[]>(INITIAL_COINS);
+  const [coins, setCoins] = useState<MemeCoin[]>(() => {
+    const cached = safeStorage.getItem("pumpforge_cached_coins");
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      } catch (e) {
+        console.warn("Failed to load cached coins:", e);
+      }
+    }
+    return INITIAL_COINS;
+  });
   const [userStats, setUserStats] = useState<UserStats>(() => {
     const cachedUser = safeStorage.getItem("cached_appwrite_user");
     const cachedStats = safeStorage.getItem("cached_appwrite_stats");
@@ -1309,27 +1413,71 @@ export default function App() {
         });
 
         setCoins((prev) => {
-          if (!prev || prev.length === 0) return mergedCoins;
-          const mergedMap = new Map(mergedCoins.map((c) => [c.id, c]));
-          
-          return prev.map((prevCoin) => {
-            const fetched = mergedMap.get(prevCoin.id);
-            if (!fetched) return prevCoin;
-            // Retain the higher price between local state and Appwrite so background sync never drops price
-            const bestPrice = Math.max(prevCoin.price || 0, fetched.price || 0);
-            const bestCap = Math.floor((fetched.supply || 1000000) * bestPrice);
-            return {
-              ...fetched,
-              ...prevCoin,
+          const prevMap = new Map<string, MemeCoin>((prev || []).map((c) => [c.id, c]));
+          const appwriteMap = new Map<string, MemeCoin>(appwriteCoins.map((c) => [c.id, c]));
+          const mergedCoins: MemeCoin[] = [];
+
+          INITIAL_COINS.forEach((initCoin) => {
+            const fromPrev = prevMap.get(initCoin.id);
+            const fromAppwrite = appwriteMap.get(initCoin.id);
+
+            const bestPrice = Math.max(
+              initCoin.price || 0,
+              fromPrev?.price || 0,
+              fromAppwrite?.price || 0
+            );
+            const bestVol = Math.max(
+              fromPrev?.volume24h || 0,
+              fromAppwrite?.volume24h || 0,
+              initCoin.volume24h || 0
+            );
+            const bestHist =
+              fromPrev?.history && fromPrev.history.length > 1
+                ? fromPrev.history
+                : fromAppwrite?.history && fromAppwrite.history.length > 1
+                ? fromAppwrite.history
+                : initCoin.history;
+
+            const baseCoin = fromAppwrite || fromPrev || initCoin;
+            const updated: MemeCoin = {
+              ...baseCoin,
               price: bestPrice,
-              marketCap: bestCap,
-              volume24h: Math.max(prevCoin.volume24h || 0, fetched.volume24h || 0),
-              history:
-                prevCoin.history && prevCoin.history.length > 0
-                  ? prevCoin.history
-                  : fetched.history,
+              marketCap: Math.floor((baseCoin.supply || 1000000) * bestPrice),
+              volume24h: bestVol,
+              history: bestHist,
             };
+            mergedCoins.push(updated);
+
+            appwriteMap.delete(initCoin.id);
+            prevMap.delete(initCoin.id);
           });
+
+          appwriteCoins.forEach((appCoin) => {
+            if (appwriteMap.has(appCoin.id)) {
+              const fromPrev = prevMap.get(appCoin.id);
+              const bestPrice = Math.max(appCoin.price || 0, fromPrev?.price || 0);
+              const bestHist =
+                fromPrev?.history && fromPrev.history.length > 1
+                  ? fromPrev.history
+                  : appCoin.history;
+
+              mergedCoins.push({
+                ...appCoin,
+                price: bestPrice,
+                marketCap: Math.floor((appCoin.supply || 1000000) * bestPrice),
+                history: bestHist,
+              });
+              appwriteMap.delete(appCoin.id);
+              prevMap.delete(appCoin.id);
+            }
+          });
+
+          prevMap.forEach((localCoin: MemeCoin) => {
+            mergedCoins.push(localCoin);
+          });
+
+          safeStorage.setItem("pumpforge_cached_coins", JSON.stringify(mergedCoins));
+          return mergedCoins;
         });
       } catch (err) {
         console.error("Appwrite coins fetch error:", err);
@@ -1674,25 +1822,29 @@ export default function App() {
       }
     }
 
-    // Dynamic bonding curve price impact calculation
-    // Reference pool liquidity scaling factor for high-volatility meme coin trading
-    const refLiquidity = Math.min(Math.max(200, coin.totalLiquidity || 500), 2000);
-    const tradeRatio = totalUsdVal / refLiquidity;
+    // Dynamic bonding curve price impact calculation with high surge capacity for meme coin buys
+    const poolLiquidity = Math.max(100, coin.totalLiquidity || 250);
+    const tradeRatio = totalUsdVal / poolLiquidity;
 
     let finalPrice: number;
     let newLiquidity: number;
 
     if (type === "BUY") {
-      // Responsive price impact multiplier for buys
-      const rawImpact = tradeRatio * 1.5;
-      const priceImpact = Math.min(10.0, Math.max(0.05, rawImpact));
-      finalPrice = Number((coin.price * (1 + priceImpact)).toFixed(6));
-      newLiquidity = (coin.totalLiquidity || refLiquidity) + totalUsdVal;
+      // 1. Exponential percentage multiplier for high raise
+      const baseMultiplier = Math.pow(1 + tradeRatio * 1.5, 2.0);
+      
+      // 2. Direct dollar boost so buys easily push prices above $1.00+
+      const dollarLift = (totalUsdVal / 100) * 0.75;
+      
+      const calculatedPrice = coin.price * baseMultiplier + dollarLift;
+      finalPrice = Number(calculatedPrice.toFixed(4));
+      newLiquidity = (coin.totalLiquidity || poolLiquidity) + totalUsdVal;
     } else {
-      const rawSellImpact = tradeRatio * 1.2;
-      const sellPriceImpact = Math.min(0.85, Math.max(0.05, rawSellImpact));
-      finalPrice = Math.max(0.000001, Number((coin.price * (1 - sellPriceImpact)).toFixed(6)));
-      newLiquidity = Math.max(100, (coin.totalLiquidity || refLiquidity) - totalUsdVal);
+      const sellImpact = Math.min(0.85, (totalUsdVal / (poolLiquidity + totalUsdVal)) * 1.2);
+      const dollarDrop = (totalUsdVal / 100) * 0.35;
+      const calculatedPrice = Math.max(0.000001, coin.price * (1 - sellImpact) - dollarDrop);
+      finalPrice = Number(calculatedPrice.toFixed(4));
+      newLiquidity = Math.max(50, (coin.totalLiquidity || poolLiquidity) - totalUsdVal);
     }
 
     const newMarketCap = Math.floor((coin.supply || 1000000) * finalPrice);
@@ -1702,22 +1854,25 @@ export default function App() {
     const firstHistPrice = nextHistory[0] || finalPrice;
     const newChange24h = Number((((finalPrice - firstHistPrice) / firstHistPrice) * 100).toFixed(2));
 
-    // ALWAYS update local coins state immediately
-    setCoins((prev) =>
-      prev.map((c) =>
-        c.id === coinId
-          ? {
-              ...c,
-              price: finalPrice,
-              marketCap: newMarketCap,
-              totalLiquidity: newLiquidity,
-              volume24h: newVolume24h,
-              change24h: newChange24h,
-              history: nextHistory,
-            }
-          : c,
-      ),
-    );
+    const updatedCoin: MemeCoin = {
+      ...coin,
+      price: finalPrice,
+      marketCap: newMarketCap,
+      totalLiquidity: newLiquidity,
+      volume24h: newVolume24h,
+      change24h: newChange24h,
+      history: nextHistory,
+    };
+
+    // ALWAYS update local coins state immediately and cache
+    setCoins((prev) => {
+      const next = prev.map((c) => (c.id === coinId ? updatedCoin : c));
+      safeStorage.setItem("pumpforge_cached_coins", JSON.stringify(next));
+      return next;
+    });
+
+    // ALWAYS sync updated coin state to Appwrite database
+    syncCoinToAppwrite(coinId, updatedCoin);
 
     if (type === "BUY") {
       const existingHolding = holdings.find((h) => h.coinId === coinId);

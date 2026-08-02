@@ -276,9 +276,13 @@ export default function MarketTab({
                         ) : (
                           <span className="text-zinc-200">
                             $
-                            {coin.price >= 0.01
+                            {coin.price >= 1000
+                              ? `${(coin.price / 1000).toFixed(2)}K`
+                              : coin.price >= 1
+                              ? coin.price.toFixed(2)
+                              : coin.price >= 0.01
                               ? coin.price.toFixed(4)
-                              : coin.price.toFixed(7)}
+                              : coin.price.toFixed(6)}
                           </span>
                         )}
                       </td>
@@ -456,7 +460,11 @@ export default function MarketTab({
                     ) : (
                       <span className="text-zinc-205 text-[11.5px] font-bold">
                         $
-                        {coin.price >= 0.01
+                        {coin.price >= 1000
+                          ? `${(coin.price / 1000).toFixed(2)}K`
+                          : coin.price >= 1
+                          ? coin.price.toFixed(2)
+                          : coin.price >= 0.01
                           ? coin.price.toFixed(4)
                           : coin.price.toFixed(6)}
                       </span>
