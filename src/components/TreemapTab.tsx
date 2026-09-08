@@ -14,45 +14,45 @@ export default function TreemapTab({ coins, onTradeCoin }: TreemapProps) {
 
   return (
     <div className="flex flex-col gap-5 animate-fade-in select-none">
-      <div className="flex flex-col gap-1 bg-zinc-90 w-full mb-1">
-        <h2 className="text-sm font-extrabold text-zinc-400 font-mono tracking-widest uppercase flex items-center gap-1.5 leading-none">
-          <Grid className="text-orange-500 w-4 h-4" /> Market Cap Treemap
+      <div className="flex flex-col gap-1 w-full mb-1">
+        <h2 className="text-sm font-extrabold text-zinc-300 font-mono tracking-widest uppercase flex items-center gap-2 leading-none">
+          <Grid className="text-rose-500 w-4 h-4" /> Market Cap Treemap
           Allocation
         </h2>
-        <span className="text-xs text-zinc-500 leading-none">
+        <span className="text-xs text-zinc-400 leading-none">
           Visual sizing representing coin marketcap weightings, with green/red
           hues displaying 24h change actions. Click blocks to trade!
         </span>
       </div>
 
       {/* Main Treemap flex blocks container */}
-      <div className="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl shadow-xl flex flex-col gap-4">
+      <div className="glass-panel border border-white/10 p-6 rounded-3xl shadow-2xl flex flex-col gap-5">
         {/* Color Indicators Legend */}
-        <div className="flex items-center gap-4 text-[10px] uppercase font-mono font-bold text-zinc-400">
+        <div className="flex flex-wrap items-center gap-4 text-[10px] uppercase font-mono font-bold text-zinc-400">
           <span className="flex items-center gap-1.5">
-            <span className="w-3 h-3 bg-emerald-600 border border-emerald-500 rounded" />{" "}
+            <span className="w-3 h-3 bg-emerald-500 border border-emerald-400 rounded-md shadow-sm" />{" "}
             Bullish Pump (+10% or more)
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-3 h-3 bg-emerald-950/65 border border-emerald-900/60 rounded" />{" "}
+            <span className="w-3 h-3 bg-emerald-950/80 border border-emerald-800 rounded-md shadow-sm" />{" "}
             Slight gain (+0% to +10%)
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-3 h-3 bg-rose-950/65 border border-rose-900/60 rounded" />{" "}
+            <span className="w-3 h-3 bg-rose-950/80 border border-rose-800 rounded-md shadow-sm" />{" "}
             Slight Dip (-10% to 0%)
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-3 h-3 bg-red-650 border border-red-500 rounded" />{" "}
+            <span className="w-3 h-3 bg-rose-600 border border-rose-500 rounded-md shadow-sm" />{" "}
             Deep Dump (-10% or lower)
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-3 h-3 bg-zinc-950 border border-zinc-900 rounded" />{" "}
+            <span className="w-3 h-3 glass-card border border-white/10 rounded-md shadow-sm" />{" "}
             crashed (0 cap)
           </span>
         </div>
 
         {/* The Treemap Layout rendering */}
-        <div className="min-h-[300px] grid grid-cols-1 md:grid-cols-12 gap-2 pb-1 bg-zinc-950 p-3.5 rounded-2xl border border-zinc-950">
+        <div className="min-h-[300px] grid grid-cols-1 md:grid-cols-12 gap-3 pb-1 glass-card p-4 rounded-2xl border border-white/10 shadow-inner">
           {activeCoins.map((coin, idx) => {
             const isDelisted = false;
             const pctCap =

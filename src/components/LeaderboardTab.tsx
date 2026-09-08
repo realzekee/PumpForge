@@ -92,13 +92,13 @@ export default function LeaderboardTab({
       </div>
 
       {/* Leaderboard Table rows */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-xl font-mono">
-        <div className="bg-zinc-950/80 p-4 border-b border-zinc-850 flex items-center justify-between text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
+      <div className="glass-panel border border-white/10 rounded-3xl overflow-hidden shadow-2xl font-mono">
+        <div className="bg-white/[0.04] p-4 border-b border-white/10 flex items-center justify-between text-[10px] text-zinc-400 uppercase tracking-widest font-bold">
           <span>Rank & Player</span>
           <span className="text-right">Net simulated Profit (USD)</span>
         </div>
 
-        <div className="flex flex-col divide-y divide-zinc-900">
+        <div className="flex flex-col divide-y divide-white/5">
           {leaderboardList.map((player, idx) => {
             const rank = idx + 1;
             const isTop3 = rank <= 3;
@@ -108,32 +108,32 @@ export default function LeaderboardTab({
                 key={player.handle}
                 className={`p-4 flex items-center justify-between gap-4 transition-colors ${
                   player.isSuspended
-                    ? "bg-rose-950/5 opacity-55 border-l-4 border-red-500/40 pr-3 pl-3"
+                    ? "bg-rose-500/10 opacity-55 border-l-4 border-red-500/50 pr-3 pl-3"
                     : player.isUser
-                      ? "bg-orange-950/20 border-l-4 border-orange-500 pr-3 pl-3"
-                      : "hover:bg-zinc-950/25"
+                      ? "bg-rose-500/15 border-l-4 border-rose-500 pr-3 pl-3"
+                      : "hover:bg-white/[0.04]"
                 }`}
               >
                 {/* Left col: Rank & User */}
                 <div className="flex items-center gap-3 min-w-0">
                   <div
-                    className={`w-7 h-7 rounded-lg font-black text-xs flex items-center justify-center shrink-0 border uppercase font-mono ${
+                    className={`w-7 h-7 rounded-xl font-black text-xs flex items-center justify-center shrink-0 border uppercase font-mono shadow-sm ${
                       player.isSuspended
-                        ? "bg-red-950 border-red-900 text-red-500"
+                        ? "bg-red-500/20 border-red-500/40 text-red-400"
                         : rank === 1
-                          ? "bg-yellow-500 border-yellow-400 text-yellow-950 shadow-md shadow-yellow-950/20"
+                          ? "bg-amber-400 border-amber-300 text-amber-950 shadow-md shadow-amber-500/20"
                           : rank === 2
-                            ? "bg-zinc-300 border-zinc-100 text-zinc-900 shadow-md"
+                            ? "bg-zinc-200 border-white text-zinc-900 shadow-md"
                             : rank === 3
                               ? "bg-amber-700 border-amber-600 text-white shadow-md"
-                              : "bg-zinc-950 border-zinc-900 text-zinc-400"
+                              : "glass-card border border-white/10 text-zinc-400"
                     }`}
                   >
                     {player.isSuspended ? "🚫" : isTop3 ? "🏆" : rank}
                   </div>
 
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-9 h-9 rounded-lg bg-zinc-950 border border-zinc-900 flex items-center justify-center text-lg shrink-0">
+                    <div className="w-9 h-9 rounded-2xl glass-card border border-white/10 flex items-center justify-center text-lg shrink-0">
                       {player.isSuspended
                         ? "💀"
                         : player.handle === "@zeke"
@@ -151,43 +151,43 @@ export default function LeaderboardTab({
                         </span>
 
                         {player.isUser && (
-                          <span className="text-[9px] bg-orange-950 border border-orange-900/60 text-orange-400 px-1 py-0.2 rounded font-mono font-bold uppercase leading-none scale-95">
+                          <span className="text-[9px] bg-rose-500/20 border border-rose-500/40 text-rose-300 px-1.5 py-0.5 rounded-full font-mono font-bold uppercase leading-none">
                             You
                           </span>
                         )}
 
                         {player.isAdmin && (
-                          <span className="text-[9px] bg-indigo-950 border border-indigo-900/40 text-indigo-400 px-1.5 py-0.2 rounded font-mono font-bold uppercase leading-none scale-95 flex items-center gap-0.5">
+                          <span className="text-[9px] bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 px-1.5 py-0.5 rounded-full font-mono font-bold uppercase leading-none flex items-center gap-0.5">
                             <ShieldCheck className="w-2.5 h-2.5" /> ADMIN
                           </span>
                         )}
 
                         {player.title.toLowerCase() === "owner" && (
-                          <span className="text-[9px] bg-red-950 border border-red-900/40 text-red-400 px-1.5 py-0.2 rounded font-mono font-bold uppercase leading-none scale-95 flex items-center gap-0.5">
+                          <span className="text-[9px] bg-rose-600/20 border border-rose-500/40 text-rose-300 px-1.5 py-0.5 rounded-full font-mono font-bold uppercase leading-none flex items-center gap-0.5">
                             <Crown className="w-2.5 h-2.5" /> OWNER
                           </span>
                         )}
 
                         {player.isSuspended && (
-                          <span className="text-[9px] bg-red-500/15 border border-red-500/30 text-red-400 px-1 py-0.5 rounded font-mono font-bold uppercase leading-none scale-95">
+                          <span className="text-[9px] bg-red-500/20 border border-red-500/40 text-red-400 px-1.5 py-0.5 rounded-full font-mono font-bold uppercase leading-none">
                             SUSPENDED
                           </span>
                         )}
 
                         {player.prestige > 0 && !player.isSuspended && (
-                          <span className="text-[10px] text-orange-400 font-bold bg-orange-950/40 px-1 border border-orange-900/40 rounded leading-none scale-95 flex items-center gap-0.5">
+                          <span className="text-[10px] text-amber-400 font-bold glass-pill px-1.5 py-0.5 border border-amber-500/30 rounded-full leading-none flex items-center gap-0.5">
                             ⭐{player.prestige}
                           </span>
                         )}
                       </div>
-                      <div className="text-[11px] text-zinc-500 flex items-center gap-2 mt-0.5 leading-none">
+                      <div className="text-[11px] text-zinc-400 flex items-center gap-2 mt-0.5 leading-none">
                         <span>{player.handle}</span>
                         <span>•</span>
                         <span
-                          className={`px-1 border rounded font-bold uppercase text-[9px] ${
+                          className={`px-1.5 py-0.5 border rounded-md font-bold uppercase text-[9px] ${
                             player.isSuspended
-                              ? "text-red-500 bg-red-950/20 border-red-950"
-                              : "text-orange-505 bg-orange-950/10 border-orange-900/20"
+                              ? "text-red-400 bg-red-500/10 border-red-500/20"
+                              : "text-rose-400 bg-rose-500/10 border-rose-500/20"
                           }`}
                         >
                           {player.isSuspended
@@ -207,7 +207,7 @@ export default function LeaderboardTab({
                         ? "text-red-500 line-through opacity-70"
                         : player.profit >= 0
                           ? "text-emerald-400"
-                          : "text-rose-450"
+                          : "text-rose-400"
                     }`}
                   >
                     {player.isSuspended

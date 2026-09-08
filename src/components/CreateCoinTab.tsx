@@ -178,24 +178,24 @@ export default function CreateCoinTab({ setCoins, coins }: CreateCoinProps) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 animate-fade-in select-none">
       {/* Creation form */}
-      <div className="lg:col-span-3 bg-zinc-900 border border-zinc-850 p-6 rounded-2xl shadow-xl">
-        <div className="flex items-center justify-between mb-4 pb-2 border-b border-zinc-850">
-          <h3 className="font-extrabold text-white text-sm uppercase font-mono tracking-wider flex items-center gap-1.5">
-            <PlusCircle className="text-orange-500 w-4.5 h-4.5" /> Launch custom
+      <div className="lg:col-span-3 glass-panel border border-white/10 p-6 rounded-3xl shadow-2xl">
+        <div className="flex items-center justify-between mb-4 pb-3 border-b border-white/10">
+          <h3 className="font-extrabold text-white text-sm uppercase font-mono tracking-wider flex items-center gap-2">
+            <PlusCircle className="text-rose-500 w-4.5 h-4.5" /> Launch custom
             meme coin
           </h3>
         </div>
 
         {success ? (
           <div className="py-12 flex flex-col items-center justify-center text-center gap-3 animate-scale-up font-mono">
-            <div className="w-14 h-14 bg-emerald-950 text-emerald-400 border border-emerald-900 rounded-full flex items-center justify-center text-3xl shadow-lg">
+            <div className="w-16 h-16 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded-3xl flex items-center justify-center text-3xl shadow-xl">
               🚀
             </div>
             <h4 className="font-extrabold text-white text-sm uppercase tracking-wide mt-2">
               Coin Launched Successfully!
             </h4>
-            <p className="text-xs text-zinc-400 max-w-sm font-medium leading-relaxed">
-              Your logo has been listed on the main Market! Watch dynamic droll
+            <p className="text-xs text-zinc-300 max-w-sm font-medium leading-relaxed">
+              Your coin has been listed on the main Market! Watch dynamic droll
               users in the Shill Room discuss and trade your coin.
             </p>
           </div>
@@ -206,19 +206,19 @@ export default function CreateCoinTab({ setCoins, coins }: CreateCoinProps) {
           >
             {/* Emoji Symbol Icon picker */}
             <div className="flex flex-col gap-2">
-              <label className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
+              <label className="text-[10px] text-zinc-400 uppercase tracking-widest font-bold">
                 Select Coin Avatar Symbol
               </label>
-              <div className="flex flex-wrap gap-2 bg-zinc-950 p-3.5 rounded-xl border border-zinc-950">
+              <div className="flex flex-wrap gap-2 glass-card p-3.5 rounded-2xl border border-white/10">
                 {emojiList.map((emoji) => (
                   <button
                     key={emoji}
                     type="button"
                     onClick={() => setSelectedEmoji(emoji)}
-                    className={`w-9 h-9 rounded-lg flex items-center justify-center text-lg transition-transform ${
+                    className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg transition-transform cursor-pointer ${
                       selectedEmoji === emoji
-                        ? "bg-orange-600 border border-orange-500 scale-110 text-white shadow shadow-orange-950"
-                        : "bg-zinc-900 border border-zinc-850 hover:bg-zinc-800"
+                        ? "bg-rose-600 border border-white/30 scale-110 text-white shadow-lg shadow-rose-900/30"
+                        : "glass-card border border-white/10 hover:bg-white/[0.08]"
                     }`}
                   >
                     {emoji}
@@ -229,8 +229,8 @@ export default function CreateCoinTab({ setCoins, coins }: CreateCoinProps) {
 
             {/* Name fields */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="flex flex-col gap-1">
-                <label className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] text-zinc-400 uppercase tracking-widest font-bold">
                   Coin Name
                 </label>
                 <input
@@ -238,12 +238,12 @@ export default function CreateCoinTab({ setCoins, coins }: CreateCoinProps) {
                   placeholder="e.g. Cat Revival"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="bg-zinc-950 border border-zinc-800 focus:border-orange-500 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none"
+                  className="glass-input rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-rose-500 font-bold"
                 />
               </div>
 
-              <div className="flex flex-col gap-1">
-                <label className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] text-zinc-400 uppercase tracking-widest font-bold">
                   Symbol TICKER
                 </label>
                 <input
@@ -252,51 +252,51 @@ export default function CreateCoinTab({ setCoins, coins }: CreateCoinProps) {
                   placeholder="e.g. MEW"
                   value={symbol}
                   onChange={(e) => setSymbol(e.target.value.slice(0, 4))}
-                  className="bg-zinc-950 border border-zinc-800 focus:border-orange-500 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none uppercase"
+                  className="glass-input rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-rose-500 font-bold uppercase"
                 />
               </div>
             </div>
 
             {/* Desc fields */}
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[10px] text-zinc-400 uppercase tracking-widest font-bold">
                 Description / Pitch
               </label>
               <textarea
-                placeholder="pitch your coin to attract droll traders fr..."
+                placeholder="pitch your coin to attract traders..."
                 value={desc}
                 onChange={(e) => setDesc(e.target.value)}
                 rows={3}
-                className="bg-zinc-950 border border-zinc-800 focus:border-orange-500 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none resize-none"
+                className="glass-input rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-rose-500 font-bold resize-none"
               />
             </div>
 
             {/* Launch Breakdown */}
-            <div className="bg-zinc-950/80 p-3.5 rounded-xl border border-zinc-950 flex flex-col gap-2 font-mono text-[11px] leading-relaxed select-none">
+            <div className="glass-card p-4 rounded-2xl border border-white/10 flex flex-col gap-2 font-mono text-[11px] leading-relaxed select-none">
               <div className="flex justify-between">
-                <span className="text-zinc-500">Listing listing fee:</span>
-                <span className="text-zinc-300">$100.00</span>
+                <span className="text-zinc-400">Listing fee:</span>
+                <span className="text-zinc-200 font-bold">$100.00</span>
               </div>
               <div className="flex justify-between pb-1">
-                <span className="text-zinc-500">
+                <span className="text-zinc-400">
                   Initial TVL Liquidity injection:
                 </span>
-                <span className="text-zinc-305 text-emerald-400">
+                <span className="text-emerald-400 font-bold">
                   $1,000.00
                 </span>
               </div>
-              <div className="h-px bg-zinc-900" />
+              <div className="h-px bg-white/10" />
               <div className="flex justify-between font-bold mt-1">
-                <span className="text-zinc-400 font-extrabold uppercase text-[10px]">
+                <span className="text-zinc-300 font-extrabold uppercase text-[10px]">
                   Total launching cost:
                 </span>
-                <span className="text-rose-400 font-extrabold">$1,100.00</span>
+                <span className="text-rose-400 font-extrabold text-sm">$1,100.00</span>
               </div>
             </div>
 
             {errorMsg && (
-              <div className="bg-red-500/10 border border-red-500/30 p-3 rounded-xl flex items-center gap-2 text-red-400 font-bold mb-2">
-                <AlertOctagon className="w-4 h-4 shrink-0" />
+              <div className="bg-rose-500/15 border border-rose-500/40 p-3.5 rounded-2xl flex items-center gap-2.5 text-rose-300 font-bold mb-2">
+                <AlertOctagon className="w-4 h-4 shrink-0 text-rose-400" />
                 <span className="text-[11px] leading-tight break-words">
                   {errorMsg}
                 </span>
@@ -306,7 +306,7 @@ export default function CreateCoinTab({ setCoins, coins }: CreateCoinProps) {
             <button
               type="submit"
               disabled={isLaunching}
-              className="w-full bg-orange-600 hover:bg-orange-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-black py-3.5 rounded-xl text-xs uppercase tracking-widest transition-colors shadow-lg shadow-orange-950/15 border border-orange-500"
+              className="w-full bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-black py-3.5 rounded-2xl text-xs uppercase tracking-widest transition-all shadow-xl shadow-rose-900/20 border border-white/20 active:scale-98 cursor-pointer"
             >
               {isLaunching ? "Launching Coin..." : "Confirm & Launch Token"}
             </button>
@@ -316,13 +316,13 @@ export default function CreateCoinTab({ setCoins, coins }: CreateCoinProps) {
 
       {/* Guide explanations column */}
       <div className="lg:col-span-2 flex flex-col gap-4 font-mono select-none">
-        <h3 className="text-sm font-extrabold text-zinc-400 uppercase tracking-widest flex items-center gap-1.5">
-          <HelpCircle className="w-4 h-4 text-orange-500" /> Creator Game Loop
+        <h3 className="text-sm font-extrabold text-zinc-300 uppercase tracking-widest flex items-center gap-1.5">
+          <HelpCircle className="w-4 h-4 text-rose-500" /> Creator Game Loop
         </h3>
 
-        <div className="bg-zinc-900 border border-zinc-805 p-5 rounded-2xl flex flex-col gap-4 text-xs font-semibold select-none leading-relaxed text-zinc-400">
-          <div className="flex gap-2.5 items-start">
-            <div className="w-5 h-5 rounded bg-zinc-950 flex items-center justify-center font-extrabold text-orange-400 border border-zinc-850 shrink-0 mt-0.5">
+        <div className="glass-panel border border-white/10 p-5 rounded-3xl flex flex-col gap-4 text-xs font-semibold select-none leading-relaxed text-zinc-400 shadow-xl">
+          <div className="flex gap-3 items-start">
+            <div className="w-6 h-6 rounded-xl glass-card flex items-center justify-center font-extrabold text-rose-400 border border-white/10 shrink-0 mt-0.5 shadow-sm">
               1
             </div>
             <p>
@@ -335,8 +335,8 @@ export default function CreateCoinTab({ setCoins, coins }: CreateCoinProps) {
             </p>
           </div>
 
-          <div className="flex gap-2.5 items-start">
-            <div className="w-5 h-5 rounded bg-zinc-950 flex items-center justify-center font-extrabold text-orange-400 border border-zinc-850 shrink-0 mt-0.5">
+          <div className="flex gap-3 items-start">
+            <div className="w-6 h-6 rounded-xl glass-card flex items-center justify-center font-extrabold text-rose-400 border border-white/10 shrink-0 mt-0.5 shadow-sm">
               2
             </div>
             <p>

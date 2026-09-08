@@ -216,7 +216,7 @@ export default function ArcadeTab({
         onAddNotification(
           "Winner Coinflip",
           `Won $${reward.toLocaleString("en-US")} on ${coinSide.toUpperCase()}!`,
-          "achievement",
+          "info",
         );
       } else {
         setCoinResultMsg(
@@ -288,7 +288,7 @@ export default function ArcadeTab({
       onAddNotification(
         "JACKPOT SLOT",
         `Hit triple ${finalReels[0]} for $${payout} return!`,
-        "achievement",
+        "info",
       );
     } else if (matchCount === 2) {
       // 2 of same (reduction to 0.95x to ensure consistent house edge while rewarding small wins)
@@ -500,7 +500,7 @@ export default function ArcadeTab({
         onAddNotification(
           "Winner Dice Roll",
           `Hit ${landedFace} on Dice Roll for 3x!`,
-          "achievement",
+          "info",
         );
       } else {
         setDiceResultMsg(
@@ -656,9 +656,9 @@ export default function ArcadeTab({
       {/* Universal in-game localNotice toast notifications */}
       {localNotice && (
         <div
-          className={`fixed bottom-4 right-4 left-4 sm:left-auto sm:max-w-md bg-zinc-950 border-2 ${
-            localNotice.isError ? "border-rose-500/80" : "border-emerald-500/80"
-          } p-4 rounded-xl shadow-2xl flex items-center justify-between gap-4 z-50 animate-fade-in`}
+          className={`fixed bottom-4 right-4 left-4 sm:left-auto sm:max-w-md glass-panel border ${
+            localNotice.isError ? "border-rose-500/60" : "border-emerald-500/60"
+          } p-4 rounded-2xl shadow-2xl flex items-center justify-between gap-4 z-50 animate-fade-in`}
         >
           <div className="flex items-start gap-2.5">
             <span className="text-xl leading-none">
@@ -668,14 +668,14 @@ export default function ArcadeTab({
               <span className="text-xs font-black text-white">
                 {localNotice.title}
               </span>
-              <span className="text-[10px] text-zinc-400 mt-0.5">
+              <span className="text-[10px] text-zinc-300 mt-0.5">
                 {localNotice.message}
               </span>
             </div>
           </div>
           <button
             onClick={() => setLocalNotice(null)}
-            className="text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
+            className="text-zinc-400 hover:text-white transition-colors cursor-pointer p-1 rounded-lg hover:bg-white/10"
           >
             <X className="w-4 h-4" />
           </button>
@@ -684,19 +684,19 @@ export default function ArcadeTab({
 
       {/* Sleek Custom Dark-Themed Tower Result Overlay Modal */}
       {showTowerResultModal && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4 select-none">
-          <div className="bg-zinc-900 border-2 border-zinc-800 p-6 rounded-3xl max-w-sm w-full relative font-mono text-center shadow-2xl animate-fade-in">
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-md z-50 flex items-center justify-center p-4 select-none">
+          <div className="glass-modal p-6 rounded-3xl max-w-sm w-full relative font-mono text-center shadow-2xl animate-fade-in">
             <button
               onClick={() => setShowTowerResultModal(null)}
-              className="absolute top-4 right-4 text-zinc-500 hover:text-zinc-200 transition-colors"
+              className="absolute top-4 right-4 text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors"
             >
               <X className="w-4 h-4" />
             </button>
             <div
               className={`w-14 h-14 rounded-2xl flex items-center justify-center text-3xl mx-auto mb-4 border shadow-lg ${
                 showTowerResultModal.success
-                  ? "bg-emerald-950 border-emerald-500/30 text-emerald-450"
-                  : "bg-rose-950 border-rose-500/30 text-rose-450"
+                  ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300"
+                  : "bg-rose-500/20 border-rose-500/40 text-rose-300"
               }`}
             >
               {showTowerResultModal.success ? "🏆" : "💀"}
@@ -710,20 +710,20 @@ export default function ArcadeTab({
             >
               {showTowerResultModal.title}
             </h3>
-            <p className="text-xs text-zinc-400 mb-5 leading-relaxed font-semibold">
+            <p className="text-xs text-zinc-300 mb-5 leading-relaxed font-semibold">
               {showTowerResultModal.message}
             </p>
 
             {showTowerResultModal.success &&
               showTowerResultModal.payout !== undefined && (
-                <div className="bg-zinc-950/80 p-3.5 rounded-2xl border border-zinc-900/60 w-full mb-5 flex flex-col gap-1 text-center select-none font-mono">
-                  <span className="text-[9px] text-zinc-500 uppercase font-bold tracking-widest">
+                <div className="glass-card p-3.5 rounded-2xl border border-white/10 w-full mb-5 flex flex-col gap-1 text-center select-none font-mono">
+                  <span className="text-[9px] text-zinc-400 uppercase font-bold tracking-widest">
                     Winnings Received
                   </span>
                   <span className="text-xl font-extrabold text-emerald-400">
                     +${showTowerResultModal.payout.toLocaleString()}
                   </span>
-                  <span className="text-[10px] text-zinc-500 font-bold">
+                  <span className="text-[10px] text-zinc-400 font-bold">
                     Multiplier: {showTowerResultModal.multiplier?.toFixed(2)}x
                   </span>
                 </div>
@@ -731,10 +731,10 @@ export default function ArcadeTab({
 
             <button
               onClick={() => setShowTowerResultModal(null)}
-              className={`w-full py-3.5 rounded-xl font-black text-xs uppercase tracking-wider transition-all select-none border font-mono ${
+              className={`w-full py-3.5 rounded-2xl font-black text-xs uppercase tracking-wider transition-all select-none border font-mono cursor-pointer ${
                 showTowerResultModal.success
-                  ? "bg-emerald-600 hover:bg-emerald-500 border-emerald-500 hover:brightness-110 active:scale-98 text-white"
-                  : "bg-zinc-950 border-zinc-850 hover:bg-zinc-805 text-zinc-350"
+                  ? "bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 border-white/20 active:scale-98 text-white shadow-xl"
+                  : "glass-pill border border-white/15 hover:bg-white/10 text-zinc-200"
               }`}
             >
               {showTowerResultModal.success ? "Collect Profits" : "Try Again"}
@@ -745,22 +745,22 @@ export default function ArcadeTab({
 
       {/* Side selection column */}
       <div className="flex flex-col gap-2.5">
-        <h2 className="text-xs font-extrabold text-zinc-400 font-mono tracking-widest uppercase flex items-center gap-1.5 mb-1.5 leading-none">
-          <Gamepad2 className="text-orange-500 w-4 h-4" /> Arcade Selection
+        <h2 className="text-xs font-extrabold text-zinc-300 font-mono tracking-widest uppercase flex items-center gap-2 mb-1.5 leading-none">
+          <Gamepad2 className="text-rose-500 w-4 h-4" /> Arcade Selection
         </h2>
         {(["coinflip", "slots", "mines", "dice", "tower"] as const).map(
           (game) => (
             <button
               key={game}
               onClick={() => setSelectedGame(game)}
-              className={`px-4 py-3 rounded-xl border font-bold text-xs font-mono uppercase tracking-wider flex items-center justify-between text-left transition-colors select-none ${
+              className={`px-4 py-3 rounded-2xl border font-bold text-xs font-mono uppercase tracking-wider flex items-center justify-between text-left transition-all select-none cursor-pointer ${
                 selectedGame === game
-                  ? "bg-zinc-900 text-white border-orange-500/80 shadow-md text-glow"
-                  : "bg-zinc-950 text-zinc-500 border-zinc-900/60 hover:text-zinc-300 hover:border-zinc-800"
+                  ? "bg-rose-500/20 text-white border-rose-500/50 shadow-lg shadow-rose-950/20"
+                  : "glass-card text-zinc-400 border-white/10 hover:text-white hover:bg-white/[0.08]"
               }`}
             >
               <span>{game} simulator</span>
-              <span className="text-[10px] bg-zinc-950 px-1 border border-zinc-900 rounded select-none uppercase font-black text-zinc-650 opacity-60">
+              <span className="text-[10px] glass-pill px-1.5 py-0.5 border border-white/10 rounded-md select-none uppercase font-black text-zinc-300">
                 {game === "coinflip"
                   ? "1.9x"
                   : game === "slots"
@@ -773,14 +773,14 @@ export default function ArcadeTab({
       </div>
 
       {/* Main Game Screen panel */}
-      <div className="lg:col-span-3 bg-zinc-900 border border-zinc-850 p-6 rounded-2xl flex flex-col justify-between shadow-2xl relative min-h-[440px]">
+      <div className="lg:col-span-3 glass-panel border border-white/10 p-6 rounded-3xl flex flex-col justify-between shadow-2xl relative min-h-[440px]">
         {/* Game Title Headers */}
-        <div className="flex items-center justify-between mb-4 border-b border-zinc-850/80 pb-3">
+        <div className="flex items-center justify-between mb-4 border-b border-white/10 pb-3">
           <div className="flex flex-col gap-0.5">
             <h3 className="font-extrabold text-white text-sm capitalize font-mono tracking-wider flex items-center gap-1.5 leading-none">
-              <Sparkles className="w-4 h-4 text-orange-400" /> {selectedGame}
+              <Sparkles className="w-4 h-4 text-rose-400" /> {selectedGame}
             </h3>
-            <span className="text-xs text-zinc-500 font-medium leading-none">
+            <span className="text-xs text-zinc-400 font-medium leading-none mt-1">
               {selectedGame === "coinflip" &&
                 "50/50 double-or-nothing simulator."}
               {selectedGame === "slots" &&
@@ -794,8 +794,8 @@ export default function ArcadeTab({
             </span>
           </div>
 
-          <div className="flex items-center gap-1 bg-zinc-950 p-2 border border-zinc-900/50 rounded-xl font-mono text-xs select-none shadow">
-            <span className="text-zinc-500">Balance:</span>
+          <div className="flex items-center gap-1.5 glass-card p-2 px-3 border border-white/10 rounded-2xl font-mono text-xs select-none shadow-sm">
+            <span className="text-zinc-400">Balance:</span>
             <span className="font-extrabold text-emerald-400">
               $
               {userStats.cash.toLocaleString("en-US", {
@@ -807,7 +807,7 @@ export default function ArcadeTab({
         </div>
 
         {/* Dynamic Game Workspace view */}
-        <div className="flex-1 flex flex-col justify-center items-center py-4 bg-zinc-950/40 p-4 border border-zinc-900/50 rounded-2xl">
+        <div className="flex-1 flex flex-col justify-center items-center py-4 glass-card p-4 border border-white/10 rounded-2xl">
           {selectedGame === "coinflip" && (
             <div className="flex flex-col items-center gap-5 w-full max-w-xs font-mono">
               <div className="flex bg-zinc-950 p-1 rounded-xl border border-zinc-900 gap-1 w-full text-center text-xs font-bold uppercase select-none">

@@ -39,21 +39,21 @@ export function TradesHistoryTab({
 
   return (
     <div className="flex flex-col gap-6 animate-fade-in">
-      <div className="flex items-center gap-3 border-b border-zinc-900 pb-4">
-        <div className="p-3 bg-zinc-900 rounded-xl">
+      <div className="flex items-center gap-3 border-b border-white/10 pb-4">
+        <div className="p-3 glass-card rounded-2xl border border-white/10 shadow-sm">
           <Activity className="w-6 h-6 text-emerald-400" />
         </div>
         <div>
           <h2 className="text-xl font-bold font-mono tracking-widest text-zinc-100 uppercase">
             Global Trade History
           </h2>
-          <p className="text-zinc-500 font-mono text-sm">
+          <p className="text-zinc-400 font-mono text-sm">
             Live execution log
           </p>
         </div>
       </div>
 
-      <div className="bg-zinc-900 shadow-xl rounded-2xl border border-zinc-900/50 p-6 flex flex-col gap-3">
+      <div className="glass-panel shadow-2xl rounded-3xl border border-white/10 p-6 flex flex-col gap-3">
         {loading ? (
              <SkeletonLoader type="list" />
         ) : trades.length > 0 ? (
@@ -63,21 +63,21 @@ export function TradesHistoryTab({
                  const resolvedHandle = trade.userName || registeredUsers.find((u: any) => u.uid === trade.userId)?.handle || trade.userId.substring(0, 8);
                  const resolvedSymbol = trade.coinTicker || (coin ? coin.symbol : "UNKNOWN");
                  return (
-                     <div key={trade.$id} className="flex justify-between items-center bg-zinc-950/50 p-3 rounded-lg border border-zinc-900">
+                     <div key={trade.$id} className="flex justify-between items-center glass-card p-4 rounded-2xl border border-white/10 shadow-sm">
                          <div className="flex flex-col">
-                             <div className="text-xs text-zinc-500 flex items-center gap-1.5"><Clock className="w-3.5 h-3.5"/> {new Date(trade.$createdAt).toLocaleString()}</div>
-                             <div className="text-zinc-300 font-mono text-sm mt-1 truncate max-w-[120px]">{resolvedHandle}</div>
+                             <div className="text-xs text-zinc-400 flex items-center gap-1.5"><Clock className="w-3.5 h-3.5"/> {new Date(trade.$createdAt).toLocaleString()}</div>
+                             <div className="text-zinc-200 font-mono text-sm mt-1 truncate max-w-[120px] font-bold">{resolvedHandle}</div>
                          </div>
                          <div className="flex items-center gap-4">
-                             <span className="font-mono text-zinc-400">{(amountUsd >= 1000 ? (amountUsd/1000).toFixed(2) + "K" : amountUsd.toFixed(2))} USD</span>
-                             <span className="font-mono text-zinc-500 text-xs">*{resolvedSymbol}</span>
-                             <span className={`font-mono text-xs px-2 py-1 uppercase rounded font-bold overflow-hidden ${trade.type === 'BUY' ? 'text-emerald-400 bg-emerald-950/40' : trade.type === 'TRANSFER' ? 'text-fuchsia-400 bg-fuchsia-950/30' : 'text-rose-450 bg-rose-950/40'}`}>{trade.type}</span>
+                             <span className="font-mono text-zinc-300 font-bold">{(amountUsd >= 1000 ? (amountUsd/1000).toFixed(2) + "K" : amountUsd.toFixed(2))} USD</span>
+                             <span className="font-mono text-zinc-400 text-xs">*{resolvedSymbol}</span>
+                             <span className={`font-mono text-xs px-2.5 py-1 uppercase rounded-full font-black border ${trade.type === 'BUY' ? 'text-emerald-300 bg-emerald-500/20 border-emerald-500/40' : trade.type === 'TRANSFER' ? 'text-fuchsia-300 bg-fuchsia-500/20 border-fuchsia-500/40' : 'text-rose-300 bg-rose-500/20 border-rose-500/40'}`}>{trade.type}</span>
                          </div>
                      </div>
                  )
              })
         ) : (
-             <div className="text-zinc-500 font-mono text-center py-6">No trades found.</div>
+             <div className="text-zinc-400 font-mono text-center py-6">No trades found.</div>
         )}
       </div>
     </div>

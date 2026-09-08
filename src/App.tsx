@@ -14,7 +14,6 @@ import PolymarketTab from "./components/PolymarketTab";
 import ArcadeTab from "./components/ArcadeTab";
 import LeaderboardTab from "./components/LeaderboardTab";
 import ShopTab from "./components/ShopTab";
-import AchievementsTab from "./components/AchievementsTab";
 import PortfolioTab from "./components/PortfolioTab";
 import TreemapTab from "./components/TreemapTab";
 import CreateCoinTab from "./components/CreateCoinTab";
@@ -32,7 +31,6 @@ import {
   PortfolioHolding,
   LiveTrade,
   PredictionMarket,
-  Achievement,
   ActiveTab,
   NotificationItem,
   SimulatedPlayer,
@@ -40,7 +38,6 @@ import {
 } from "./types";
 import { INITIAL_COINS } from "./data/memeCoins";
 import {
-  Award,
   Gift,
   Sparkles,
   X,
@@ -143,6 +140,42 @@ const PRESTIGE_NAMES = [
   "Absolute Dev V",
   "Interstellar Sage VI",
 ];
+
+const parseDateToIso = (input: string): string => {
+  if (!input || input === "TBD") {
+    const d = new Date();
+    d.setDate(d.getDate() + 7);
+    return d.toISOString();
+  }
+  const parsed = Date.parse(input);
+  if (!isNaN(parsed)) {
+    return new Date(parsed).toISOString();
+  }
+  const lower = input.toLowerCase();
+  const d = new Date();
+  if (lower.includes("hour")) {
+    const match = lower.match(/\d+/);
+    const hrs = match ? parseInt(match[0]) : 2;
+    d.setHours(d.getHours() + hrs);
+    return d.toISOString();
+  }
+  if (lower.includes("day") || lower.includes("tomorrow")) {
+    const match = lower.match(/\d+/);
+    const days = match ? parseInt(match[0]) : (lower.includes("tomorrow") ? 1 : 3);
+    d.setDate(d.getDate() + days);
+    return d.toISOString();
+  }
+  if (lower.includes("week") || lower.includes("friday")) {
+    d.setDate(d.getDate() + 7);
+    return d.toISOString();
+  }
+  if (lower.includes("month")) {
+    d.setMonth(d.getMonth() + 1);
+    return d.toISOString();
+  }
+  d.setDate(d.getDate() + 7);
+  return d.toISOString();
+};
 
 // Safe LocalStorage wrapper to prevent blocking patterns in restrictive browsers
 const safeStorage = {
@@ -376,11 +409,33 @@ export default function App() {
   });
   const [holdings, setHoldings] = useState<PortfolioHolding[]>([]);
   const [liveTrades, setLiveTrades] = useState<LiveTrade[]>([]);
-  const [markets, setMarkets] = useState<PredictionMarket[]>([]);
+  const [markets, setMarkets] = useState<PredictionMarket[]>(() => {
+    const cached = safeStorage.getItem("pumpforge_polymarkets");
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      } catch (e) {
+        console.warn("Failed to load cached polymarkets:", e);
+      }
+    }
+    return [];
+  });
   const [userBets, setUserBets] = useState<{
     [marketId: string]: { side: "YES" | "NO"; amount: number };
-  }>({});
-  const [achievements, setAchievements] = useState<Achievement[]>([]);
+  }>(() => {
+    const cached = safeStorage.getItem("pumpforge_user_bets");
+    if (cached) {
+      try {
+        return JSON.parse(cached);
+      } catch (e) {
+        console.warn("Failed to load cached user bets:", e);
+      }
+    }
+    return {};
+  });
   const [registeredUsers, setRegisteredUsers] = useState<
     (UserStats & { uid: string })[]
   >([]);
@@ -907,7 +962,7 @@ export default function App() {
 
           
 
-          // Fetch holdings and achievements from Appwrite
+          // Fetch holdings from Appwrite
           try {
              const { databases } = await import("./appwrite");
              const { Query } = await import("appwrite");
@@ -924,116 +979,8 @@ export default function App() {
                    avgBuyPrice: d.avgBuyPrice ?? d.avgPrice ?? d.price ?? 0
                 })));
              }
-
-             // Fetch achievements
-             const aDocs = await databases.listDocuments("pumpforge", "achievements", [
-                Query.equal("userId", uid)
-             ]);
-             
-             const defaultAch = [
-                {
-                  id: "a1",
-                  title: "Baby's First Buy",
-                  description: "Procure your first simulated meme coin.",
-                  category: "trading",
-                  target: 1,
-                  current: 0,
-                  claimed: false,
-                  cashReward: 200,
-                  gemReward: 15,
-                },
-                {
-                  id: "a2",
-                  title: "Paper Hands",
-                  description: "Dump an asset for simulated losses.",
-                  category: "trading",
-                  target: 1,
-                  current: 0,
-                  claimed: false,
-                  cashReward: 100,
-                  gemReward: 10,
-                },
-                {
-                  id: "a3",
-                  title: "Swaps Accumulator",
-                  description: "Execute 10 successful coin purchases.",
-                  category: "trading",
-                  target: 10,
-                  current: 0,
-                  claimed: false,
-                  cashReward: 1200,
-                  gemReward: 40,
-                },
-                {
-                  id: "a4",
-                  title: "Creative Intelligence",
-                  description: "Launch your first customized token dev asset.",
-                  category: "creation",
-                  target: 1,
-                  current: 0,
-                  claimed: false,
-                  cashReward: 1500,
-                  gemReward: 50,
-                },
-                {
-                  id: "a5",
-                  title: "Trading Master",
-                  description: "Create your first meme coin.",
-                  category: "creation",
-                  target: 1,
-                  current: 0,
-                  claimed: false,
-                  cashReward: 4000,
-                  gemReward: 100,
-                },
-                {
-                  id: "a6",
-                  title: "Cash Hoarder I",
-                  description: "Accumulate $50,000 cash balance reserves.",
-                  category: "wealth",
-                  target: 50000,
-                  current: profileDoc.cash ?? 5000,
-                  claimed: false,
-                  cashReward: 3500,
-                  gemReward: 75,
-                },
-                {
-                  id: "a7",
-                  title: "Prestige Pioneer",
-                  description:
-                    "Reset status to activate permanent Prestige Level I.",
-                  category: "prestige",
-                  target: 1,
-                  current: profileDoc.prestigeLevel ?? 0,
-                  claimed: false,
-                  cashReward: 10000,
-                  gemReward: 250,
-                },
-                {
-                  id: "a8",
-                  title: "Prestige Elite V",
-                  description: "Advance to Prestige level 5.",
-                  category: "prestige",
-                  target: 5,
-                  current: profileDoc.prestigeLevel ?? 0,
-                  claimed: false,
-                  cashReward: 100000,
-                  gemReward: 1500,
-                },
-             ];
-
-             if (active) {
-                const mergedAchs = defaultAch.map(da => {
-                   const found = aDocs.documents.find(ad => ad.achievementId === da.id);
-                   if (found) {
-                      return { ...da, current: Math.max(da.current, found.current || 0), claimed: found.claimed };
-                   }
-                   return da;
-                });
-                setAchievements(mergedAchs);
-             }
           } catch(e) {
-             console.error("Failed to fetch holdings/achievements from Appwrite", e);
+             console.error("Failed to fetch holdings from Appwrite", e);
           }
         } else {
           // If search for standard session failed, but we ALREADY have a valid safeStorage cached session,
@@ -1060,10 +1007,6 @@ export default function App() {
             );
             if (active && cachedHoldings)
               setHoldings(JSON.parse(cachedHoldings));
-            const cachedAchs = safeStorage.getItem(
-              `memex_achievements_${parsedUser.uid || parsedUser.$id}`,
-            );
-            if (active && cachedAchs) setAchievements(JSON.parse(cachedAchs));
           } else {
             // Throw error to trigger unauthenticated clean states
             throw new Error(
@@ -1112,97 +1055,6 @@ export default function App() {
             createdAt: new Date().toISOString(),
           });
           setHoldings([]);
-          setAchievements([
-            {
-              id: "a1",
-              title: "Baby's First Buy",
-              description: "Procure your first simulated meme coin.",
-              category: "trading",
-              target: 1,
-              current: 0,
-              claimed: false,
-              cashReward: 200,
-              gemReward: 15,
-            },
-            {
-              id: "a2",
-              title: "Paper Hands",
-              description: "Dump an asset for simulated losses.",
-              category: "trading",
-              target: 1,
-              current: 0,
-              claimed: false,
-              cashReward: 100,
-              gemReward: 10,
-            },
-            {
-              id: "a3",
-              title: "Swaps Accumulator",
-              description: "Execute 10 successful coin purchases.",
-              category: "trading",
-              target: 10,
-              current: 0,
-              claimed: false,
-              cashReward: 1200,
-              gemReward: 40,
-            },
-            {
-              id: "a4",
-              title: "Creative Intelligence",
-              description: "Launch your first customized token dev asset.",
-              category: "creation",
-              target: 1,
-              current: 0,
-              claimed: false,
-              cashReward: 1500,
-              gemReward: 50,
-            },
-            {
-              id: "a5",
-              title: "Trading Master",
-              description: "Create your first meme coin.",
-              category: "creation",
-              target: 1,
-              current: 0,
-              claimed: false,
-              cashReward: 4000,
-              gemReward: 100,
-            },
-            {
-              id: "a6",
-              title: "Cash Hoarder I",
-              description: "Accumulate $50,000 cash balance reserves.",
-              category: "wealth",
-              target: 50000,
-              current: 10000,
-              claimed: false,
-              cashReward: 3500,
-              gemReward: 75,
-            },
-            {
-              id: "a7",
-              title: "Prestige Pioneer",
-              description:
-                "Reset status to activate permanent Prestige Level I.",
-              category: "prestige",
-              target: 1,
-              current: 0,
-              claimed: false,
-              cashReward: 10000,
-              gemReward: 250,
-            },
-            {
-              id: "a8",
-              title: "Prestige Elite V",
-              description: "Advance to Prestige level 5.",
-              category: "prestige",
-              target: 5,
-              current: 0,
-              claimed: false,
-              cashReward: 100000,
-              gemReward: 1500,
-            },
-          ]);
         }
       } finally {
         if (active) {
@@ -1489,8 +1341,62 @@ export default function App() {
        fetchCoins();
     });
 
-    // Prediction markets global listener
-    const DEFAULT_MARKETS = [
+    // Prediction markets live feed Appwrite Real-Time
+    const fetchPredictionMarkets = async () => {
+      try {
+        const { Query } = await import("appwrite");
+        const res = await databases.listDocuments("pumpforge", "polymarkets", [
+          Query.limit(100),
+          Query.orderDesc("$createdAt"),
+        ]);
+
+        if (res.documents.length > 0) {
+          const list: PredictionMarket[] = res.documents.map((d: any) => {
+            const parts = (d.question || "").split(" --- ");
+            const question = parts[0] || d.question || "Untitled Prediction";
+            const description = parts[1] || "";
+            const yesPool = Number(d.poolYes || 0);
+            const noPool = Number(d.poolNo || 0);
+            const total = yesPool + noPool;
+            const yesPercentage = total > 0 ? Math.round((yesPool / total) * 100) : 50;
+
+            let endTime = "TBD";
+            if (d.endDate) {
+              try {
+                const dateObj = new Date(d.endDate);
+                if (!isNaN(dateObj.getTime())) {
+                  endTime = dateObj.toLocaleDateString(undefined, {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                  });
+                }
+              } catch {}
+            }
+
+            return {
+              id: d.$id,
+              question,
+              description,
+              yesPool,
+              noPool,
+              yesPercentage,
+              userBetAmount: 0,
+              userBetSide: null,
+              resolved: d.status === "closed",
+              resolvedOutcome:
+                d.winningOutcome === "YES" || d.winningOutcome === "NO"
+                  ? d.winningOutcome
+                  : null,
+              endTime,
+              category: "general",
+            };
+          });
+
+          setMarkets(list);
+          safeStorage.setItem("pumpforge_polymarkets", JSON.stringify(list));
+        } else {
+          const DEFAULT_MARKETS = [
             {
               id: "m1",
               question: "Will *ROAD hit a $150K valuation by Friday?",
@@ -1529,6 +1435,20 @@ export default function App() {
             },
           ];
           setMarkets(DEFAULT_MARKETS as any[]);
+        }
+      } catch (err) {
+        console.error("Failed to fetch Appwrite polymarkets:", err);
+      }
+    };
+
+    fetchPredictionMarkets();
+
+    const polymarketsUnsub = client.subscribe(
+      "databases.pumpforge.collections.polymarkets.documents",
+      () => {
+        fetchPredictionMarkets();
+      }
+    );
           
     // Trades live feed Appwrite Real-Time
     const fetchTrades = async () => {
@@ -1583,6 +1503,7 @@ export default function App() {
       tradesUnsub();
       usersUnsub();
       broadcastsUnsub();
+      polymarketsUnsub();
     };
   }, []);
 
@@ -1590,6 +1511,8 @@ export default function App() {
 
   useEffect(() => {
     let unsub = () => {};
+    let wagersUnsub = () => {};
+
     if (currentUser?.uid || currentUser?.$id) {
       const uid = currentUser?.uid || currentUser?.$id;
       // Appwrite Real-time Notifications Subscription for active user
@@ -1609,8 +1532,49 @@ export default function App() {
       } catch (e) {
         console.warn("Appwrite Realtime subscription failed. (Skipping)", e);
       }
+
+      // Appwrite Real-time Wagers Subscription & Fetch
+      const fetchUserWagers = async () => {
+        try {
+          const { Query } = await import("appwrite");
+          const res = await databases.listDocuments("pumpforge", "wagers", [
+            Query.equal("userId", uid),
+            Query.limit(100),
+          ]);
+          const betsMap: { [marketId: string]: { side: "YES" | "NO"; amount: number } } = {};
+          for (const w of res.documents) {
+            betsMap[w.polymarketId] = {
+              side: w.choice === "YES" || w.choice === "NO" ? w.choice : "YES",
+              amount: Number(w.amount || 0),
+            };
+          }
+          setUserBets((prev) => {
+            const merged = { ...prev, ...betsMap };
+            safeStorage.setItem("pumpforge_user_bets", JSON.stringify(merged));
+            return merged;
+          });
+        } catch (err) {
+          console.warn("Failed to fetch user wagers from Appwrite:", err);
+        }
+      };
+
+      fetchUserWagers();
+
+      try {
+        wagersUnsub = client.subscribe(
+          "databases.pumpforge.collections.wagers.documents",
+          () => {
+            fetchUserWagers();
+          }
+        );
+      } catch (e) {
+        console.warn("Wagers realtime subscription failed:", e);
+      }
     }
-    return () => unsub();
+    return () => {
+      unsub();
+      wagersUnsub();
+    };
   }, [currentUser]);
 
   // 4. WORKER INTERVALS
@@ -1652,28 +1616,6 @@ export default function App() {
     const timer = setInterval(updateDailyCooldown, 45000); // refresh timer check
     return () => clearInterval(timer);
   }, [userStats?.lastClaimed, userStats?.lastDailyRewardClaim]);
-
-  // Update specific current achievement trackers whenever statistics change
-  useEffect(() => {
-    setAchievements((prev) =>
-      prev.map((ach) => {
-        let nextVal = ach.current;
-        if (ach.id === "a1" && userStats.tradesCount >= 1) nextVal = 1;
-        if (ach.id === "a3") nextVal = userStats.tradesCount;
-        if (ach.id === "a4" && userStats.coinsCreatedCount >= 1) nextVal = 1;
-        if (ach.id === "a6") nextVal = Math.floor(userStats.cash);
-        if (ach.id === "a7" && userStats.prestigeLevel >= 1) nextVal = 1;
-        if (ach.id === "a8") nextVal = userStats.prestigeLevel;
-
-        return { ...ach, current: nextVal };
-      }),
-    );
-  }, [
-    userStats.cash,
-    userStats.tradesCount,
-    userStats.coinsCreatedCount,
-    userStats.prestigeLevel,
-  ]);
 
   // Check for suspension expiration to auto-unsuspend
   useEffect(() => {
@@ -2128,39 +2070,6 @@ export default function App() {
         }
       }
 
-      if (profitDelta < 0) {
-        if (currentUser) {
-          try {
-            const { Query, ID } = await import("appwrite");
-            const { databases } = await import("./appwrite");
-            const uid = currentUser.$id || currentUser.uid;
-            const achDocs = await databases.listDocuments("pumpforge", "achievements", [
-               Query.equal("userId", uid),
-               Query.equal("achievementId", "a2")
-            ]);
-            if (achDocs.documents.length > 0) {
-              await databases.updateDocument("pumpforge", "achievements", achDocs.documents[0].$id, {
-                current: 1
-              });
-            } else {
-              await databases.createDocument("pumpforge", "achievements", ID.unique(), {
-                userId: uid,
-                achievementId: "a2",
-                claimed: false,
-                current: 1
-              });
-            }
-          } catch (e) {
-            console.error("Achievement update failure: ", e);
-          }
-        }
-        setAchievements((p) =>
-          p.map((ach) =>
-            ach.id === "a2" ? { ...ach, current: 1 } : ach,
-          ),
-        );
-      }
-
       onAddNotification(
         "Sell order filled",
         `Sold ${amountCoins.toLocaleString()} *${coin.symbol} for $${totalUsdVal.toFixed(2)}`,
@@ -2333,206 +2242,106 @@ export default function App() {
       return;
     }
 
-    const market = markets.find((m) => m.id === marketId);
-    if (!market) return;
+    if (amount <= 0) {
+      toast.error("Please enter a valid bet amount.");
+      return;
+    }
 
+    if (userStats.cash < amount) {
+      toast.error("Insufficient cash balance for this bet.");
+      return;
+    }
+
+    const market = markets.find((m) => m.id === marketId);
+    if (!market) {
+      toast.error("Market not found.");
+      return;
+    }
+
+    if (market.resolved) {
+      toast.error("This prediction market has already been resolved.");
+      return;
+    }
+
+    const uid = currentUser.$id || currentUser.uid;
     const nextCash = userStats.cash - amount;
 
-    if (currentUser) {
-      try {
-        const { databases } = await import("./appwrite");
-        const uid = currentUser.$id || currentUser.uid;
-        
-        await databases.updateDocument("pumpforge", "users", uid, {
-          cash: nextCash
-        });
-      } catch (e) {
-        console.error("Polymarket bet err", e);
-      }
-    }
-    
-    // Fallback UI update
-    setUserBets((prev) => ({
-      ...prev,
-      [marketId]: { side, amount },
-    }));
-
+    // 1. Optimistic updates
     setUserStats((prev) => ({
       ...prev,
       cash: nextCash,
     }));
-  };
 
-  const claimAchievement = async (id: string) => {
-    const ach = achievements.find((a) => a.id === id);
-    if (!ach || ach.claimed) return;
+    const newYesPool = side === "YES" ? (market.yesPool || 0) + amount : (market.yesPool || 0);
+    const newNoPool = side === "NO" ? (market.noPool || 0) + amount : (market.noPool || 0);
+    const totalPool = newYesPool + newNoPool;
+    const newYesPct = totalPool > 0 ? Math.round((newYesPool / totalPool) * 100) : 50;
 
-    const nextCash = userStats.cash + ach.cashReward;
-    const nextGems = userStats.gems + ach.gemReward;
+    setMarkets((prev) =>
+      prev.map((m) =>
+        m.id === marketId
+          ? {
+              ...m,
+              yesPool: newYesPool,
+              noPool: newNoPool,
+              yesPercentage: newYesPct,
+            }
+          : m
+      )
+    );
 
-    if (currentUser) {
-      try {
-        const { databases } = await import("./appwrite");
-        const uid = currentUser.uid || currentUser.$id;
-        
-        // Update user stats
-        await databases.updateDocument("pumpforge", "users", uid, {
-          cash: nextCash,
-          gems: nextGems,
-        });
-
-        // Try to update or create achievement doc
-        try {
-           const { Query, ID } = await import("appwrite");
-           const achDocs = await databases.listDocuments("pumpforge", "achievements", [
-              Query.equal("userId", uid),
-              Query.equal("achievementId", id)
-           ]);
-           if (achDocs.documents.length > 0) {
-              await databases.updateDocument("pumpforge", "achievements", achDocs.documents[0].$id, {
-                 claimed: true
-              });
-           } else {
-              await databases.createDocument("pumpforge", "achievements", ID.unique(), {
-                 userId: uid,
-                 achievementId: id,
-                 claimed: true,
-                 current: ach.current
-              });
-           }
-        } catch (e) {
-           console.error("Failed to update achievement in Appwrite", e);
-        }
-
-        setAchievements((prev) =>
-          prev.map((a) => (a.id === id ? { ...a, claimed: true } : a)),
-        );
-
-        setUserStats((prev) => ({
-          ...prev,
-          cash: nextCash,
-          gems: nextGems,
-        }));
-      } catch (e) {
-        console.error("Failed to process achievement claim", e);
-      }
-    } else {
-      setAchievements((prev) =>
-        prev.map((a) => (a.id === id ? { ...a, claimed: true } : a)),
-      );
-
-      setUserStats((prev) => ({
+    setUserBets((prev) => {
+      const updated = {
         ...prev,
+        [marketId]: { side, amount },
+      };
+      safeStorage.setItem("pumpforge_user_bets", JSON.stringify(updated));
+      return updated;
+    });
+
+    toast.success(`Position confirmed: $${amount.toLocaleString()} on ${side}!`);
+    onAddNotification(
+      "BET PLACED",
+      `Wagered $${amount.toLocaleString()} on ${side} for "${market.question.slice(0, 32)}..."`,
+      "trade"
+    );
+
+    // 2. Persist to Appwrite
+    try {
+      const { databases } = await import("./appwrite");
+      const { ID, Permission, Role } = await import("appwrite");
+
+      // Update user cash
+      await databases.updateDocument("pumpforge", "users", uid, {
         cash: nextCash,
-        gems: nextGems,
-      }));
-    }
+      });
 
-    onAddNotification(
-      "Milestone Claimed",
-      `Checked off "${ach.title}"! Gained $${ach.cashReward} & 💎 ${ach.gemReward}!`,
-      "info",
-    );
-  };
-
-  const claimAllAchievements = async () => {
-    if (!currentUser) {
-      setSignInReason("claim achievement rewards and earn money");
-      setShowSignInModal(true);
-      return;
-    }
-
-    const claimable = achievements.filter(
-      (a) => a.current >= a.target && !a.claimed,
-    );
-    if (claimable.length === 0) return;
-
-    let totalCash = 0;
-    let totalGems = 0;
-
-    if (currentUser) {
-      try {
-        const { databases } = await import("./appwrite");
-        const uid = currentUser.uid || currentUser.$id;
-
-        for (const ach of claimable) {
-          totalCash += ach.cashReward;
-          totalGems += ach.gemReward;
-          
-          try {
-             // Try to update or create achievement
-             const { Query, ID } = await import("appwrite");
-             const achDocs = await databases.listDocuments("pumpforge", "achievements", [
-                Query.equal("userId", uid),
-                Query.equal("achievementId", ach.id)
-             ]);
-             if (achDocs.documents.length > 0) {
-                await databases.updateDocument("pumpforge", "achievements", achDocs.documents[0].$id, {
-                   claimed: true
-                });
-             } else {
-                await databases.createDocument("pumpforge", "achievements", ID.unique(), {
-                   userId: uid,
-                   achievementId: ach.id,
-                   claimed: true,
-                   current: ach.current
-                });
-             }
-          } catch(e) {
-             console.error("Failed to claim achievement part", e);
-          }
-        }
-
-        const nextCash = userStats.cash + totalCash;
-        const nextGems = userStats.gems + totalGems;
-
-        await databases.updateDocument("pumpforge", "users", uid, {
-          cash: nextCash,
-          gems: nextGems,
-        });
-
-        setAchievements((prev) =>
-          prev.map((a) => {
-            if (claimable.find((c) => c.id === a.id)) return { ...a, claimed: true };
-            return a;
-          })
-        );
-        setUserStats((prev) => ({
-          ...prev,
-          cash: nextCash,
-          gems: nextGems,
-        }));
-      } catch (e) {
-        console.error("claimAllAchievements failed", e);
-      }
-    } else {
-      setAchievements((prev) =>
-        prev.map((a) => {
-          if (a.current >= a.target && !a.claimed) {
-            totalCash += a.cashReward;
-            totalGems += a.gemReward;
-            return { ...a, claimed: true };
-          }
-          return a;
-        }),
+      // Create wager document
+      await databases.createDocument(
+        "pumpforge",
+        "wagers",
+        ID.unique(),
+        {
+          userId: uid,
+          polymarketId: marketId,
+          amount: Number(amount),
+          choice: side,
+          isPaid: false,
+        },
+        [
+          Permission.read(Role.any()),
+          Permission.update(Role.any()),
+        ]
       );
 
-      setUserStats((prev) => ({
-        ...prev,
-        cash: prev.cash + totalCash,
-        gems: prev.gems + totalGems,
-      }));
+      // Update market pool numbers
+      await databases.updateDocument("pumpforge", "polymarkets", marketId, {
+        poolYes: newYesPool,
+        poolNo: newNoPool,
+      });
+    } catch (e: any) {
+      console.error("Polymarket wager sync error:", e);
     }
-
-    onAddNotification(
-      "Bulk Claimed",
-      `Claimed ${claimable.length} rewards: $${totalCash.toLocaleString()} and 💎 ${totalGems}!`,
-      "info",
-    );
-    triggerToast(
-      "Bulk Claim Complete",
-      `Gathered +$${totalCash.toLocaleString()} Cash and +${totalGems} Gems!`,
-    );
   };
 
   const handlePrestigeSystem = async () => {
@@ -2600,10 +2409,6 @@ export default function App() {
         tradesCount: 0,
         coinsCreatedCount: 0,
       }));
-
-      setAchievements((prev) =>
-        prev.map((ach) => (ach.id === "a7" ? { ...ach, current: 1 } : ach)),
-      );
 
       onAddNotification(
         "PRESTIGE ACQUIRED",
@@ -2844,7 +2649,6 @@ export default function App() {
     setUserStats(prev => ({ ...prev, cash: 5000, gems: 0, coinsCreatedCount: 0, totalProfit: 0, tradesCount: 0, prestigeLevel: 0 }));
     setHoldings([]);
     setUserBets({});
-    setAchievements(prev => prev.map(a => ({ ...a, claimed: false, current: 0 })));
     toast.success("Game reset to defaults.");
   };
 
@@ -2860,9 +2664,77 @@ export default function App() {
     return m;
   });
 
-  const handleCreatePredictionLocal = async (market: any) => {
-    setMarkets(prev => [market, ...prev]);
-    toast.success("Prediction market created.");
+  const handleCreatePredictionLocal = async (marketData: any) => {
+    try {
+      const { databases } = await import("./appwrite");
+      const { ID, Permission, Role } = await import("appwrite");
+
+      const isoDate = parseDateToIso(marketData.endTime);
+      const combinedQuestion = marketData.description
+        ? `${marketData.question} --- ${marketData.description}`
+        : marketData.question;
+
+      const doc = await databases.createDocument(
+        "pumpforge",
+        "polymarkets",
+        ID.unique(),
+        {
+          question: combinedQuestion,
+          endDate: isoDate,
+          status: "active",
+          poolYes: 0,
+          poolNo: 0,
+          winningOutcome: null,
+        },
+        [
+          Permission.read(Role.any()),
+          Permission.update(Role.any()),
+        ]
+      );
+
+      const newMarket: PredictionMarket = {
+        id: doc.$id,
+        question: marketData.question,
+        description: marketData.description || "",
+        yesPool: 0,
+        noPool: 0,
+        yesPercentage: 50,
+        userBetAmount: 0,
+        userBetSide: null,
+        resolved: false,
+        resolvedOutcome: null,
+        endTime: marketData.endTime || new Date(isoDate).toLocaleDateString(),
+        category: "general",
+      };
+
+      setMarkets((prev) => [newMarket, ...prev]);
+      safeStorage.setItem("pumpforge_polymarkets", JSON.stringify([newMarket, ...markets]));
+      toast.success("Prediction market proposed & published live!");
+      onAddNotification(
+        "MARKET PROPOSED",
+        `New prediction market created: "${marketData.question}"`,
+        "info"
+      );
+    } catch (err: any) {
+      console.error("Error creating polymarket in Appwrite:", err);
+      const localId = "m_" + Date.now();
+      const fallbackMarket: PredictionMarket = {
+        id: localId,
+        question: marketData.question,
+        description: marketData.description || "",
+        yesPool: 0,
+        noPool: 0,
+        yesPercentage: 50,
+        userBetAmount: 0,
+        userBetSide: null,
+        resolved: false,
+        resolvedOutcome: null,
+        endTime: marketData.endTime || "TBD",
+        category: "general",
+      };
+      setMarkets((prev) => [fallbackMarket, ...prev]);
+      toast.success("Prediction market created locally.");
+    }
   };
 
   const handleSendMoney = async (handle: string, amount: number, type: string) => {
@@ -2902,10 +2774,17 @@ export default function App() {
   };
 
   return (
-    <div className="flex min-h-screen bg-zinc-950 text-zinc-100 flex-col md:flex-row">
+    <div className="flex min-h-screen bg-[#09090d] text-zinc-100 flex-col md:flex-row relative selection:bg-rose-500/30 selection:text-white overflow-hidden">
+      {/* Dynamic ambient luminous backdrop for genuine glass refraction */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0" aria-hidden="true">
+        <div className="absolute -top-[20%] -left-[10%] w-[55vw] h-[55vw] max-w-[700px] max-h-[700px] rounded-full bg-gradient-to-br from-rose-600/12 via-pink-600/5 to-transparent blur-3xl" />
+        <div className="absolute top-[35%] -right-[10%] w-[50vw] h-[50vw] max-w-[650px] max-h-[650px] rounded-full bg-gradient-to-bl from-indigo-600/10 via-purple-600/5 to-transparent blur-3xl" />
+        <div className="absolute -bottom-[20%] left-[25%] w-[45vw] h-[45vw] max-w-[600px] max-h-[600px] rounded-full bg-gradient-to-t from-emerald-600/8 via-teal-600/4 to-transparent blur-3xl" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(120,119,198,0.08),rgba(255,255,255,0))]" />
+      </div>
+
       <Sidebar
         userStats={userStats}
-        achievements={achievements}
         onClaimDailyReward={handleClaimDailyReward}
         liveTrades={liveTrades}
         registeredUsers={registeredUsers}
@@ -2921,9 +2800,7 @@ export default function App() {
         onOpenBugReportModal={() => setShowBugReportModal(true)}
       />
 
-      <main className="flex-1 min-w-0 p-5 md:p-8 max-w-7xl mx-auto flex flex-col gap-6 overflow-x-hidden">
-        {/* Offline banner removed */}
-
+      <main className="flex-1 min-w-0 p-5 md:p-8 max-w-7xl mx-auto flex flex-col gap-6 overflow-x-hidden relative z-10">
         {/* Real-time Synced Broadcast Banners */}
         {broadcasts
           .filter(
@@ -2935,29 +2812,29 @@ export default function App() {
             // Determine styling theme based on type
             let icon = <BellRing className="w-5 h-5 text-indigo-400" />;
             let containerStyle =
-              "bg-indigo-950/20 border-indigo-900/40 text-indigo-300";
-            let labelStyle = "text-indigo-400 bg-indigo-500/10";
+              "glass-card border-indigo-500/20 text-indigo-300";
+            let labelStyle = "text-indigo-400 bg-indigo-500/15 border border-indigo-500/30";
 
             if (b.type === "trade") {
               icon = <TrendingUp className="w-5 h-5 text-emerald-400" />;
               containerStyle =
-                "bg-emerald-950/25 border-emerald-900/40 text-emerald-300";
-              labelStyle = "text-emerald-400 bg-emerald-500/10";
+                "glass-card border-emerald-500/20 text-emerald-300";
+              labelStyle = "text-emerald-400 bg-emerald-500/15 border border-emerald-500/30";
             } else if (b.type === "achievement") {
               icon = <Crown className="w-5 h-5 text-amber-400" />;
               containerStyle =
-                "bg-amber-950/25 border-amber-900/40 text-amber-300";
-              labelStyle = "text-amber-400 bg-amber-500/10";
+                "glass-card border-amber-500/20 text-amber-300";
+              labelStyle = "text-amber-400 bg-amber-500/15 border border-amber-500/30";
             } else if (b.type === "crash" || b.type === "delist") {
               icon = <Skull className="w-5 h-5 text-rose-450 animate-pulse" />;
               containerStyle =
-                "bg-rose-950/25 border-rose-900/45 text-rose-300";
-              labelStyle = "text-rose-400 bg-rose-500/10";
+                "glass-card border-rose-500/25 text-rose-300";
+              labelStyle = "text-rose-400 bg-rose-500/15 border border-rose-500/30";
             } else if (b.type === "info") {
               icon = <Sparkles className="w-5 h-5 text-cyan-400" />;
               containerStyle =
-                "bg-cyan-950/25 border-cyan-900/40 text-cyan-300";
-              labelStyle = "text-cyan-400 bg-cyan-500/10";
+                "glass-card border-cyan-500/20 text-cyan-300";
+              labelStyle = "text-cyan-400 bg-cyan-500/15 border border-cyan-500/30";
             }
 
             return (
@@ -3013,8 +2890,6 @@ export default function App() {
               <HomeTab
                 coins={coins}
                 userStats={userStats}
-                achievements={achievements}
-                onClaimAchievement={claimAchievement}
                 onTradeCoin={(coinId) => {
                   navigate(`/coin/${coinId}`);
                 }}
@@ -3144,19 +3019,6 @@ export default function App() {
                   onAddNotification={onAddNotification}
                 />
               )
-            }
-          />
-
-          <Route
-            path="/achievements"
-            element={
-              <AchievementsTab
-                achievements={achievements}
-                userStats={userStats}
-                currentUser={currentUser}
-                onClaimAchievement={claimAchievement}
-                onClaimAll={claimAllAchievements}
-              />
             }
           />
 
@@ -3325,7 +3187,6 @@ export default function App() {
                 userStats={userStats}
                 holdings={holdings}
                 coins={coins}
-                achievements={achievements}
                 liveTrades={liveTrades}
               />
             }
@@ -3335,40 +3196,40 @@ export default function App() {
 
       {/* Extreme prestige popup confirmation */}
       {showPrestigeModal && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl max-w-sm w-full relative font-mono text-center select-none animate-slide-up">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-xl z-50 flex items-center justify-center p-4">
+          <div className="glass-modal p-6 rounded-2xl max-w-sm w-full relative font-mono text-center select-none animate-slide-up">
             <button
               onClick={() => setShowPrestigeModal(false)}
-              className="absolute top-4 right-4 text-zinc-500 hover:text-zinc-200"
+              className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-100 transition-colors cursor-pointer"
             >
               ✕
             </button>
-            <div className="w-12 h-12 bg-orange-950 border border-orange-900 text-orange-400 rounded-xl flex items-center justify-center text-3xl mx-auto mb-3 shadow-lg animate-pulse">
+            <div className="w-12 h-12 bg-orange-500/15 border border-orange-500/30 text-orange-400 rounded-xl flex items-center justify-center text-3xl mx-auto mb-3 shadow-lg shadow-orange-950/40 animate-pulse">
               👑
             </div>
             <h3 className="text-sm font-extrabold text-white uppercase tracking-wider mb-2">
               Prestige Reset System
             </h3>
-            <p className="text-xs text-zinc-400 mb-4 leading-relaxed font-semibold">
+            <p className="text-xs text-zinc-300 mb-4 leading-relaxed font-semibold">
               Ready to reset your current gains to lock in permanent
               perks? Resetting requires{" "}
-              <strong className="text-zinc-200">
+              <strong className="text-white">
                 $100,000.00 cash reserves
               </strong>
               .
             </p>
 
-            <div className="bg-zinc-950 p-3 rounded-xl border border-zinc-900 text-xs text-left mb-4 flex flex-col gap-1.5 leading-normal">
-              <span className="text-[10px] text-zinc-500 uppercase font-black">
+            <div className="glass-card p-3.5 rounded-xl border border-white/10 text-xs text-left mb-4 flex flex-col gap-1.5 leading-normal">
+              <span className="text-[10px] text-zinc-400 uppercase font-black">
                 Prestige Gains:
               </span>
               <span className="text-emerald-400 font-bold">
                 • Permanently increases daily rewards by +25%
               </span>
-              <span className="text-cyan-405 font-bold">
+              <span className="text-cyan-400 font-bold">
                 • Immediately unlocks +500 Gems
               </span>
-              <span className="text-yellow-400 font-bold">
+              <span className="text-amber-400 font-bold">
                 • Upgrades your public title next to name
               </span>
             </div>
@@ -3376,13 +3237,13 @@ export default function App() {
             <div className="flex flex-col gap-2">
               <button
                 onClick={handlePrestigeSystem}
-                className="w-full bg-orange-655 hover:bg-orange-550 py-3 rounded-xl font-bold font-mono text-xs text-white shadow border border-orange-550"
+                className="w-full bg-gradient-to-r from-orange-600 to-rose-600 hover:from-orange-500 hover:to-rose-500 py-3 rounded-xl font-bold font-mono text-xs text-white shadow-lg border border-white/20 active:scale-98 transition-all cursor-pointer"
               >
                 Confirm Prestige Reset
               </button>
               <button
                 onClick={() => setShowPrestigeModal(false)}
-                className="w-full bg-zinc-950 hover:bg-zinc-800 py-2 rounded-xl text-zinc-400 hover:text-white border border-zinc-850 text-xs"
+                className="w-full glass-card hover:bg-white/[0.08] py-2 rounded-xl text-zinc-400 hover:text-white border border-white/10 text-xs transition-colors cursor-pointer"
               >
                 Cancel
               </button>
@@ -3391,12 +3252,11 @@ export default function App() {
         </div>
       )}
 
-      {/* Styled custom Daily Reward alert toast as seen in video */}
       {/* Universal customToast notifications */}
       {customToast && (
         <div
-          className={`fixed bottom-4 right-4 left-4 sm:left-auto sm:max-w-md bg-zinc-950 border-2 ${
-            customToast.isError ? "border-rose-500/80" : "border-sky-500/80"
+          className={`fixed bottom-4 right-4 left-4 sm:left-auto sm:max-w-md glass-panel border ${
+            customToast.isError ? "border-rose-500/50 shadow-rose-950/50" : "border-cyan-500/50 shadow-cyan-950/50"
           } p-4 rounded-xl shadow-2xl flex items-center justify-between gap-4 z-50 animate-fade-in`}
         >
           <div className="flex items-start gap-2.5">
@@ -3407,14 +3267,14 @@ export default function App() {
               <span className="text-xs font-black text-white">
                 {customToast.title}
               </span>
-              <span className="text-[10px] text-zinc-400 mt-0.5">
+              <span className="text-[10px] text-zinc-300 mt-0.5">
                 {customToast.message}
               </span>
             </div>
           </div>
           <button
             onClick={() => setCustomToast(null)}
-            className="text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
+            className="text-zinc-400 hover:text-white transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -3424,28 +3284,28 @@ export default function App() {
       {/* Google Sign-In Intercept Modal */}
       {showSignInModal && (
         <div
-          className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 bg-black/70 backdrop-blur-xl z-50 flex items-center justify-center p-4"
           id="google-auth-intercept-modal"
         >
-          <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl max-w-sm w-full relative font-mono text-center select-none animate-slide-up">
+          <div className="glass-modal p-6 rounded-2xl max-w-sm w-full relative font-mono text-center select-none animate-slide-up">
             <button
               onClick={() => {
                 setShowSignInModal(false);
                 setSignInReason("");
               }}
-              className="absolute top-4 right-4 text-zinc-500 hover:text-zinc-200"
+              className="absolute top-4 right-4 text-zinc-400 hover:text-white cursor-pointer"
             >
               ✕
             </button>
-            <div className="w-12 h-12 bg-rose-950 border border-rose-900 text-rose-400 rounded-xl flex items-center justify-center text-3xl mx-auto mb-3 shadow-lg animate-pulse">
+            <div className="w-12 h-12 bg-rose-500/15 border border-rose-500/30 text-rose-400 rounded-xl flex items-center justify-center text-3xl mx-auto mb-3 shadow-lg animate-pulse">
               🔒
             </div>
             <h3 className="text-sm font-extrabold text-white uppercase tracking-wider mb-2">
               Authentication Required
             </h3>
-            <p className="text-xs text-zinc-400 mb-6 leading-relaxed">
+            <p className="text-xs text-zinc-300 mb-6 leading-relaxed">
               Google authentication is required to{" "}
-              <span className="text-rose-450 font-semibold">
+              <span className="text-rose-400 font-semibold">
                 {signInReason || "interact with this feature"}
               </span>
               . Sign in to link your progress, trade securely, and back up
@@ -3459,7 +3319,7 @@ export default function App() {
                   setSignInReason("");
                   await handleGoogleSignIn();
                 }}
-                className="w-full bg-gradient-to-r from-orange-500 to-rose-600 hover:from-orange-600 hover:to-rose-700 py-3 rounded-xl font-bold font-mono text-xs text-white shadow border border-orange-500 flex items-center justify-center gap-2"
+                className="w-full bg-gradient-to-r from-orange-500 to-rose-600 hover:from-orange-600 hover:to-rose-700 py-3 rounded-xl font-bold font-mono text-xs text-white shadow-lg border border-white/20 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-98"
                 id="modal-google-signin-btn"
               >
                 <LogIn className="w-4 h-4 text-white" />
@@ -3470,7 +3330,7 @@ export default function App() {
                   setShowSignInModal(false);
                   setSignInReason("");
                 }}
-                className="w-full bg-zinc-950 hover:bg-zinc-850 py-2 rounded-xl text-zinc-400 hover:text-white border border-zinc-850 text-xs"
+                className="w-full glass-card hover:bg-white/[0.08] py-2 rounded-xl text-zinc-400 hover:text-white border border-white/10 text-xs transition-colors cursor-pointer"
               >
                 Close
               </button>
@@ -3490,21 +3350,21 @@ export default function App() {
 
       {/* Delete Coin Confirmation Modal */}
       {coinToDelete && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl max-w-sm w-full relative font-mono text-center select-none animate-slide-up">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-xl z-50 flex items-center justify-center p-4">
+          <div className="glass-modal p-6 rounded-2xl max-w-sm w-full relative font-mono text-center select-none animate-slide-up">
             <button
               onClick={() => setCoinToDelete(null)}
-              className="absolute top-4 right-4 text-zinc-500 hover:text-zinc-200"
+              className="absolute top-4 right-4 text-zinc-400 hover:text-white cursor-pointer"
             >
               ✕
             </button>
-            <div className="w-12 h-12 bg-red-950/80 border border-red-900 text-red-500 rounded-xl flex items-center justify-center text-2xl mx-auto mb-3 shadow-lg">
+            <div className="w-12 h-12 bg-red-500/15 border border-red-500/30 text-red-400 rounded-xl flex items-center justify-center text-2xl mx-auto mb-3 shadow-lg">
               🗑️
             </div>
             <h3 className="text-sm font-extrabold text-white uppercase tracking-wider mb-2">
               Delete Listed Token?
             </h3>
-            <p className="text-xs text-zinc-400 mb-6 leading-relaxed">
+            <p className="text-xs text-zinc-300 mb-6 leading-relaxed">
               Are you sure you want to permanently delete{" "}
               <span className="text-rose-400 font-bold">
                 *{coins.find((c) => c.id === coinToDelete)?.symbol || "Token"}
@@ -3516,13 +3376,13 @@ export default function App() {
             <div className="flex flex-col gap-2">
               <button
                 onClick={handleConfirmDeleteOwnCoin}
-                className="w-full bg-red-650 hover:bg-red-700 py-3 rounded-xl font-bold font-mono text-xs text-white shadow border border-red-500 flex items-center justify-center gap-2 transition-colors"
+                className="w-full bg-rose-600 hover:bg-rose-500 py-3 rounded-xl font-bold font-mono text-xs text-white shadow-lg border border-white/20 flex items-center justify-center gap-2 transition-colors cursor-pointer active:scale-98"
               >
                 Permanently Delete
               </button>
               <button
                 onClick={() => setCoinToDelete(null)}
-                className="w-full bg-zinc-950 hover:bg-zinc-850 py-2 rounded-xl text-zinc-400 hover:text-white border border-zinc-850 text-xs"
+                className="w-full glass-card hover:bg-white/[0.08] py-2 rounded-xl text-zinc-400 hover:text-white border border-white/10 text-xs transition-colors cursor-pointer"
               >
                 Keep Listing (Cancel)
               </button>
@@ -3533,21 +3393,21 @@ export default function App() {
 
       {/* Log Out Confirmation Modal */}
       {showSignOutConfirm && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl max-w-sm w-full relative font-mono text-center select-none animate-slide-up">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-xl z-50 flex items-center justify-center p-4">
+          <div className="glass-modal p-6 rounded-2xl max-w-sm w-full relative font-mono text-center select-none animate-slide-up">
             <button
               onClick={() => setShowSignOutConfirm(false)}
-              className="absolute top-4 right-4 text-zinc-500 hover:text-zinc-200"
+              className="absolute top-4 right-4 text-zinc-400 hover:text-white cursor-pointer"
             >
               ✕
             </button>
-            <div className="w-12 h-12 bg-zinc-950 border border-zinc-800 text-orange-500 rounded-xl flex items-center justify-center text-2xl mx-auto mb-3 shadow-lg">
+            <div className="w-12 h-12 bg-amber-500/15 border border-amber-500/30 text-amber-400 rounded-xl flex items-center justify-center text-2xl mx-auto mb-3 shadow-lg">
               👋
             </div>
             <h3 className="text-sm font-extrabold text-white uppercase tracking-wider mb-2">
               Log Out of Profile?
             </h3>
-            <p className="text-xs text-zinc-400 mb-6 leading-relaxed">
+            <p className="text-xs text-zinc-300 mb-6 leading-relaxed">
               Are you sure you want to sign out? You will be returned to Guest
               Sandbox mode, where progress is saved locally but not synced with
               the cloud.
@@ -3556,13 +3416,13 @@ export default function App() {
             <div className="flex flex-col gap-2">
               <button
                 onClick={handleConfirmSignOut}
-                className="w-full bg-gradient-to-r from-orange-500 to-rose-600 hover:from-orange-600 hover:to-rose-700 py-3 rounded-xl font-bold font-mono text-xs text-white shadow border border-orange-500 flex items-center justify-center gap-2 transition-all"
+                className="w-full bg-gradient-to-r from-orange-500 to-rose-600 hover:from-orange-600 hover:to-rose-700 py-3 rounded-xl font-bold font-mono text-xs text-white shadow-lg border border-white/20 flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-98"
               >
                 Sign Out
               </button>
               <button
                 onClick={() => setShowSignOutConfirm(false)}
-                className="w-full bg-zinc-950 hover:bg-zinc-850 py-2 rounded-xl text-zinc-400 hover:text-white border border-zinc-850 text-xs"
+                className="w-full glass-card hover:bg-white/[0.08] py-2 rounded-xl text-zinc-400 hover:text-white border border-white/10 text-xs transition-colors cursor-pointer"
               >
                 Stay Logged In
               </button>

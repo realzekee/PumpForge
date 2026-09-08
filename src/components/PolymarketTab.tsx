@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { PredictionMarket } from "../types";
-import { Coins, CheckCircle, XCircle, Users, Activity, Plus } from "lucide-react";
+import { Coins, CheckCircle, XCircle, Users, Activity, Plus, TrendingUp, Clock } from "lucide-react";
 
 export default function PolymarketTab({
   markets,
@@ -40,103 +40,165 @@ export default function PolymarketTab({
     setNewMarket({ question: "", description: "", endTime: "" });
   };
 
+  const handleBet = (marketId: string, side: "YES" | "NO") => {
+    const raw = betAmounts[marketId];
+    const amt = Number(raw);
+    if (amt > 0) {
+      onPlaceBet(marketId, side, amt);
+      setBetAmounts((prev) => ({ ...prev, [marketId]: "" }));
+    }
+  };
+
+  const setPresetAmount = (marketId: string, val: number) => {
+    setBetAmounts((prev) => ({ ...prev, [marketId]: val.toString() }));
+  };
+
   return (
     <div className="flex flex-col gap-6 w-full h-full animate-fade-in relative">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-zinc-900 border border-zinc-800 p-6 rounded-2xl">
-        <div className="flex flex-col gap-2">
-          <h2 className="text-2xl font-black text-rose-500 flex items-center gap-2">
-            <Activity className="w-6 h-6" /> Polymarket Lobby
-          </h2>
-          <p className="text-zinc-400 text-sm max-w-xl">
-            Forecast real outcomes based on community questions. Admins resolve the markets upon reaching their target dates. Your active bets will sync automatically.
-          </p>
+      <div className="glass-panel border border-white/10 p-6 md:p-8 rounded-3xl relative overflow-hidden backdrop-blur-xl shadow-2xl">
+        <div className="absolute -right-12 -bottom-12 w-64 h-64 bg-rose-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-5 relative z-10">
+          <div className="flex flex-col gap-2">
+            <h2 className="text-2xl md:text-3xl font-black text-white tracking-tight flex items-center gap-3">
+              <Activity className="w-7 h-7 text-rose-500" /> Polymarket Lobby
+            </h2>
+            <p className="text-zinc-400 text-sm max-w-xl leading-relaxed">
+              Wager on real community forecasts. All pools, bets, and market resolutions are stored permanently in Appwrite and sync across page reloads in real time.
+            </p>
+          </div>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="glass-button bg-rose-600/90 hover:bg-rose-500 text-white px-5 py-3 rounded-xl font-bold flex items-center gap-2 self-start md:self-auto border border-rose-400/30 transition shadow-lg shadow-rose-950/40 hover:scale-[1.02] active:scale-[0.98]"
+          >
+            <Plus className="w-4 h-4" /> Propose Market
+          </button>
         </div>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 self-start md:self-auto border border-zinc-700 transition"
-        >
-          <Plus className="w-4 h-4" /> Propose Market
-        </button>
       </div>
 
+      {/* Active Markets Grid */}
       <div className="flex flex-col gap-4">
-        <h3 className="text-lg font-black text-white px-1">Active Markets</h3>
+        <div className="flex items-center justify-between px-1">
+          <h3 className="text-lg font-black text-white flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 text-emerald-400" /> Active Forecasts ({activeMarkets.length})
+          </h3>
+        </div>
+
         {activeMarkets.length === 0 ? (
-          <div className="bg-zinc-900/50 border border-zinc-800 p-8 rounded-2xl text-center text-zinc-500 font-mono">
-            No active markets right now.
+          <div className="glass-card border border-white/10 p-12 rounded-3xl text-center text-zinc-500 font-mono flex flex-col items-center gap-3">
+            <Activity className="w-8 h-8 opacity-40 text-zinc-600" />
+            <span>No active prediction markets available right now.</span>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {activeMarkets.map((market) => (
-              <div key={market.id} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 flex flex-col gap-4 shadow-xl">
+              <div
+                key={market.id}
+                className="glass-card border border-white/10 rounded-3xl p-6 flex flex-col gap-4 shadow-xl hover:border-white/20 transition backdrop-blur-lg relative group"
+              >
                 <div>
-                  <h4 className="text-white font-extrabold leading-tight tracking-tight mb-2">
-                     {market.question}
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="text-[10px] font-mono font-black uppercase tracking-wider px-2.5 py-1 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                      Active Prediction
+                    </span>
+                    <span className="text-[10px] text-zinc-400 font-mono flex items-center gap-1">
+                      <Clock className="w-3 h-3 text-zinc-500" /> Ends: {market.endTime}
+                    </span>
+                  </div>
+                  <h4 className="text-white font-extrabold text-base leading-snug tracking-tight mb-2">
+                    {market.question}
                   </h4>
-                  <p className="text-xs text-zinc-400 font-medium">
-                     {market.description}
-                  </p>
-                  <p className="text-[10px] text-zinc-500 font-bold uppercase mt-2">
-                     Ends: {market.endTime}
-                  </p>
+                  {market.description && (
+                    <p className="text-xs text-zinc-400 font-medium line-clamp-2 leading-relaxed">
+                      {market.description}
+                    </p>
+                  )}
                 </div>
-                
-                <div className="flex flex-col gap-1.5 mt-auto">
-                  <div className="flex justify-between items-center text-[10px] font-bold text-zinc-500 mb-1 uppercase tracking-widest">
-                    <span className="flex items-center gap-1.5"><Users className="w-3 h-3 text-emerald-400"/> Pool YES: ${(market.yesPool || 0).toLocaleString()}</span>
-                    <span>Pool NO: ${(market.noPool || 0).toLocaleString()}</span>
+
+                <div className="flex flex-col gap-2 mt-auto pt-2">
+                  <div className="flex justify-between items-center text-[10px] font-bold text-zinc-400 uppercase tracking-widest font-mono">
+                    <span className="flex items-center gap-1.5 text-emerald-400">
+                      <Users className="w-3.5 h-3.5" /> Pool YES: ${(market.yesPool || 0).toLocaleString()}
+                    </span>
+                    <span className="text-rose-400">
+                      Pool NO: ${(market.noPool || 0).toLocaleString()}
+                    </span>
                   </div>
-                  
-                  <div className="w-full h-1.5 bg-rose-950 rounded overflow-hidden">
-                    <div className="h-full bg-emerald-500" style={{ width: `${market.yesPercentage || 50}%` }} />
+
+                  {/* Pool Progress Bar */}
+                  <div className="w-full h-2 bg-rose-950/80 rounded-full overflow-hidden border border-white/5 flex">
+                    <div
+                      className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-500 rounded-full"
+                      style={{ width: `${Math.max(4, Math.min(96, market.yesPercentage || 50))}%` }}
+                    />
                   </div>
-                  
-                  <div className="flex items-center justify-between text-xs font-black mt-1">
+
+                  <div className="flex items-center justify-between text-xs font-black font-mono">
                     <span className="text-emerald-400">{market.yesPercentage}% YES</span>
                     <span className="text-rose-400">{100 - (market.yesPercentage || 50)}% NO</span>
                   </div>
                 </div>
 
-                <div className="border-t border-zinc-800 pt-4 mt-2">
+                {/* Bet Action or Existing Position */}
+                <div className="border-t border-white/10 pt-4 mt-1">
                   {market.userBetSide ? (
-                    <div className="text-center bg-zinc-950 rounded-lg p-3 border border-zinc-800/60">
-                      <div className="text-[10px] text-zinc-500 uppercase font-black tracking-widest mb-1.5">Your Position</div>
-                      <div className="font-extrabold text-white">
-                        <span className={market.userBetSide === "YES" ? "text-emerald-400" : "text-rose-400"}>
-                           {market.userBetSide}
-                        </span>
-                        {" "} - ${market.userBetAmount.toLocaleString()}
+                    <div className="text-center bg-white/[0.04] rounded-2xl p-3.5 border border-white/10 backdrop-blur-md">
+                      <div className="text-[10px] text-zinc-400 uppercase font-black tracking-widest mb-1 font-mono">
+                        Your Active Position
+                      </div>
+                      <div className="font-black text-white text-sm">
+                        <span
+                          className={
+                            market.userBetSide === "YES"
+                              ? "text-emerald-400"
+                              : "text-rose-400"
+                          }
+                        >
+                          {market.userBetSide}
+                        </span>{" "}
+                        &bull; ${market.userBetAmount.toLocaleString()}
+                      </div>
+                      <div className="text-[10px] text-zinc-500 mt-1">
+                        Locked &amp; synced with Appwrite
                       </div>
                     </div>
                   ) : (
-                    <div className="flex flex-col gap-2">
-                      <div className="flex gap-2">
+                    <div className="flex flex-col gap-2.5">
+                      <div className="flex items-center gap-2">
                         <input
-                           type="number"
-                           placeholder="Bet amount..."
-                           className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white w-full focus:border-rose-500 outline-none"
-                           value={betAmounts[market.id] || ""}
-                           onChange={(e) => setBetAmounts({ ...betAmounts, [market.id]: e.target.value })}
+                          type="number"
+                          placeholder="Amount ($)..."
+                          className="glass-input bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-sm text-white w-full focus:border-rose-500 outline-none font-mono"
+                          value={betAmounts[market.id] || ""}
+                          onChange={(e) =>
+                            setBetAmounts({ ...betAmounts, [market.id]: e.target.value })
+                          }
                         />
                       </div>
-                      <div className="flex gap-2">
+
+                      {/* Quick Chips */}
+                      <div className="flex gap-1.5">
+                        {[25, 100, 500, 1000].map((preset) => (
+                          <button
+                            key={preset}
+                            type="button"
+                            onClick={() => setPresetAmount(market.id, preset)}
+                            className="flex-1 py-1 text-[10px] font-mono font-bold rounded-lg bg-white/5 hover:bg-white/10 text-zinc-300 border border-white/5 transition"
+                          >
+                            +${preset}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="flex gap-2 mt-1">
                         <button
-                          onClick={() => {
-                            if (Number(betAmounts[market.id]) > 0) {
-                              onPlaceBet(market.id, "YES", Number(betAmounts[market.id]));
-                            }
-                          }}
-                          className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-emerald-50 font-bold py-2.5 rounded-lg text-xs"
+                          onClick={() => handleBet(market.id, "YES")}
+                          className="flex-1 bg-emerald-600/90 hover:bg-emerald-500 text-white font-bold py-2.5 rounded-xl text-xs border border-emerald-400/30 transition shadow-md shadow-emerald-950/40 active:scale-95"
                         >
                           Buy YES
                         </button>
                         <button
-                          onClick={() => {
-                            if (Number(betAmounts[market.id]) > 0) {
-                              onPlaceBet(market.id, "NO", Number(betAmounts[market.id]));
-                            }
-                          }}
-                          className="flex-1 bg-rose-600 hover:bg-rose-500 text-rose-50 font-bold py-2.5 rounded-lg text-xs"
+                          onClick={() => handleBet(market.id, "NO")}
+                          className="flex-1 bg-rose-600/90 hover:bg-rose-500 text-white font-bold py-2.5 rounded-xl text-xs border border-rose-400/30 transition shadow-md shadow-rose-950/40 active:scale-95"
                         >
                           Buy NO
                         </button>
@@ -150,26 +212,35 @@ export default function PolymarketTab({
         )}
       </div>
 
+      {/* Resolved Markets */}
       {resolvedMarkets.length > 0 && (
-        <div className="flex flex-col gap-4 mt-4">
-          <h3 className="text-lg font-black text-white px-1">Resolved Markets</h3>
+        <div className="flex flex-col gap-4 mt-6">
+          <h3 className="text-lg font-black text-white px-1 flex items-center gap-2">
+            <CheckCircle className="w-5 h-5 text-zinc-400" /> Resolved Predictions ({resolvedMarkets.length})
+          </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {resolvedMarkets.map((market) => (
-              <div key={market.id} className="bg-zinc-950 border border-zinc-800/60 rounded-2xl p-5 flex flex-col gap-4 opacity-75">
+              <div
+                key={market.id}
+                className="glass-card border border-white/5 rounded-3xl p-6 flex flex-col gap-4 opacity-80 backdrop-blur-sm"
+              >
                 <div>
                   <h4 className="text-white font-bold leading-tight line-clamp-2 mb-2">
-                     {market.question}
+                    {market.question}
                   </h4>
+                  {market.description && (
+                    <p className="text-xs text-zinc-400 line-clamp-2">{market.description}</p>
+                  )}
                   <div className="flex items-center gap-2 mt-4 font-black">
-                     {market.resolvedOutcome === "YES" ? (
-                       <div className="px-3 py-1.5 bg-emerald-950 border border-emerald-900 text-emerald-400 rounded flex items-center gap-2 text-xs">
-                          <CheckCircle className="w-4 h-4"/> RESOLVED YES
-                       </div>
-                     ) : (
-                       <div className="px-3 py-1.5 bg-rose-950 border border-rose-900 text-rose-400 rounded flex items-center gap-2 text-xs">
-                          <XCircle className="w-4 h-4"/> RESOLVED NO
-                       </div>
-                     )}
+                    {market.resolvedOutcome === "YES" ? (
+                      <div className="px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-xl flex items-center gap-2 text-xs font-mono">
+                        <CheckCircle className="w-4 h-4" /> RESOLVED YES
+                      </div>
+                    ) : (
+                      <div className="px-3 py-1.5 bg-rose-500/10 border border-rose-500/30 text-rose-400 rounded-xl flex items-center gap-2 text-xs font-mono">
+                        <XCircle className="w-4 h-4" /> RESOLVED NO
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -178,57 +249,68 @@ export default function PolymarketTab({
         </div>
       )}
 
+      {/* Propose Market Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md p-6 flex flex-col gap-5 shadow-2xl">
-            <h3 className="text-xl font-black text-rose-400 border-b border-zinc-800 pb-3">Propose Market</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-fade-in">
+          <div className="glass-modal bg-zinc-950/90 border border-white/10 rounded-3xl w-full max-w-md p-6 md:p-8 flex flex-col gap-5 shadow-2xl backdrop-blur-2xl">
+            <div className="border-b border-white/10 pb-3 flex items-center justify-between">
+              <h3 className="text-xl font-black text-white flex items-center gap-2">
+                <Plus className="w-5 h-5 text-rose-400" /> Propose Prediction
+              </h3>
+            </div>
             <form onSubmit={handleCreate} className="flex flex-col gap-4">
-              <div className="flex flex-col gap-1">
-                <label className="text-xs text-zinc-400 font-bold uppercase tracking-wider">Question (Yes/No)</label>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs text-zinc-400 font-bold uppercase tracking-wider font-mono">
+                  Question (Yes/No Forecast)
+                </label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Will users hit 100K today?"
-                  className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-rose-500"
+                  placeholder="e.g. Will ETH break $4,000 this month?"
+                  className="glass-input bg-black/50 border border-white/10 rounded-xl px-3.5 py-2.5 text-white text-sm outline-none focus:border-rose-500"
                   value={newMarket.question}
-                  onChange={e => setNewMarket({...newMarket, question: e.target.value})}
+                  onChange={(e) => setNewMarket({ ...newMarket, question: e.target.value })}
                 />
               </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-xs text-zinc-400 font-bold uppercase tracking-wider">Information</label>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs text-zinc-400 font-bold uppercase tracking-wider font-mono">
+                  Context / Resolution Criteria
+                </label>
                 <input
                   type="text"
                   required
-                  placeholder="Additional context rules for resolving..."
-                  className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-rose-500"
+                  placeholder="Official resolution rules and data sources..."
+                  className="glass-input bg-black/50 border border-white/10 rounded-xl px-3.5 py-2.5 text-white text-sm outline-none focus:border-rose-500"
                   value={newMarket.description}
-                  onChange={e => setNewMarket({...newMarket, description: e.target.value})}
+                  onChange={(e) => setNewMarket({ ...newMarket, description: e.target.value })}
                 />
               </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-xs text-zinc-400 font-bold uppercase tracking-wider">Resolution Date</label>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs text-zinc-400 font-bold uppercase tracking-wider font-mono">
+                  Resolution Date / Target
+                </label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Friday 5PM EST"
-                  className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-rose-500"
+                  placeholder="e.g. Next Friday, or 2026-09-15"
+                  className="glass-input bg-black/50 border border-white/10 rounded-xl px-3.5 py-2.5 text-white text-sm outline-none focus:border-rose-500"
                   value={newMarket.endTime}
-                  onChange={e => setNewMarket({...newMarket, endTime: e.target.value})}
+                  onChange={(e) => setNewMarket({ ...newMarket, endTime: e.target.value })}
                 />
               </div>
-              <div className="flex justify-end gap-3 pt-2">
+              <div className="flex justify-end gap-3 pt-3">
                 <button
                   type="button"
                   onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 text-sm text-zinc-400 hover:text-white"
+                  className="px-4 py-2.5 text-sm text-zinc-400 hover:text-white transition font-medium"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white text-sm font-bold rounded-lg"
+                  className="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white text-sm font-bold rounded-xl border border-rose-400/30 transition shadow-lg shadow-rose-950/50"
                 >
-                  Propose
+                  Publish Market
                 </button>
               </div>
             </form>

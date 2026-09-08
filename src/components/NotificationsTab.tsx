@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Bell, Award, TrendingUp, AlertTriangle, Info } from "lucide-react";
+import { Bell, TrendingUp, AlertTriangle, Info } from "lucide-react";
 import { NotificationItem } from "../types";
 
 interface NotificationsTabProps {
@@ -74,8 +74,6 @@ export default function NotificationsTab({
 
   const getIcon = (type: string) => {
     switch (type) {
-      case "achievement":
-        return <Award className="w-4 h-4 text-amber-400" />;
       case "trade":
         return <TrendingUp className="w-4 h-4 text-emerald-400" />;
       case "crash":
@@ -94,33 +92,33 @@ export default function NotificationsTab({
     >
       <div className="flex flex-col">
         <h2 className="text-xl font-black text-white tracking-tight flex items-center gap-2">
-          <Bell className="w-5 h-5 text-orange-500" /> Notifications
+          <Bell className="w-5 h-5 text-rose-500" /> Notifications
         </h2>
-        <p className="text-xs text-zinc-500 font-mono tracking-wide mt-0.5">
+        <p className="text-xs text-zinc-400 font-mono tracking-wide mt-0.5">
           Stay updated with your activities
         </p>
       </div>
 
-      <div className="flex flex-col gap-2.5">
+      <div className="flex flex-col gap-3">
         {displayNotifications.map((n) => (
           <div
             key={n.id}
-            className="bg-zinc-900/30 border border-zinc-900 hover:border-zinc-850/80 p-3.5 rounded-xl flex items-start justify-between gap-4 transition-all hover:bg-zinc-900/50"
+            className="glass-card border border-white/10 hover:border-white/20 p-4 rounded-2xl flex items-start justify-between gap-4 transition-all shadow-sm"
           >
-            <div className="flex items-start gap-3">
-              <div className="w-9 h-9 rounded-xl bg-zinc-950/60 border border-zinc-850 flex items-center justify-center shrink-0">
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-xl glass-card border border-white/10 flex items-center justify-center shrink-0 shadow-inner">
                 {getIcon(n.type)}
               </div>
               <div className="flex flex-col">
-                <span className="text-xs font-extrabold text-zinc-200">
+                <span className="text-xs font-extrabold text-zinc-100">
                   {n.title}
                 </span>
-                <span className="text-xs text-zinc-400 mt-0.5">
+                <span className="text-xs text-zinc-300 mt-0.5 leading-relaxed">
                   {n.message}
                 </span>
               </div>
             </div>
-            <span className="text-[10px] text-zinc-600 font-mono shrink-0 pt-0.5">
+            <span className="text-[10px] text-zinc-400 font-mono shrink-0 pt-0.5">
               {n.timestamp}
             </span>
           </div>

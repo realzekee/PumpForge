@@ -297,19 +297,19 @@ export default function CoinDetailsTab({
       className="w-full text-zinc-300 font-mono flex flex-col gap-6"
       id="coin-details-view-container"
     >
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-900/50 pb-5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-5">
         <div className="flex items-center gap-3">
           {onBackToList && (
             <button
               onClick={onBackToList}
-              className="p-2.5 bg-zinc-900 hover:bg-zinc-855 border border-zinc-800 rounded-xl text-zinc-400 hover:text-white transition-colors duration-200 cursor-pointer"
+              className="p-2.5 glass-pill hover:bg-white/[0.12] border border-white/15 rounded-2xl text-zinc-300 hover:text-white transition-all cursor-pointer"
               title="Return to marketplace list"
             >
               <ArrowLeft className="w-4 h-4" />
             </button>
           )}
           <div className="flex flex-col">
-            <h2 className="text-xs font-extrabold text-zinc-500 uppercase tracking-widest leading-none mb-1">
+            <h2 className="text-xs font-extrabold text-zinc-400 uppercase tracking-widest leading-none mb-1">
               PRO TRADING DESK
             </h2>
             <div className="flex items-center gap-2">
@@ -321,12 +321,12 @@ export default function CoinDetailsTab({
         </div>
 
         {/* Live account stats indicator */}
-        <div className="flex items-center gap-2 bg-zinc-900/50 border border-zinc-900/80 rounded-2xl p-3 px-4 shadow-inner">
+        <div className="flex items-center gap-2 glass-card border border-white/10 rounded-2xl p-3 px-4 shadow-xl">
           <div className="flex flex-col text-right">
-            <span className="text-[9px] text-zinc-500 uppercase">
+            <span className="text-[9px] text-zinc-400 uppercase">
               Cash Reserve Balance
             </span>
-            <span className="text-sm font-black text-emerald-450 font-mono tracking-tight">
+            <span className="text-sm font-black text-emerald-400 font-mono tracking-tight">
               $
               {userStats.cash.toLocaleString("en-US", {
                 minimumFractionDigits: 2,
@@ -334,9 +334,9 @@ export default function CoinDetailsTab({
               })}
             </span>
           </div>
-          <div className="w-1.5 h-8 bg-zinc-800 rounded-full mx-1"></div>
+          <div className="w-1.5 h-8 bg-white/10 rounded-full mx-1"></div>
           <div className="flex flex-col text-right">
-            <span className="text-[9px] text-zinc-500 uppercase">
+            <span className="text-[9px] text-zinc-400 uppercase">
               Owned *{activeCoin.symbol}
             </span>
             <span className="text-sm font-black text-white font-mono">
@@ -353,17 +353,17 @@ export default function CoinDetailsTab({
         {/* Left Side: 7 Column Grid containing Aesthetics + Candlestick Module */}
         <div className="lg:col-span-12 xl:col-span-8 flex flex-col gap-6">
           <div
-            className="bg-gradient-to-br from-zinc-90 w-full bg-zinc-900/60 border border-zinc-850 p-6 rounded-3xl relative overflow-hidden shadow-xl"
+            className="glass-panel border border-white/10 p-6 rounded-3xl relative overflow-hidden shadow-2xl"
             id="token-head-metadata-card"
           >
             {/* Pulsing Grid Glow BG */}
-            <div className="absolute inset-0 bg-radial-gradient from-emerald-500/5 to-transparent pointer-events-none" />
+            <div className="absolute inset-0 bg-radial-gradient from-rose-500/10 via-transparent to-transparent pointer-events-none" />
 
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-5 relative z-10">
               {/* Asset Identity Avatar Flag */}
               <div className="flex items-center gap-4">
                 <div
-                  className={`w-14 h-14 rounded-2xl border-2 flex items-center justify-center text-3xl shadow-lg border-zinc-700/60 bg-zinc-950`}
+                  className={`w-14 h-14 rounded-2xl border-2 flex items-center justify-center text-3xl shadow-lg border-white/20 bg-white/[0.05] backdrop-blur-md`}
                 >
                   {activeCoin.avatarEmoji || "🌟"}
                 </div>
@@ -373,19 +373,19 @@ export default function CoinDetailsTab({
                     <span className="font-extrabold text-white text-lg tracking-tight leading-none">
                       {activeCoin.name}
                     </span>
-                    <span className="text-xs bg-zinc-950 text-zinc-400 font-bold border border-zinc-800 px-1.5 py-0.5 rounded uppercase font-mono tracking-wider">
+                    <span className="text-xs bg-white/[0.08] text-zinc-300 font-bold border border-white/10 px-2 py-0.5 rounded-lg uppercase font-mono tracking-wider">
                       *{activeCoin.symbol}
                     </span>
-                    <span className="px-2 py-0.5 rounded-full text-[8px] bg-emerald-950/80 border border-emerald-500/40 text-emerald-400 font-extrabold flex items-center gap-1 uppercase tracking-widest animate-pulse">
+                    <span className="px-2 py-0.5 rounded-full text-[8px] bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 font-extrabold flex items-center gap-1 uppercase tracking-widest animate-pulse">
                       <span className="w-1 h-1 bg-emerald-400 rounded-full"></span>
                       LIVE
                     </span>
                   </div>
 
                   {/* Creator citation */}
-                  <span className="text-[11px] text-zinc-500">
+                  <span className="text-[11px] text-zinc-400">
                     Created by{" "}
-                    <strong className="text-zinc-300 hover:text-orange-400 transition-colors">
+                    <strong className="text-zinc-200 hover:text-rose-400 transition-colors">
                       {activeCoin.creatorName || activeCoin.creator}
                     </strong>
                   </span>
@@ -393,7 +393,7 @@ export default function CoinDetailsTab({
               </div>
 
               <div className="flex flex-col sm:items-end">
-                <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-black">
+                <span className="text-[9px] text-zinc-400 uppercase tracking-widest font-black">
                   INDEX DEGEN PRICE
                 </span>
                 <div className="flex items-center gap-2 mt-0.5">
@@ -410,15 +410,15 @@ export default function CoinDetailsTab({
                   <span
                     className={`px-2 py-1 rounded-xl text-xs font-black flex items-center gap-0.5 border select-none ${
                       (activeCoin?.change24h || 0) >= 0
-                        ? "bg-emerald-950/60 border-emerald-500/40 text-emerald-400"
-                        : "bg-rose-955/60 border-rose-500/40 text-rose-450"
+                        ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-400"
+                        : "bg-rose-500/15 border-rose-500/40 text-rose-400"
                     }`}
                   >
                     {(activeCoin?.change24h || 0) >= 0 ? "▲" : "▼"}{" "}
                     {Math.abs(activeCoin?.change24h || 0).toFixed(2)}%
                   </span>
                 </div>
-                <span className="text-[10px] text-zinc-550 mt-1">
+                <span className="text-[10px] text-zinc-500 mt-1">
                   Updated in real-time
                 </span>
               </div>
@@ -426,39 +426,39 @@ export default function CoinDetailsTab({
           </div>
 
           <div
-            className="bg-zinc-900 border border-zinc-850 p-6 rounded-3xl flex flex-col gap-4 relative"
+            className="glass-panel border border-white/10 p-6 rounded-3xl flex flex-col gap-4 relative shadow-2xl"
             id="charts-module-candlestick"
           >
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800/60 pb-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-4">
               <div className="flex items-center gap-2.5">
                 <div className="w-2.5 h-2.5 bg-rose-500 rounded-full animate-pulse shadow-md shadow-rose-950"></div>
                 <span className="text-xs font-black text-white tracking-wider uppercase font-mono">
                   Price Chart ({timeframe})
                 </span>
-                <span className="text-[10px] text-zinc-500 font-semibold hidden md:inline">
+                <span className="text-[10px] text-zinc-400 font-semibold hidden md:inline">
                   | REAL-TIME FEED
                 </span>
               </div>
 
               {/* Custom Interval Dropdown Selector */}
               <div className="flex items-center gap-2.5">
-                <span className="text-[10px] text-zinc-505 uppercase">
+                <span className="text-[10px] text-zinc-400 uppercase">
                   Interval:
                 </span>
                 <select
                   value={timeframe}
                   onChange={(e) => setTimeframe(e.target.value)}
-                  className="bg-zinc-950 border border-zinc-800 font-mono text-[11px] text-zinc-300 font-bold p-1 px-2.5 rounded-lg focus:outline-none focus:border-rose-500 cursor-pointer text-center"
+                  className="glass-input font-mono text-[11px] text-zinc-300 font-bold p-1 px-2.5 rounded-xl focus:outline-none focus:border-rose-500 cursor-pointer text-center"
                 >
-                  <option value="1m">1 minute (preset)</option>
-                  <option value="5m">5 minutes</option>
-                  <option value="15m">15 minutes</option>
-                  <option value="1h">1 hour</option>
+                  <option value="1m" className="bg-zinc-950 text-white">1 minute (preset)</option>
+                  <option value="5m" className="bg-zinc-950 text-white">5 minutes</option>
+                  <option value="15m" className="bg-zinc-950 text-white">15 minutes</option>
+                  <option value="1h" className="bg-zinc-950 text-white">1 hour</option>
                 </select>
               </div>
             </div>
 
-            <div className="relative h-64 bg-zinc-950/80 rounded-2xl border border-zinc-900 overflow-hidden flex flex-col justify-end p-4">
+            <div className="relative h-64 bg-black/40 backdrop-blur-md rounded-2xl border border-white/10 overflow-hidden flex flex-col justify-end p-4">
               {/* Vertical Grid Lines Background overlay */}
               <div className="absolute inset-0 flex flex-col justify-between pointer-events-none py-6 px-1 z-0">
                 <div className="border-b border-zinc-900 w-full flex justify-between text-[8px] text-zinc-650">
@@ -625,14 +625,14 @@ export default function CoinDetailsTab({
         {/* Right Side: 5 Column Grid for Transaction Execution & Liquidity / Holder structures */}
         <div className="lg:col-span-12 xl:col-span-4 flex flex-col gap-6">
           <div
-            className="bg-zinc-900 border-2 border-zinc-805 p-6 rounded-3xl flex flex-col gap-4 shadow-xl select-none"
+            className="glass-panel border border-white/10 p-6 rounded-3xl flex flex-col gap-4 shadow-2xl select-none"
             id="buy-sell-trade-dashboard"
           >
             <h3 className="text-xs font-black text-white uppercase tracking-widest flex items-center gap-2 mb-1">
               <Zap className="w-3.5 h-3.5 text-rose-500 animate-pulse" />
               TRANSACTION EXECUTION
               {launchTimer > 0 && (
-                <span className="ml-auto text-[9px] bg-red-950 text-red-500 px-1.5 py-0.5 rounded border border-red-900 font-mono animate-pulse">
+                <span className="ml-auto text-[9px] bg-red-950/80 text-red-400 px-2 py-0.5 rounded-full border border-red-500/40 font-mono animate-pulse">
                   {launchTimer}s FAIR LAUNCH
                 </span>
               )}
@@ -648,10 +648,10 @@ export default function CoinDetailsTab({
                     setFeedback(null);
                   }}
                   disabled={launchTimer > 0 && !isCreator}
-                  className={`w-full py-4 px-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-md flex items-center justify-center gap-2 text-glow ${
+                  className={`w-full py-4 px-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-xl flex items-center justify-center gap-2 ${
                     launchTimer > 0 && !isCreator
                       ? "bg-zinc-800 text-zinc-500 border border-zinc-700 cursor-not-allowed"
-                      : "bg-red-600 hover:bg-red-500 hover:scale-101 active:scale-98 text-white shadow-red-950/40 border border-red-500 cursor-pointer"
+                      : "bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 active:scale-98 text-white shadow-emerald-950/30 border border-white/20 cursor-pointer"
                   }`}
                   id="massive-buy-btn"
                 >
@@ -667,13 +667,13 @@ export default function CoinDetailsTab({
                   className={`w-full py-4 px-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all border flex items-center justify-center gap-2 ${
                     launchTimer > 0 && !isCreator
                       ? "bg-zinc-800 text-zinc-500 border border-zinc-700 cursor-not-allowed"
-                      : "bg-zinc-950 hover:bg-zinc-850 hover:scale-101 active:scale-98 text-zinc-300 hover:text-white border-zinc-800 hover:border-zinc-700 cursor-pointer"
+                      : "glass-pill hover:bg-rose-950/40 active:scale-98 text-rose-300 hover:text-white border-rose-500/30 cursor-pointer shadow-lg"
                   }`}
                   id="massive-sell-btn"
                 >
                   ⚡ Sell ${activeCoin.symbol}
                 </button>
-                <p className="text-[9px] text-zinc-500 text-center leading-normal mt-1">
+                <p className="text-[9px] text-zinc-400 text-center leading-normal mt-1">
                   Real market risk. Operations are mapped directly to
                   Appwrite databases nodes securely.
                 </p>
@@ -682,15 +682,15 @@ export default function CoinDetailsTab({
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="bg-zinc-950/90 border border-zinc-800 p-4 rounded-2xl flex flex-col gap-3.5"
+                className="glass-card border border-white/10 p-4 rounded-2xl flex flex-col gap-3.5"
               >
                 {/* Form header toggle row */}
-                <div className="flex items-center justify-between border-b border-zinc-900 pb-2 mb-1">
+                <div className="flex items-center justify-between border-b border-white/10 pb-2 mb-1">
                   <span
                     className={`text-[11px] font-black uppercase tracking-wider ${
                       activeTradeMode === "BUY"
-                        ? "text-red-500"
-                        : "text-zinc-300"
+                        ? "text-emerald-400"
+                        : "text-rose-400"
                     }`}
                   >
                     EXECUTE {activeTradeMode} FOR *{activeCoin.symbol}
@@ -700,7 +700,7 @@ export default function CoinDetailsTab({
                       setActiveTradeMode("NONE");
                       setFeedback(null);
                     }}
-                    className="text-[10px] text-zinc-500 hover:text-zinc-200 font-bold uppercase"
+                    className="text-[10px] text-zinc-400 hover:text-white font-bold uppercase cursor-pointer"
                   >
                     Cancel
                   </button>
@@ -711,9 +711,9 @@ export default function CoinDetailsTab({
                   className="flex flex-col gap-3"
                 >
                   <div className="flex flex-col gap-1.5">
-                    <div className="flex items-center justify-between text-[10px] text-zinc-500 uppercase font-black">
+                    <div className="flex items-center justify-between text-[10px] text-zinc-400 uppercase font-black">
                       <span>Enter Amount *{activeCoin.symbol}</span>
-                      <span className="text-[9px] text-zinc-400">
+                      <span className="text-[9px] text-zinc-300">
                         Avg. Estimate: $
                         {(
                           parseFloat(tradeAmountCoins || "0") * (activeCoin?.price || 0)
@@ -732,9 +732,9 @@ export default function CoinDetailsTab({
                         placeholder="0.00"
                         value={tradeAmountCoins}
                         onChange={(e) => setTradeAmountCoins(e.target.value)}
-                        className="bg-zinc-900 border border-zinc-800 rounded-xl w-full px-4 py-3 text-sm text-white focus:outline-none focus:border-rose-500 placeholder-zinc-700 font-bold"
+                        className="glass-input rounded-xl w-full px-4 py-3 text-sm text-white focus:outline-none focus:border-rose-500 placeholder-zinc-500 font-bold font-mono"
                       />
-                      <span className="absolute right-4 top-3.5 text-xs text-zinc-550 font-extrabold uppercase select-none">
+                      <span className="absolute right-4 top-3.5 text-xs text-zinc-400 font-extrabold uppercase select-none">
                         {activeCoin.symbol}
                       </span>
                     </div>
@@ -747,10 +747,10 @@ export default function CoinDetailsTab({
                         key={perc}
                         type="button"
                         onClick={() => setPercentOfMax(perc)}
-                        className={`text-[10px] p-2 rounded-lg border text-center transition-all ${
+                        className={`text-[10px] p-2 rounded-xl border text-center transition-all cursor-pointer ${
                           tradePercentage === perc
-                            ? "bg-rose-600/25 border-rose-500 text-rose-450"
-                            : "bg-zinc-900 hover:bg-zinc-855 border-zinc-850 text-zinc-400 hover:text-white"
+                            ? "bg-white/[0.15] border-rose-500/50 text-rose-400 font-extrabold shadow-sm"
+                            : "glass-pill border-white/10 text-zinc-400 hover:text-white"
                         }`}
                       >
                         {perc}%
@@ -763,8 +763,8 @@ export default function CoinDetailsTab({
                     <div
                       className={`p-3 rounded-xl text-[10px] border leading-normal ${
                         feedback.type === "success"
-                          ? "bg-emerald-950/50 border-emerald-500/40 text-emerald-450"
-                          : "bg-rose-955/50 border-rose-500/40 text-rose-450"
+                          ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-400"
+                          : "bg-rose-500/15 border-rose-500/40 text-rose-400"
                       }`}
                     >
                       {feedback.type === "success" ? "✨ " : "⚠️ "}{" "}
@@ -775,10 +775,10 @@ export default function CoinDetailsTab({
                   <button
                     type="submit"
                     disabled={executingState}
-                    className={`w-full py-3 rounded-xl font-black text-xs uppercase tracking-wider transition-all border flex items-center justify-center gap-1.5 ${
+                    className={`w-full py-3 rounded-xl font-black text-xs uppercase tracking-wider transition-all border flex items-center justify-center gap-1.5 cursor-pointer active:scale-98 shadow-xl ${
                       activeTradeMode === "BUY"
-                        ? "bg-red-600 hover:bg-red-500 border-red-500 text-white"
-                        : "bg-zinc-900 hover:bg-zinc-855 border-zinc-800 text-zinc-100"
+                        ? "bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 border-white/20 text-white"
+                        : "bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 border-white/20 text-white"
                     }`}
                   >
                     {executingState ? (
@@ -795,7 +795,7 @@ export default function CoinDetailsTab({
           </div>
 
           <div
-            className="bg-zinc-900 border border-zinc-850 p-6 rounded-3xl flex flex-col gap-4 shadow-xl"
+            className="glass-panel border border-white/10 p-6 rounded-3xl flex flex-col gap-4 shadow-2xl"
             id="pool-composition-stats"
           >
             <h3 className="text-xs font-black text-white uppercase tracking-widest flex items-center gap-2">
@@ -805,36 +805,36 @@ export default function CoinDetailsTab({
 
             <div className="flex flex-col gap-3 font-mono">
               {/* Token vs Base currency breakdown */}
-              <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-900 flex flex-col gap-3">
+              <div className="glass-card p-4 rounded-2xl border border-white/10 flex flex-col gap-3">
                 {/* Visual meter alignment */}
-                <div className="flex items-center justify-between text-[10px] text-zinc-500 uppercase font-black leading-none mb-1">
+                <div className="flex items-center justify-between text-[10px] text-zinc-400 uppercase font-black leading-none mb-1">
                   <span>Simulated Weights</span>
-                  <span className="text-indigo-455">1.2x Pool Lever</span>
+                  <span className="text-indigo-400">1.2x Pool Lever</span>
                 </div>
 
-                <div className="w-full h-2.5 bg-zinc-900 rounded-full flex overflow-hidden border border-zinc-950">
+                <div className="w-full h-2.5 bg-white/10 rounded-full flex overflow-hidden border border-white/10">
                   <div
                     className="h-full bg-gradient-to-r from-emerald-500 to-indigo-500"
                     style={{ width: "49.9%" }}
                   ></div>
                   <div
-                    className="h-full bg-gradient-to-r from-red-650 to-orange-500"
+                    className="h-full bg-gradient-to-r from-rose-500 to-orange-500"
                     style={{ width: "50.1%" }}
                   ></div>
                 </div>
 
                 {/* Token vs Base balances layout */}
-                <div className="flex justify-between items-center text-xs border-t border-zinc-900/60 pt-2 pb-0.5">
+                <div className="flex justify-between items-center text-xs border-t border-white/10 pt-2 pb-0.5">
                   <div className="flex flex-col">
-                    <span className="text-[9px] text-zinc-500">
+                    <span className="text-[9px] text-zinc-400">
                       ROADREV Tokens
                     </span>
-                    <strong className="text-zinc-250 font-black mt-0.5">
+                    <strong className="text-zinc-200 font-black mt-0.5">
                       5,730.00K
                     </strong>
                   </div>
                   <div className="flex flex-col text-right">
-                    <span className="text-[9px] text-zinc-505">
+                    <span className="text-[9px] text-zinc-400">
                       Base Currency
                     </span>
                     <strong className="text-indigo-400 font-extrabold mt-0.5">
@@ -845,22 +845,22 @@ export default function CoinDetailsTab({
               </div>
 
               {/* Pool stats matrix */}
-              <div className="p-3 bg-zinc-950/25 border border-zinc-900/50 rounded-xl flex flex-col gap-2 text-xs">
+              <div className="p-3 glass-card border border-white/10 rounded-2xl flex flex-col gap-2 text-xs">
                 <div className="flex justify-between items-center py-0.5">
-                  <span className="text-zinc-500">Total Liquidity:</span>
+                  <span className="text-zinc-400">Total Liquidity:</span>
                   <span className="text-white font-extrabold">
                     ${(activeCoin?.marketCap || 0).toLocaleString()} USD
                   </span>
                 </div>
                 <div className="flex justify-between items-center py-0.5">
-                  <span className="text-zinc-500">Token Supply:</span>
-                  <span className="text-zinc-300 font-extrabold">
+                  <span className="text-zinc-400">Token Supply:</span>
+                  <span className="text-zinc-200 font-extrabold">
                     {(activeCoin?.supply || 0).toLocaleString()}
                   </span>
                 </div>
                 <div className="flex justify-between items-center py-0.5">
-                  <span className="text-zinc-500">LP Status:</span>
-                  <span className="text-[9px] px-1.5 py-0.2 rounded font-bold uppercase bg-amber-950 text-amber-400 border border-amber-900/40">
+                  <span className="text-zinc-400">LP Status:</span>
+                  <span className="text-[9px] px-2 py-0.5 rounded-full font-bold uppercase bg-amber-500/15 text-amber-400 border border-amber-500/30">
                     Locked (Permanent)
                   </span>
                 </div>
@@ -869,11 +869,11 @@ export default function CoinDetailsTab({
           </div>
 
           <div
-            className="bg-zinc-900 border border-zinc-850 p-6 rounded-3xl flex flex-col gap-4 shadow-xl"
+            className="glass-panel border border-white/10 p-6 rounded-3xl flex flex-col gap-4 shadow-2xl"
             id="token-top-holders-panel"
           >
             <h3 className="text-xs font-black text-white uppercase tracking-widest flex items-center gap-2">
-              <Users className="w-3.5 h-3.5 text-zinc-400" />
+              <Users className="w-3.5 h-3.5 text-zinc-300" />
               TOP HOLDERS
             </h3>
 
@@ -882,12 +882,12 @@ export default function CoinDetailsTab({
                 (topHolders || []).map((holder) => (
                 <div
                   key={holder.rank}
-                  className="bg-zinc-950/50 border border-zinc-900 p-3 rounded-2xl flex items-center justify-between gap-3 hover:bg-zinc-950 transition-all"
+                  className="glass-card border border-white/10 p-3 rounded-2xl flex items-center justify-between gap-3 hover:bg-white/[0.06] transition-all"
                 >
                   <div className="flex items-center gap-2.5">
                     {/* Unique Profile Avatar */}
                     <div
-                      className={`w-8 h-8 rounded-lg ${holder.bg} flex items-center justify-center text-xs font-black border border-white/5 shadow`}
+                      className={`w-8 h-8 rounded-xl ${holder.bg} flex items-center justify-center text-xs font-black border border-white/10 shadow`}
                     >
                       {holder.emoji}
                     </div>
@@ -895,7 +895,7 @@ export default function CoinDetailsTab({
                       <span className="text-xs font-bold text-white leading-none mb-1">
                         {holder.name}
                       </span>
-                      <span className="text-[9px] text-zinc-500 leading-none">
+                      <span className="text-[9px] text-zinc-400 leading-none">
                         {holder.handle}
                       </span>
                     </div>
@@ -905,14 +905,14 @@ export default function CoinDetailsTab({
                     <span className="text-xs font-bold text-teal-400">
                       {holder.weight}
                     </span>
-                    <span className="text-[9px] text-zinc-500">
+                    <span className="text-[9px] text-zinc-400">
                       {holder.balance}
                     </span>
                   </div>
                 </div>
               ))
               ) : (
-                <div className="text-center font-mono text-zinc-500 text-xs py-4">No holders found.</div>
+                <div className="text-center font-mono text-zinc-400 text-xs py-4">No holders found.</div>
               )}
             </div>
           </div>
@@ -923,8 +923,8 @@ export default function CoinDetailsTab({
         className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-2"
         id="bottom-stats-matrix-layout-grid"
       >
-        <div className="bg-zinc-900 border border-zinc-850 p-5 rounded-3xl flex flex-col gap-1 shadow-md hover:border-zinc-700/65 transition-colors">
-          <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-black leading-none mb-1">
+        <div className="glass-panel border border-white/10 p-5 rounded-3xl flex flex-col gap-1 shadow-xl hover:border-white/20 transition-colors">
+          <span className="text-[9px] text-zinc-400 uppercase tracking-widest font-black leading-none mb-1">
             MARKET CAP VALUATION
           </span>
           <strong className="text-lg font-black text-white">
@@ -933,14 +933,14 @@ export default function CoinDetailsTab({
               ? ((activeCoin?.marketCap || 0) / 1000).toFixed(2) + "K"
               : (activeCoin?.marketCap || 0).toFixed(0)}
           </strong>
-          <span className="text-[10px] text-zinc-505 flex items-center gap-1">
+          <span className="text-[10px] text-zinc-400 flex items-center gap-1">
             <Activity className="w-3 h-3 text-emerald-400" /> Fully diluted
             stats
           </span>
         </div>
 
-        <div className="bg-zinc-900 border border-zinc-850 p-5 rounded-3xl flex flex-col gap-1 shadow-md hover:border-zinc-700/65 transition-colors">
-          <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-black leading-none mb-1">
+        <div className="glass-panel border border-white/10 p-5 rounded-3xl flex flex-col gap-1 shadow-xl hover:border-white/20 transition-colors">
+          <span className="text-[9px] text-zinc-400 uppercase tracking-widest font-black leading-none mb-1">
             24H TRADING VOLUME
           </span>
           <strong className="text-lg font-black text-white">
@@ -949,32 +949,32 @@ export default function CoinDetailsTab({
               ? `${((activeCoin?.volume24h || 0) / 1000).toFixed(1)}K`
               : (activeCoin?.volume24h || 0).toFixed(0)}
           </strong>
-          <span className="text-[10px] text-zinc-505 flex items-center gap-1">
+          <span className="text-[10px] text-zinc-400 flex items-center gap-1">
             <Clock className="w-3 h-3 text-cyan-400" /> Volume over last 24h
           </span>
         </div>
 
-        <div className="bg-zinc-900 border border-zinc-850 p-5 rounded-3xl flex flex-col gap-1 shadow-md hover:border-zinc-700/65 transition-colors">
-          <div className="flex justify-between items-center text-[9px] text-zinc-500 uppercase tracking-widest font-black leading-none mb-1">
+        <div className="glass-panel border border-white/10 p-5 rounded-3xl flex flex-col gap-1 shadow-xl hover:border-white/20 transition-colors">
+          <div className="flex justify-between items-center text-[9px] text-zinc-400 uppercase tracking-widest font-black leading-none mb-1">
             <span>CIRCULATING SUPPLY</span>
-            <span className="text-[8px] text-zinc-400">HARD CAP</span>
+            <span className="text-[8px] text-zinc-300">HARD CAP</span>
           </div>
           <strong className="text-lg font-black text-zinc-200">
             {(activeCoin?.supply || 0).toLocaleString()} TON
           </strong>
-          <div className="w-full bg-zinc-950 h-1 rounded overflow-hidden mt-0.5">
+          <div className="w-full bg-white/10 h-1 rounded-full overflow-hidden mt-0.5">
             <div
               className="h-full bg-indigo-500"
               style={{ width: "73%" }}
             ></div>
           </div>
-          <span className="text-[9px] text-zinc-500 block">
+          <span className="text-[9px] text-zinc-400 block">
             730K circulating / 1.0M max Cap
           </span>
         </div>
 
-        <div className="bg-zinc-900 border border-zinc-850 p-5 rounded-3xl flex flex-col gap-1 shadow-md hover:border-zinc-700/65 transition-colors">
-          <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-black leading-none mb-1">
+        <div className="glass-panel border border-white/10 p-5 rounded-3xl flex flex-col gap-1 shadow-xl hover:border-white/20 transition-colors">
+          <span className="text-[9px] text-zinc-400 uppercase tracking-widest font-black leading-none mb-1">
             24H TRAJECTORY TICKER
           </span>
           <div className="flex items-center gap-2">
@@ -991,8 +991,8 @@ export default function CoinDetailsTab({
             <span
               className={`p-1 rounded-full text-[8.5px] scale-90 ${
                 (activeCoin?.change24h || 0) >= 0
-                  ? "bg-emerald-950 text-emerald-450"
-                  : "bg-rose-955 text-rose-455"
+                  ? "bg-emerald-500/20 text-emerald-400"
+                  : "bg-rose-500/20 text-rose-400"
               }`}
             >
               {(activeCoin?.change24h || 0) >= 0 ? (
@@ -1002,8 +1002,8 @@ export default function CoinDetailsTab({
               )}
             </span>
           </div>
-          <span className="text-[10px] text-zinc-505 flex items-center gap-1">
-            <Sparkles className="w-3 h-3 text-yellow-450 animate-spin" />{" "}
+          <span className="text-[10px] text-zinc-400 flex items-center gap-1">
+            <Sparkles className="w-3 h-3 text-yellow-400 animate-spin" />{" "}
             High-frequency index ticks
           </span>
         </div>

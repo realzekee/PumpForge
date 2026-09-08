@@ -114,7 +114,7 @@ export default function OwnerDashboardTab({
     "Whale dev zeke is manipulating the system state!",
   );
   const [alertType, setAlertType] = useState<
-    "info" | "achievement" | "trade" | "crash"
+    "info" | "trade" | "crash"
   >("crash");
   const [broadcastTimeLimit, setBroadcastTimeLimit] = useState<number>(0); // 0 means no limit (minutes)
 
@@ -607,7 +607,7 @@ export default function OwnerDashboardTab({
         onAddNotification(
           "💸 Balance Adjusted",
           `Your active cash reserves were forcefully ${isAddition ? "increased" : "decreased"} by $${val.toLocaleString()}.`,
-          "achievement",
+          "info",
         );
         setLocalUserLogs((prev) => [
           {
@@ -1634,19 +1634,19 @@ export default function OwnerDashboardTab({
 
   return (
     <div className="flex-1 flex flex-col gap-6 animate-fade-in text-zinc-100 font-mono">
-      <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-zinc-900 pb-5 gap-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-white/10 pb-5 gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-xl bg-red-500/10 border border-red-500/30 flex items-center justify-center shadow-[0_0_15px_rgba(239,68,68,0.15)] text-red-400">
+          <div className="w-12 h-12 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center shadow-lg shadow-rose-950/20 text-rose-400">
             <ShieldAlert className="w-6 h-6 animate-pulse" />
           </div>
           <div>
-            <h2 className="text-2xl font-black text-rose-450 tracking-tight flex items-center gap-2">
+            <h2 className="text-2xl font-black text-rose-400 tracking-tight flex items-center gap-2">
               Owner Panel
-              <span className="text-[10px] bg-red-950 border border-red-900/40 text-red-400 font-black tracking-widest px-2 py-0.5 rounded-full scale-90 uppercase animate-pulse">
+              <span className="text-[10px] bg-rose-500/20 border border-rose-500/40 text-rose-300 font-black tracking-widest px-2.5 py-0.5 rounded-full uppercase animate-pulse">
                 SYS ADMIN
               </span>
             </h2>
-            <p className="text-xs text-zinc-500 mt-1">
+            <p className="text-xs text-zinc-400 mt-1">
               Simulated sandbox engine controllers & administrator level
               overrides
             </p>
@@ -1656,7 +1656,7 @@ export default function OwnerDashboardTab({
         {/* Reset Database and other action button */}
         <button
           onClick={handleResetSimulatedDatabase}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-950 hover:bg-zinc-90 w-fit border border-zinc-800 text-zinc-400 hover:text-white rounded-lg text-xs font-bold transition-all"
+          className="flex items-center gap-2 px-4 py-2 glass-pill hover:bg-white/15 w-fit border border-white/10 text-zinc-300 hover:text-white rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer"
         >
           <RefreshCw className="w-3.5 h-3.5" />
           Purge Leaderboard state
@@ -1664,15 +1664,17 @@ export default function OwnerDashboardTab({
       </div>
 
       {/* --- TASK UPDATE: SYSTEM USER MANAGER SECTION --- */}
-      <div className="bg-zinc-900/60 border border-rose-950/40 rounded-2xl p-5 flex flex-col gap-4 shadow-xl">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-800 pb-3">
-          <div className="flex items-center gap-2">
-            <UserCheck className="w-5 h-5 text-indigo-400" />
+      <div className="glass-panel border border-white/10 rounded-3xl p-6 flex flex-col gap-5 shadow-2xl">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl glass-card flex items-center justify-center border border-white/10">
+              <UserCheck className="w-5 h-5 text-indigo-400" />
+            </div>
             <div>
-              <h3 className="font-black text-sm text-indigo-400 uppercase tracking-wide">
+              <h3 className="font-black text-sm text-indigo-300 uppercase tracking-wide">
                 Registered Sandbox Profile Database
               </h3>
-              <p className="text-[10px] text-zinc-500 mt-0.5">
+              <p className="text-[10px] text-zinc-400 mt-0.5">
                 Edit simulated balances, toggle admin tags, and suspend/unban
                 players instantaneously
               </p>
@@ -1681,27 +1683,27 @@ export default function OwnerDashboardTab({
 
           {/* Controls: search and suspension select */}
           <div className="flex flex-col md:flex-row items-center gap-3">
-            <div className="flex items-center gap-2 text-xs bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1.5 focus-within:border-amber-500/50">
-              <Clock className="w-3.5 h-3.5 text-zinc-500" />
+            <div className="flex items-center gap-2 text-xs glass-card border border-white/10 rounded-xl px-3 py-2 focus-within:border-amber-500/50">
+              <Clock className="w-3.5 h-3.5 text-zinc-400" />
               <select
                 value={suspendDurationDays}
                 onChange={(e) => setSuspendDurationDays(Number(e.target.value))}
-                className="bg-transparent text-zinc-300 font-bold focus:outline-none appearance-none cursor-pointer"
+                className="bg-transparent text-zinc-200 font-bold focus:outline-none appearance-none cursor-pointer text-xs"
               >
-                <option value={1}>Suspend 1 Day</option>
-                <option value={7}>Suspend 1 Week</option>
-                <option value={30}>Suspend 1 Month</option>
+                <option value={1} className="bg-zinc-900 text-white">Suspend 1 Day</option>
+                <option value={7} className="bg-zinc-900 text-white">Suspend 1 Week</option>
+                <option value={30} className="bg-zinc-900 text-white">Suspend 1 Month</option>
               </select>
             </div>
 
             <div className="relative">
-              <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search handles/roles..."
-                className="bg-zinc-950 border border-zinc-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 w-48 font-bold"
+                className="glass-input rounded-xl pl-9 pr-3.5 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 w-48 font-bold"
               />
             </div>
           </div>
@@ -2232,30 +2234,30 @@ export default function OwnerDashboardTab({
       </div>
 
       {/* Recommended Next-Level Owner Powers (Now Fully Coordinated & Operational!) */}
-      <div className="bg-gradient-to-br from-zinc-900 via-zinc-950 to-zinc-900 border border-amber-500/20 rounded-2xl p-6 shadow-2xl flex flex-col gap-5">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 border-b border-zinc-900 pb-4">
+      <div className="glass-panel border border-amber-500/30 rounded-3xl p-6 shadow-2xl flex flex-col gap-5">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 border-b border-white/10 pb-4">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
-              <Crown className="w-4 h-4 text-amber-500 animate-pulse" />
+            <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center shadow-md">
+              <Crown className="w-4 h-4 text-amber-400 animate-pulse" />
             </div>
             <div>
               <h3 className="text-xs font-black text-amber-400 uppercase tracking-wider leading-tight">
                 👑 Super-Operator Administrative Control Suite
               </h3>
-              <p className="text-[10px] text-zinc-500 block font-mono">
+              <p className="text-[10px] text-zinc-400 block font-mono">
                 Real-time overrides, algorithmic rigging, and Firestore storage
                 cleanup maintenance.
               </p>
             </div>
           </div>
-          <span className="px-2 py-0.5 rounded bg-amber-500/15 border border-amber-500/25 text-amber-400 text-[8px] font-mono uppercase tracking-widest font-black place-self-start md:place-self-center">
+          <span className="px-3 py-1 rounded-full glass-card border border-amber-500/30 text-amber-300 text-[8px] font-mono uppercase tracking-widest font-black place-self-start md:place-self-center shadow-sm">
             ACTIVE LEVEL 5 OPERATOR
           </span>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5 font-mono text-xs">
           {/* Power 1: Rigged Casino Rates */}
-          <div className="flex flex-col gap-3 p-4 bg-zinc-900/40 border border-zinc-850 rounded-xl hover:border-amber-500/10 transition-colors">
+          <div className="flex flex-col gap-3 p-4 glass-card border border-white/10 rounded-2xl hover:border-amber-500/30 transition-colors shadow-lg">
             <div className="flex items-center gap-2 text-amber-400 font-extrabold uppercase tracking-wide">
               <span>🎰 Rig Casino / Cases</span>
             </div>
@@ -2480,16 +2482,16 @@ export default function OwnerDashboardTab({
       {/* Grid Controls */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         {/* Resource Minting Panel */}
-        <div className="lg:col-span-6 bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 flex flex-col gap-4 shadow-xl">
-          <h3 className="text-base font-black text-rose-400 border-b border-zinc-800 pb-2.5 flex items-center gap-2">
-            <Coins className="w-5 h-5 text-yellow-500" />
+        <div className="lg:col-span-6 glass-panel border border-white/10 rounded-3xl p-6 flex flex-col gap-4 shadow-2xl">
+          <h3 className="text-base font-black text-rose-400 border-b border-white/10 pb-3 flex items-center gap-2">
+            <Coins className="w-5 h-5 text-yellow-400" />
             Central Bank Mint
           </h3>
 
           <div className="space-y-4">
             {/* Cash Mint */}
-            <div className="flex flex-col gap-2 p-3.5 bg-zinc-950/50 border border-zinc-850 rounded-xl">
-              <label className="text-[10px] text-zinc-500 uppercase tracking-widest font-extrabold">
+            <div className="flex flex-col gap-2 p-4 glass-card border border-white/10 rounded-2xl shadow-sm">
+              <label className="text-[10px] text-zinc-400 uppercase tracking-widest font-extrabold">
                 Instant Cash Value
               </label>
               <div className="flex gap-2">
@@ -2499,11 +2501,11 @@ export default function OwnerDashboardTab({
                   onChange={(e) =>
                     setCustomCash(Math.max(1, Number(e.target.value)))
                   }
-                  className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-500 flex-1 font-bold"
+                  className="glass-input rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-yellow-500 flex-1 font-bold"
                 />
                 <button
                   onClick={handleMintCash}
-                  className="px-4 py-1.5 bg-yellow-500/15 hover:bg-yellow-500/35 border border-yellow-500/30 text-yellow-500 hover:brightness-110 active:scale-95 transition-all text-xs font-bold rounded-lg whitespace-nowrap"
+                  className="px-4 py-2 bg-yellow-500/20 hover:bg-yellow-500/35 border border-yellow-500/40 text-yellow-300 hover:brightness-110 active:scale-95 transition-all text-xs font-bold rounded-xl whitespace-nowrap shadow-md cursor-pointer"
                 >
                   Mint Cash
                 </button>
@@ -2511,8 +2513,8 @@ export default function OwnerDashboardTab({
             </div>
 
             {/* Gems Mint */}
-            <div className="flex flex-col gap-2 p-3.5 bg-zinc-950/50 border border-zinc-850 rounded-xl">
-              <label className="text-[10px] text-zinc-500 uppercase tracking-widest font-extrabold">
+            <div className="flex flex-col gap-2 p-4 glass-card border border-white/10 rounded-2xl shadow-sm">
+              <label className="text-[10px] text-zinc-400 uppercase tracking-widest font-extrabold">
                 Instant Gems Value
               </label>
               <div className="flex gap-2">
@@ -2522,11 +2524,11 @@ export default function OwnerDashboardTab({
                   onChange={(e) =>
                     setCustomGems(Math.max(1, Number(e.target.value)))
                   }
-                  className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-500 flex-1 font-bold"
+                  className="glass-input rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500 flex-1 font-bold"
                 />
                 <button
                   onClick={handleMintGems}
-                  className="px-4 py-1.5 bg-cyan-500/15 hover:bg-cyan-500/35 border border-cyan-500/30 text-cyan-400 hover:brightness-110 active:scale-95 transition-all text-xs font-bold rounded-lg whitespace-nowrap"
+                  className="px-4 py-2 bg-cyan-500/20 hover:bg-cyan-500/35 border border-cyan-500/40 text-cyan-300 hover:brightness-110 active:scale-95 transition-all text-xs font-bold rounded-xl whitespace-nowrap shadow-md cursor-pointer"
                 >
                   Mint Gems
                 </button>
@@ -2534,20 +2536,20 @@ export default function OwnerDashboardTab({
             </div>
 
             {/* What is the purpose of Minting explanation */}
-            <div className="bg-gradient-to-br from-indigo-950/40 to-cyan-950/20 border border-indigo-900/40 rounded-xl p-4 flex flex-col gap-2 shadow-[0_4px_12px_rgba(0,0,0,0.3)]">
+            <div className="glass-card border border-white/10 rounded-2xl p-4 flex flex-col gap-2 shadow-sm">
               <h4 className="text-xs font-black text-indigo-300 flex items-center gap-1.5 uppercase tracking-wider">
                 <Sparkles className="w-3.5 h-3.5 text-yellow-400 animate-pulse" />
                 ❓ Purpose & Use of Minting
               </h4>
-              <p className="text-[11px] text-zinc-400 leading-relaxed">
+              <p className="text-[11px] text-zinc-300 leading-relaxed">
                 In this simulated decentralized economy,{" "}
                 <strong>"Minting"</strong> empowers administrators with the
                 unlimited capability to generate standard and premium capital
                 out of thin air:
               </p>
-              <ul className="text-[10px] text-zinc-500 space-y-1.5 pl-3 list-disc">
+              <ul className="text-[10px] text-zinc-400 space-y-1.5 pl-3 list-disc">
                 <li>
-                  <strong className="text-zinc-350">
+                  <strong className="text-zinc-200">
                     Liquidity Injecting:
                   </strong>{" "}
                   Create simulated Cash/Gems to inject liquidity into your
@@ -2555,13 +2557,13 @@ export default function OwnerDashboardTab({
                   marker.
                 </li>
                 <li>
-                  <strong className="text-zinc-350">Prestige Testing:</strong>{" "}
+                  <strong className="text-zinc-200">Prestige Testing:</strong>{" "}
                   Fast-track progression elements or purchase custom premium
                   badges and multi-color neon sidebar status cosmetics
                   instantly.
                 </li>
                 <li>
-                  <strong className="text-zinc-350">
+                  <strong className="text-zinc-200">
                     User Rewards / Airdrops:
                   </strong>{" "}
                   Boost active participants, design manual giveaway actions, and
@@ -2573,13 +2575,13 @@ export default function OwnerDashboardTab({
         </div>
 
         {/* Global Market Shocks */}
-        <div className="lg:col-span-6 bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 flex flex-col gap-4 shadow-xl">
-          <h3 className="text-base font-black text-rose-400 border-b border-zinc-800 pb-2.5 flex items-center gap-2">
+        <div className="lg:col-span-6 glass-panel border border-white/10 rounded-3xl p-6 flex flex-col gap-4 shadow-2xl">
+          <h3 className="text-base font-black text-rose-400 border-b border-white/10 pb-3 flex items-center gap-2">
             <Database className="w-5 h-5 text-indigo-400" />
             Market Manipulation Overrides
           </h3>
 
-          <p className="text-xs text-zinc-500 leading-relaxed">
+          <p className="text-xs text-zinc-400 leading-relaxed">
             Trigger massive automated system shocks to test ticker
             responsiveness or force total liquidations under simulation:
           </p>
@@ -2587,22 +2589,22 @@ export default function OwnerDashboardTab({
           <div className="grid grid-cols-2 gap-3.5 mt-2">
             <button
               onClick={handleForceGlobalPump}
-              className="p-4 bg-emerald-500/10 border border-emerald-500/20 hover:border-emerald-500/50 hover:bg-emerald-500/15 text-emerald-400 rounded-xl text-left transition-all active:scale-98"
+              className="p-4 glass-card border border-emerald-500/30 hover:border-emerald-500/60 hover:bg-emerald-500/10 text-emerald-400 rounded-2xl text-left transition-all active:scale-98 shadow-md cursor-pointer"
             >
               <TrendingUp className="w-5 h-5 mb-1.5" />
               <div className="font-bold text-xs">Global Pump</div>
-              <div className="text-[10px] text-zinc-500 mt-1">
+              <div className="text-[10px] text-zinc-400 mt-1">
                 Force +50% bump on all coins
               </div>
             </button>
 
             <button
               onClick={handleForceGlobalDump}
-              className="p-4 bg-rose-500/10 border border-rose-500/20 hover:border-rose-500/50 hover:bg-rose-500/15 text-rose-450 rounded-xl text-left transition-all active:scale-98"
+              className="p-4 glass-card border border-rose-500/30 hover:border-rose-500/60 hover:bg-rose-500/10 text-rose-400 rounded-2xl text-left transition-all active:scale-98 shadow-md cursor-pointer"
             >
               <TrendingDown className="w-5 h-5 mb-1.5" />
               <div className="font-bold text-xs">Global Crash</div>
-              <div className="text-[10px] text-zinc-500 mt-1">
+              <div className="text-[10px] text-zinc-400 mt-1">
                 Force -50% dump on all coins
               </div>
             </button>
@@ -2690,14 +2692,6 @@ export default function OwnerDashboardTab({
                       color: "text-emerald-400",
                       activeBg:
                         "bg-emerald-500/10 border-emerald-500/30 shadow-[0_0_10px_rgba(16,185,129,0.15)] bg-gradient-to-b from-emerald-500/20 to-transparent",
-                    },
-                    {
-                      id: "achievement",
-                      icon: "🏆",
-                      label: "Award",
-                      color: "text-amber-400",
-                      activeBg:
-                        "bg-amber-500/10 border-amber-500/30 shadow-[0_0_10px_rgba(245,158,11,0.15)] bg-gradient-to-b from-amber-500/20 to-transparent",
                     },
                     {
                       id: "crash",

@@ -4,7 +4,6 @@ import {
   TrendingUp,
   TrendingDown,
   Sparkles,
-  Award,
   Flame,
   Bomb,
   User,
@@ -15,22 +14,22 @@ import {
   MessageSquare,
   Check,
   ShieldAlert,
+  Wallet,
+  Coins,
+  Crown,
+  Gamepad2,
 } from "lucide-react";
-import { MemeCoin, UserStats, Achievement } from "../types";
+import { MemeCoin, UserStats } from "../types";
 
 interface HomeTabProps {
   coins: MemeCoin[];
   userStats: UserStats;
-  achievements: Achievement[];
-  onClaimAchievement: (id: string) => void;
   onTradeCoin: (coinId: string) => void;
 }
 
 export default function HomeTab({
   coins,
   userStats,
-  achievements,
-  onClaimAchievement,
   onTradeCoin,
 }: HomeTabProps) {
   const navigate = useNavigate();
@@ -61,23 +60,6 @@ export default function HomeTab({
     (log) =>
       log.id.startsWith("manual_") && !dismissedNoticeIds.includes(log.id),
   );
-
-  const claimedCount = achievements.filter((a) => a.claimed).length;
-  const totalCount = achievements.length;
-  const completionPercentage = totalCount
-    ? (claimedCount / totalCount) * 100
-    : 0;
-
-  // Sort achievements: claimable first, then locked/unachieved, then claimed at the absolute bottom
-  const sortedAchievements = [...achievements].sort((a, b) => {
-    const aComplete = a.current >= a.target;
-    const bComplete = b.current >= b.target;
-    if (a.claimed && !b.claimed) return 1;
-    if (!a.claimed && b.claimed) return -1;
-    if (aComplete && !bComplete) return -1;
-    if (!aComplete && bComplete) return 1;
-    return 0;
-  });
 
   return (
     <div className="flex flex-col gap-6 animate-fade-in">
@@ -127,37 +109,36 @@ export default function HomeTab({
         </div>
       ))}
       {/* Hero Welcome banner */}
-      <div className="relative overflow-hidden rounded-2xl bg-zinc-900 border border-zinc-800 p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6">
-        <div className="absolute inset-0 bg-gradient-to-r from-orange-600/10 to-amber-600/10 pointer-events-none" />
-        <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500/10 rounded-full blur-2xl pointer-events-none" />
+      <div className="relative overflow-hidden rounded-3xl glass-panel p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6 border border-white/10">
+        <div className="absolute inset-0 bg-gradient-to-r from-orange-500/10 via-rose-500/5 to-transparent pointer-events-none" />
+        <div className="absolute -top-10 -right-10 w-48 h-48 bg-orange-500/15 rounded-full blur-3xl pointer-events-none" />
 
-        <div className="flex flex-col gap-2 max-w-lg z-10 text-center md:text-left">
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-orange-950/40 border border-orange-900/60 text-orange-400 font-mono text-[10px] font-extrabold uppercase uppercase tracking-wider self-center md:self-start">
-            <Sparkles className="w-3 h-3 text-orange-400" />
+        <div className="flex flex-col gap-2.5 max-w-lg z-10 text-center md:text-left">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full glass-pill border border-orange-500/30 text-orange-400 font-mono text-[10px] font-extrabold uppercase tracking-wider self-center md:self-start">
+            <Sparkles className="w-3 h-3 text-orange-400 animate-pulse" />
             Season 1 is Live
           </div>
           <h2 className="text-xl md:text-3xl font-black text-white tracking-tight leading-tight">
             Welcome to{" "}
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-amber-400 text-glow">
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-400 via-rose-400 to-amber-300">
               PumpForge
             </span>
           </h2>
-          <p className="text-xs md:text-sm text-zinc-400 font-medium">
+          <p className="text-xs md:text-sm text-zinc-300 font-medium leading-relaxed">
             Simulate a high-speed meme coin trader! Launch coins, buy low, dump
-            high, survive the devs and run the arcade table. Complete
-            achievements to unlock custom skins.
+            high, survive the devs and run the arcade table. Stack gems and build your empire.
           </p>
 
           <div className="flex items-center gap-3 mt-2 justify-center md:justify-start">
             <button
               onClick={() => navigate("/market")}
-              className="px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-xs font-bold text-white transition-all flex items-center gap-1 shadow-lg shadow-orange-950/20 active:scale-98"
+              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-orange-600 to-rose-600 hover:from-orange-500 hover:to-rose-500 text-xs font-bold text-white transition-all flex items-center gap-1.5 shadow-lg shadow-orange-950/40 border border-white/20 active:scale-98 cursor-pointer"
             >
               Start Trading <ArrowRight className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={() => navigate("/create-coin")}
-              className="px-4 py-2 rounded-xl bg-zinc-950 border border-zinc-800 hover:bg-zinc-900 text-xs font-bold text-zinc-300 transition-all flex items-center gap-1"
+              className="px-5 py-2.5 rounded-xl glass-pill hover:bg-white/[0.08] text-xs font-bold text-zinc-200 hover:text-white transition-all flex items-center gap-1.5 border border-white/10 cursor-pointer active:scale-98"
             >
               Launch Coin <PlusCircle className="w-3.5 h-3.5 text-orange-400" />
             </button>
@@ -165,12 +146,12 @@ export default function HomeTab({
         </div>
 
         {/* Big visual graphic */}
-        <div className="bg-zinc-950/80 border border-zinc-850 p-5 rounded-xl flex flex-col gap-3 min-w-[240px] shadow-xl z-10 relative">
-          <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono font-bold flex items-center justify-between">
+        <div className="glass-card p-5 rounded-2xl flex flex-col gap-3.5 min-w-[240px] shadow-2xl z-10 relative border border-white/10">
+          <span className="text-[9px] text-zinc-400 uppercase tracking-widest font-mono font-bold flex items-center justify-between">
             <span>Market Status</span>
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-sm shadow-emerald-400/50" />
           </span>
-          <div className="h-px bg-zinc-900" />
+          <div className="h-px bg-white/[0.08]" />
           <div className="flex items-center justify-between">
             <span className="text-xs text-zinc-400">Total Coins</span>
             <span className="text-sm text-white font-black font-mono">
@@ -191,12 +172,12 @@ export default function HomeTab({
         {/* Left column (span 2): Hot Meme Coins */}
         <div className="lg:col-span-2 flex flex-col gap-4">
           <div className="flex items-center justify-between leading-none">
-            <h3 className="text-xs font-extrabold text-zinc-400 uppercase tracking-widest font-mono flex items-center gap-1.5">
+            <h3 className="text-xs font-extrabold text-zinc-300 uppercase tracking-widest font-mono flex items-center gap-1.5">
               <Flame className="w-4 h-4 text-orange-500" /> Hot Gainers
             </h3>
             <button
               onClick={() => navigate("/market")}
-              className="text-xs text-orange-500 hover:text-orange-400 font-semibold flex items-center gap-1"
+              className="text-xs text-orange-400 hover:text-orange-300 font-semibold flex items-center gap-1 transition-colors cursor-pointer"
             >
               See all <ArrowRight className="w-3 h-3" />
             </button>
@@ -206,20 +187,20 @@ export default function HomeTab({
             {(hotCoins || []).map((coin) => (
               <div
                 key={coin.id}
-                className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl flex flex-col justify-between hover:border-zinc-700/60 transition-all duration-200 select-none cursor-pointer group"
+                className="glass-card-interactive p-4 rounded-2xl flex flex-col justify-between select-none cursor-pointer group border border-white/[0.08]"
                 onClick={() => onTradeCoin(coin.id)}
               >
                 <div className="flex items-center justify-between mb-3">
                   <div
-                    className={`w-10 h-10 rounded-xl border flex items-center justify-center text-xl shadow-inner ${coin.avatarBg}`}
+                    className={`w-10 h-10 rounded-xl border border-white/20 flex items-center justify-center text-xl shadow-lg ${coin.avatarBg}`}
                   >
                     {coin.avatarEmoji}
                   </div>
                   <div className="flex flex-col items-end">
-                    <span className="text-xs text-zinc-500 truncate font-mono max-w-[80px] text-right">
+                    <span className="text-xs text-zinc-400 truncate font-mono max-w-[80px] text-right">
                       {coin.creatorName || coin.creator}
                     </span>
-                    <span className="text-[10px] bg-emerald-950/60 text-emerald-400 px-1 border border-emerald-900/60 rounded font-bold font-mono">
+                    <span className="text-[10px] bg-emerald-500/15 text-emerald-400 px-1.5 py-0.5 border border-emerald-500/30 rounded-md font-bold font-mono">
                       +{coin.change24h.toFixed(1)}%
                     </span>
                   </div>
@@ -229,7 +210,7 @@ export default function HomeTab({
                     {coin.name}
                   </h4>
                   <div className="flex items-center justify-between mt-1">
-                    <span className="text-xs font-mono text-zinc-500">
+                    <span className="text-xs font-mono text-zinc-400">
                       *{coin.symbol}
                     </span>
                     <span className="text-xs font-mono font-black text-white">
@@ -242,165 +223,109 @@ export default function HomeTab({
           </div>
 
           {/* Banner for Custom Coin launch advertisement */}
-          <div className="bg-gradient-to-r from-teal-950/40 via-zinc-900 to-zinc-900 border border-teal-900/60 p-5 rounded-2xl flex items-center justify-between gap-4 mt-2">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-teal-950 text-teal-400 border border-teal-900/50 flex items-center justify-center text-xl">
+          <div className="glass-panel p-5 rounded-2xl flex items-center justify-between gap-4 mt-2 border border-teal-500/25 bg-gradient-to-r from-teal-950/30 via-zinc-900/40 to-transparent">
+            <div className="flex items-center gap-3.5">
+              <div className="w-11 h-11 rounded-xl bg-teal-500/15 text-teal-400 border border-teal-500/30 flex items-center justify-center text-2xl shadow-inner">
                 🚀
               </div>
               <div className="flex flex-col">
                 <span className="font-extrabold text-white text-sm">
                   Become a Creator Dev!
                 </span>
-                <span className="text-xs text-zinc-400">
-                  Launch a token for $1,100 list fee and trade.
+                <span className="text-xs text-zinc-300">
+                  Launch a token for $1,100 list fee and trade with fellow degens.
                 </span>
               </div>
             </div>
             <button
               onClick={() => navigate("/create-coin")}
-              className="bg-teal-600 hover:bg-teal-500 active:scale-98 text-white font-bold py-2 px-3 rounded-xl text-xs transition-colors shrink-0"
+              className="bg-teal-600 hover:bg-teal-500 active:scale-98 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition-all shadow-lg border border-white/20 shrink-0 cursor-pointer"
             >
               Launch Coin
             </button>
           </div>
         </div>
 
-        {/* Right column: Achievements Progress & Recent Graveyard */}
+        {/* Right column: Trader Overview & Quick Actions */}
         <div className="flex flex-col gap-6">
-          {/* Achievements Progress Card */}
-          <div className="bg-zinc-900 border border-zinc-850 p-5 rounded-xl flex flex-col gap-3 select-none animate-fade-in text-zinc-100">
+          <div className="glass-panel p-5 rounded-2xl flex flex-col gap-4 select-none animate-fade-in text-zinc-100 border border-white/10">
             <div className="flex items-center justify-between">
-              <h3 className="text-xs font-extrabold text-zinc-400 uppercase tracking-widest font-mono flex items-center gap-1.5 leading-none">
-                <Award className="w-4 h-4 text-orange-500" /> Milestones &
-                Badges
+              <h3 className="text-xs font-extrabold text-zinc-300 uppercase tracking-widest font-mono flex items-center gap-1.5 leading-none">
+                <Crown className="w-4 h-4 text-orange-400" /> Trader Hub
               </h3>
               <button
-                onClick={() => navigate("/achievements")}
-                className="text-[10px] text-orange-400 hover:text-orange-300 font-extrabold uppercase tracking-wider font-mono bg-orange-950/40 px-2 py-1 rounded border border-orange-900/40 transition-colors cursor-pointer"
+                onClick={() => navigate("/profile")}
+                className="text-[10px] text-orange-400 hover:text-orange-300 font-extrabold uppercase tracking-wider font-mono glass-pill px-2.5 py-1 rounded-lg border border-orange-500/30 transition-colors cursor-pointer"
               >
-                View Details
+                Profile
               </button>
             </div>
 
-            <div className="bg-zinc-950/60 border border-zinc-850 p-3 rounded-lg flex flex-col gap-2 font-mono">
-              <div className="flex justify-between items-center text-[10px] text-zinc-400 leading-none">
-                <span>Task Progress</span>
-                <span className="text-amber-400 font-black">
-                  {claimedCount} / {totalCount}
+            {/* Quick Metrics Grid */}
+            <div className="grid grid-cols-2 gap-2.5 font-mono">
+              <div className="bg-white/[0.03] backdrop-blur-md border border-white/[0.07] p-3 rounded-xl flex flex-col">
+                <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold">Cash Balance</span>
+                <span className="text-sm font-black text-emerald-400 mt-0.5">
+                  ${userStats.cash.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
-              <div className="w-full bg-zinc-900 h-2.5 rounded-full overflow-hidden p-0.5 border border-zinc-950">
-                <div
-                  className="bg-gradient-to-r from-orange-500 to-amber-500 h-full rounded-full transition-all duration-300 shadow shadow-orange-950"
-                  style={{ width: `${completionPercentage}%` }}
-                />
+              <div className="bg-white/[0.03] backdrop-blur-md border border-white/[0.07] p-3 rounded-xl flex flex-col">
+                <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold">Gems Vault</span>
+                <span className="text-sm font-black text-cyan-400 mt-0.5 flex items-center gap-1">
+                  💎 {userStats.gems.toLocaleString()}
+                </span>
+              </div>
+              <div className="bg-white/[0.03] backdrop-blur-md border border-white/[0.07] p-3 rounded-xl flex flex-col">
+                <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold">Prestige Rank</span>
+                <span className="text-sm font-black text-amber-400 mt-0.5">
+                  Lvl {userStats.prestigeLevel} • {userStats.title}
+                </span>
+              </div>
+              <div className="bg-white/[0.03] backdrop-blur-md border border-white/[0.07] p-3 rounded-xl flex flex-col">
+                <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold">Trades Executed</span>
+                <span className="text-sm font-black text-zinc-200 mt-0.5">
+                  {userStats.tradesCount} Orders
+                </span>
               </div>
             </div>
 
-            {sortedAchievements.length > 0 ? (
-              <div className="flex flex-col gap-2 mt-1 max-h-[320px] overflow-y-auto pr-1.5 custom-scrollbar">
-                {(sortedAchievements || []).map((item) => {
-                  const isComplete = item.current >= item.target;
-                  const isClaimable = isComplete && !item.claimed;
-                  const pct = Math.min((item.current / item.target) * 100, 100);
-                  return (
-                    <div
-                      key={item.id}
-                      className={`p-3 rounded-xl border flex flex-col gap-2 transition-all ${
-                        item.claimed
-                          ? "border-zinc-950 bg-zinc-950/20 opacity-50 saturate-50"
-                          : isClaimable
-                            ? "bg-emerald-950/20 border-emerald-900/60"
-                            : "border-zinc-950 bg-black/40 opacity-40 saturate-50"
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-2 leading-tight">
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs font-extrabold text-white truncate">
-                            {item.title}
-                          </p>
-                          <p className="text-[10px] text-zinc-500 truncate mt-0.5">
-                            {item.description}
-                          </p>
-                        </div>
-                        <div className="text-[9.5px] font-mono text-zinc-400 shrink-0 text-right leading-normal font-bold">
-                          <span className="text-emerald-400 font-black block">
-                            +${item.cashReward.toLocaleString()}
-                          </span>
-                          <span className="text-cyan-400 block font-black">
-                            💎 +{item.gemReward}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2.5 justify-between">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex justify-between text-[8px] font-mono text-zinc-500 mb-1">
-                            <span>
-                              {item.current.toLocaleString()} /{" "}
-                              {item.target.toLocaleString()}
-                            </span>
-                            <span>{pct.toFixed(0)}%</span>
-                          </div>
-                          <div className="w-full bg-zinc-950 h-1 rounded-full overflow-hidden">
-                            <div
-                              className={`h-full transition-all duration-300 ${
-                                isComplete
-                                  ? "bg-emerald-400"
-                                  : "bg-orange-500/80"
-                              }`}
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                        </div>
-
-                        {item.claimed ? (
-                          <span className="text-[8px] bg-zinc-950 text-zinc-600 border border-zinc-900/40 font-extrabold rounded-md px-1.5 py-0.5 tracking-wider uppercase select-none font-mono">
-                            Claimed
-                          </span>
-                        ) : isClaimable ? (
-                          <button
-                            onClick={() => onClaimAchievement(item.id)}
-                            className="bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-extrabold py-1 px-3 rounded-lg text-[9px] uppercase tracking-wider font-mono transition-transform border border-emerald-500 animate-pulse text-glow cursor-pointer shrink-0"
-                          >
-                            Claim
-                          </button>
-                        ) : (
-                          <span className="text-[8px] bg-zinc-950 text-zinc-600 border border-zinc-900 font-extrabold rounded-md px-1.5 py-0.5 tracking-wider uppercase select-none font-mono shrink-0">
-                            Locked
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
+            {/* Quick Actions Shortcuts */}
+            <div className="flex flex-col gap-2 pt-2 border-t border-white/[0.08]">
+              <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-mono font-bold">Quick Navigation</span>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => navigate("/arcade")}
+                  className="px-3 py-2 rounded-xl glass-pill hover:bg-white/[0.08] text-xs font-mono font-bold text-zinc-300 hover:text-white flex items-center justify-center gap-1.5 transition-colors cursor-pointer border border-white/10"
+                >
+                  <Gamepad2 className="w-3.5 h-3.5 text-purple-400" /> Arcade
+                </button>
+                <button
+                  onClick={() => navigate("/market")}
+                  className="px-3 py-2 rounded-xl glass-pill hover:bg-white/[0.08] text-xs font-mono font-bold text-zinc-300 hover:text-white flex items-center justify-center gap-1.5 transition-colors cursor-pointer border border-white/10"
+                >
+                  <TrendingUp className="w-3.5 h-3.5 text-emerald-400" /> Market
+                </button>
               </div>
-            ) : (
-              <div className="text-center py-4 bg-zinc-950/30 border border-zinc-850/40 rounded-lg">
-                <span className="text-xs text-zinc-500 font-mono">
-                  🏆 Perfect Score! All achievements claimed!
-                </span>
-              </div>
-            )}
+            </div>
           </div>
         </div>
       </div>
 
       {/* Funny chat room simulator / Telegram room drollery */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 select-none flex flex-col gap-3">
-        <h3 className="text-xs font-extrabold text-zinc-400 uppercase tracking-widest font-mono flex items-center gap-1.5">
+      <div className="glass-panel border border-white/10 rounded-2xl p-5 select-none flex flex-col gap-3">
+        <h3 className="text-xs font-extrabold text-zinc-300 uppercase tracking-widest font-mono flex items-center gap-1.5">
           <MessageSquare className="w-4 h-4 text-orange-500" /> Degenerate
           Shilling Room
         </h3>
-        <div className="h-px bg-zinc-800" />
+        <div className="h-px bg-white/[0.08]" />
         <div className="flex flex-col gap-3 max-h-[160px] overflow-y-auto font-mono text-xs custom-scrollbar">
-          <div className="text-zinc-500">
+          <div className="text-zinc-400">
             <span
               onClick={() => {
                 const target = coins.find((c) => c.id === "moonbox");
                 if (target) onTradeCoin(target.id);
               }}
-              className="text-orange-500 font-bold hover:underline cursor-pointer"
+              className="text-orange-400 font-bold hover:underline cursor-pointer"
               title="Click to view @sol_expert coin"
             >
               @sol_expert:
@@ -411,20 +336,20 @@ export default function HomeTab({
                 const target = coins.find((c) => c.symbol === "ATI");
                 if (target) onTradeCoin(target.id);
               }}
-              className="text-orange-400 font-black cursor-pointer hover:text-white bg-orange-950/20 px-1 border border-orange-900/20 rounded font-mono"
+              className="text-orange-300 font-black cursor-pointer hover:text-white bg-orange-500/15 px-1.5 py-0.5 border border-orange-500/30 rounded-md font-mono"
             >
               ATI
             </span>{" "}
             is moving, dev didn't dump yet!
           </div>
 
-          <div className="text-zinc-500">
+          <div className="text-zinc-400">
             <span
               onClick={() => {
                 const target = coins.find((c) => c.id === "gigachad");
                 if (target) onTradeCoin(target.id);
               }}
-              className="text-amber-500 font-bold hover:underline cursor-pointer"
+              className="text-amber-400 font-bold hover:underline cursor-pointer"
               title="Click to view @pump_master coin"
             >
               @pump_master:
@@ -435,14 +360,14 @@ export default function HomeTab({
                 const target = coins.find((c) => c.symbol === "ROAD");
                 if (target) onTradeCoin(target.id);
               }}
-              className="text-orange-400 font-black cursor-pointer hover:text-white bg-orange-950/20 px-1 border border-orange-900/20 rounded font-mono"
+              className="text-orange-300 font-black cursor-pointer hover:text-white bg-orange-500/15 px-1.5 py-0.5 border border-orange-500/30 rounded-md font-mono"
             >
               ROAD
             </span>{" "}
             below 4c? easy 5x incoming fr, loading up!
           </div>
 
-          <div className="text-zinc-550 mb-1">
+          <div className="text-zinc-400 mb-1">
             <span
               onClick={() => {
                 const target = coins.find((c) => c.id === "bome");
@@ -459,20 +384,20 @@ export default function HomeTab({
                 const target = coins.find((c) => c.symbol === "MEW");
                 if (target) onTradeCoin(target.id);
               }}
-              className="text-orange-400 font-black cursor-pointer hover:text-white bg-orange-950/20 px-1 border border-orange-900/20 rounded font-mono"
+              className="text-orange-300 font-black cursor-pointer hover:text-white bg-orange-500/15 px-1.5 py-0.5 border border-orange-500/30 rounded-md font-mono"
             >
               MEW
             </span>{" "}
             coinflipped on arcade coin dev is a fat liar
           </div>
 
-          <div className="text-zinc-500">
+          <div className="text-zinc-400">
             <span
               onClick={() => {
                 const target = coins.find((c) => c.id === "omega");
                 if (target) onTradeCoin(target.id);
               }}
-              className="text-rose-455 font-bold hover:underline cursor-pointer"
+              className="text-rose-400 font-bold hover:underline cursor-pointer"
               title="Click to view @alpha_caller coin"
             >
               @alpha_caller:
@@ -482,14 +407,14 @@ export default function HomeTab({
                 const target = coins.find((c) => c.symbol === "OMGA");
                 if (target) onTradeCoin(target.id);
               }}
-              className="text-orange-400 font-black cursor-pointer hover:text-white bg-orange-950/20 px-1 border border-orange-900/20 rounded font-mono"
+              className="text-orange-300 font-black cursor-pointer hover:text-white bg-orange-500/15 px-1.5 py-0.5 border border-orange-500/30 rounded-md font-mono"
             >
               OMGA
             </span>{" "}
             has closed! RIP to the buyers dev took 100 Sol liquidity lmao
           </div>
 
-          <div className="text-zinc-500">
+          <div className="text-zinc-400">
             <span className="text-cyan-400 font-bold">@paper_hands:</span> sold
             my{" "}
             <span
@@ -497,14 +422,14 @@ export default function HomeTab({
                 const target = coins.find((c) => c.symbol === "ATI");
                 if (target) onTradeCoin(target.id);
               }}
-              className="text-orange-400 font-black cursor-pointer hover:text-white bg-orange-950/20 px-1 border border-orange-900/20 rounded font-mono"
+              className="text-orange-300 font-black cursor-pointer hover:text-white bg-orange-500/15 px-1.5 py-0.5 border border-orange-500/30 rounded-md font-mono"
             >
               ATI
             </span>{" "}
             early, im crying now im so paperhanded i deserve to stay poor
           </div>
 
-          <div className="text-zinc-550">
+          <div className="text-zinc-400">
             <span
               onClick={() => {
                 const target = coins.find((c) => c.id === "memex250");

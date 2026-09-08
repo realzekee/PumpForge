@@ -88,18 +88,6 @@ export interface PredictionMarket {
   category: "trading" | "general" | "arcade";
 }
 
-export interface Achievement {
-  id: string;
-  title: string;
-  description: string;
-  category: "trading" | "wealth" | "creation" | "arcade" | "prestige";
-  target: number;
-  current: number;
-  claimed: boolean;
-  cashReward: number;
-  gemReward: number;
-}
-
 export interface ShopItem {
   id: string;
   name: string;
@@ -115,7 +103,7 @@ export interface NotificationItem {
   title: string;
   message: string;
   timestamp: string;
-  type: "info" | "achievement" | "trade" | "crash";
+  type: "info" | "trade" | "crash" | "achievement";
 }
 
 export type ActiveTab =
@@ -125,7 +113,6 @@ export type ActiveTab =
   | "arcade"
   | "leaderboard"
   | "shop"
-  | "achievements"
   | "portfolio"
   | "treemap"
   | "create-coin"

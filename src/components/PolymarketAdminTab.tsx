@@ -116,7 +116,6 @@ export default function PolymarketAdminTab() {
   };
 
   const handleResolve = async (marketId: string, choice: string) => {
-    if (!window.confirm(`Are you sure you want to resolve this market as ${choice}? This will trigger payouts.`)) return;
     setResolving(marketId);
     await executePayouts(marketId, choice);
   };
@@ -125,79 +124,97 @@ export default function PolymarketAdminTab() {
 
   return (
     <div className="flex flex-col gap-6 animate-fade-in max-w-5xl mx-auto w-full p-4">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-zinc-900 border border-zinc-800 p-6 rounded-2xl shadow-xl">
-        <div className="flex flex-col gap-2">
-          <h2 className="text-xl md:text-2xl font-black text-rose-500 uppercase tracking-widest flex items-center gap-2">
-            <Activity className="w-5 h-5 md:w-6 md:h-6" /> Polymarket Admin
-          </h2>
-          <p className="text-xs md:text-sm text-zinc-400 font-mono max-w-xl leading-relaxed mt-1">
-            Resolve active Polymarket predictions. Resolving will automatically distribute simulated payouts and close the market.
-          </p>
+      <div className="glass-panel border border-white/10 p-6 md:p-8 rounded-3xl shadow-xl backdrop-blur-xl relative overflow-hidden">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
+          <div className="flex flex-col gap-2">
+            <h2 className="text-xl md:text-2xl font-black text-rose-500 uppercase tracking-widest flex items-center gap-2">
+              <Activity className="w-5 h-5 md:w-6 md:h-6" /> Polymarket Admin
+            </h2>
+            <p className="text-xs md:text-sm text-zinc-400 font-mono max-w-xl leading-relaxed mt-1">
+              Resolve active Polymarket predictions. Resolving will automatically distribute simulated payouts to wagerers and close the market in Appwrite.
+            </p>
+          </div>
         </div>
       </div>
 
       <div className="flex flex-col gap-4">
         {markets.length === 0 ? (
-          <div className="bg-zinc-900/50 p-8 rounded-2xl text-center text-zinc-500 font-mono text-xs uppercase shadow-sm border border-zinc-800">
+          <div className="glass-card border border-white/10 p-8 rounded-3xl text-center text-zinc-500 font-mono text-xs uppercase shadow-sm">
             No active markets pending resolution.
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {markets.map((market) => (
-              <div
-                key={market.$id}
-                className="bg-zinc-950 border border-zinc-800 p-5 rounded-2xl flex flex-col gap-4 relative shadow-lg hover:border-zinc-700 transition"
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 font-bold text-base md:text-lg text-white leading-snug">
-                    {market.question}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 text-[10px] text-zinc-400 font-mono uppercase font-bold bg-zinc-900 p-3 rounded-xl border border-zinc-850">
-                   <div className="flex flex-col">
-                     <span className="text-emerald-500 mb-0.5">Pool YES</span>
-                     <span className="text-white text-sm">${(market.poolYes || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
-                   </div>
-                   <div className="flex flex-col text-right">
-                     <span className="text-rose-500 mb-0.5">Pool NO</span>
-                     <span className="text-white text-sm">${(market.poolNo || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
-                   </div>
-                </div>
-
-                <div className="mt-3 flex items-center justify-between gap-3 border-t border-zinc-800/60 pt-4">
-                  <button
-                    disabled={resolving === market.$id}
-                    onClick={() => handleResolve(market.$id, "YES")}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-emerald-950 hover:bg-emerald-900 border border-emerald-900 text-emerald-400 font-extrabold uppercase rounded-lg text-[10px] tracking-widest transition-colors disabled:opacity-50"
-                  >
-                    <CheckCircle className="w-3.5 h-3.5" /> Resolve YES
-                  </button>
-                  <button
-                    disabled={resolving === market.$id}
-                    onClick={() => handleResolve(market.$id, "NO")}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-rose-950 hover:bg-rose-900 border border-rose-900 text-rose-400 font-extrabold uppercase rounded-lg text-[10px] tracking-widest transition-colors disabled:opacity-50"
-                  >
-                    <XCircle className="w-3.5 h-3.5" /> Resolve NO
-                  </button>
-                </div>
-                
-                <button
-                  disabled={resolving === market.$id}
-                  onClick={() => handleResolve(market.$id, "CANCEL")}
-                  className="w-full mt-2 flex items-center justify-center gap-1.5 py-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 font-bold uppercase rounded-lg text-[9px] tracking-widest transition-colors disabled:opacity-50"
+            {markets.map((market) => {
+              const [qTitle, qDesc] = (market.question || "").split(" --- ");
+              return (
+                <div
+                  key={market.$id}
+                  className="glass-card border border-white/10 p-6 rounded-3xl flex flex-col gap-4 relative shadow-lg backdrop-blur-lg hover:border-white/20 transition"
                 >
-                  <Ban className="w-3.5 h-3.5" /> Cancel / Refund All
-                </button>
-                
-                {resolving === market.$id && (
-                  <div className="absolute inset-0 bg-black/60 backdrop-blur-sm rounded-2xl flex items-center justify-center flex-col gap-2 shadow-inner border border-zinc-700 pointer-events-none z-10">
-                    <div className="w-6 h-6 border-2 border-rose-500 border-t-transparent origin-center rounded-full animate-spin"></div>
-                    <span className="text-rose-400 font-mono text-[10px] uppercase font-bold tracking-widest animate-pulse">Executing Payouts...</span>
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1">
+                      <div className="font-extrabold text-base md:text-lg text-white leading-snug">
+                        {qTitle || market.question}
+                      </div>
+                      {qDesc && (
+                        <div className="text-xs text-zinc-400 font-normal mt-1 leading-relaxed">
+                          {qDesc}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                )}
-              </div>
-            ))}
+
+                  <div className="grid grid-cols-2 gap-2 text-[10px] text-zinc-400 font-mono uppercase font-bold bg-black/40 p-3 rounded-2xl border border-white/5">
+                    <div className="flex flex-col">
+                      <span className="text-emerald-400 mb-0.5">Pool YES</span>
+                      <span className="text-white text-sm">
+                        ${(market.poolYes || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                    <div className="flex flex-col text-right">
+                      <span className="text-rose-400 mb-0.5">Pool NO</span>
+                      <span className="text-white text-sm">
+                        ${(market.poolNo || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="mt-2 flex items-center justify-between gap-3 border-t border-white/10 pt-4">
+                    <button
+                      disabled={resolving === market.$id}
+                      onClick={() => handleResolve(market.$id, "YES")}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-emerald-600/90 hover:bg-emerald-500 text-white font-extrabold uppercase rounded-xl text-[10px] tracking-widest transition-colors disabled:opacity-50 border border-emerald-400/30"
+                    >
+                      <CheckCircle className="w-3.5 h-3.5" /> Resolve YES
+                    </button>
+                    <button
+                      disabled={resolving === market.$id}
+                      onClick={() => handleResolve(market.$id, "NO")}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-rose-600/90 hover:bg-rose-500 text-white font-extrabold uppercase rounded-xl text-[10px] tracking-widest transition-colors disabled:opacity-50 border border-rose-400/30"
+                    >
+                      <XCircle className="w-3.5 h-3.5" /> Resolve NO
+                    </button>
+                  </div>
+
+                  <button
+                    disabled={resolving === market.$id}
+                    onClick={() => handleResolve(market.$id, "CANCEL")}
+                    className="w-full mt-1 flex items-center justify-center gap-1.5 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-400 font-bold uppercase rounded-xl text-[9px] tracking-widest transition-colors disabled:opacity-50"
+                  >
+                    <Ban className="w-3.5 h-3.5" /> Cancel / Refund All
+                  </button>
+
+                  {resolving === market.$id && (
+                    <div className="absolute inset-0 bg-black/70 backdrop-blur-md rounded-3xl flex items-center justify-center flex-col gap-2 shadow-inner border border-white/20 pointer-events-none z-10">
+                      <div className="w-6 h-6 border-2 border-rose-500 border-t-transparent origin-center rounded-full animate-spin"></div>
+                      <span className="text-[10px] font-mono text-zinc-400 tracking-widest uppercase font-bold">
+                        Resolving Payouts...
+                      </span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

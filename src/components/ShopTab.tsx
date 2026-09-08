@@ -137,7 +137,7 @@ export default function ShopTab({
   ) => {
     if (userStats.gems < cost) {
       alert(
-        "Insufficient gems! Play games, trade, or complete achievements to get additional gems.",
+        "Insufficient gems! Play games, trade, or collect daily rewards to get additional gems.",
       );
       return;
     }
@@ -234,20 +234,20 @@ export default function ShopTab({
 
   return (
     <div className="flex flex-col gap-6 animate-fade-in select-none">
-      <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4 bg-zinc-90 w-full">
+      <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4 w-full">
         <div className="flex flex-col gap-1.5">
-          <h2 className="text-sm font-extrabold text-zinc-400 font-mono tracking-widest uppercase flex items-center gap-1.5 leading-none">
-            <ShoppingBag className="text-orange-500 w-4 h-4" /> Degen cosmetics
+          <h2 className="text-sm font-extrabold text-zinc-300 font-mono tracking-widest uppercase flex items-center gap-2 leading-none">
+            <ShoppingBag className="text-rose-500 w-4 h-4" /> Degen cosmetics
             & shop crates
           </h2>
-          <span className="text-xs text-zinc-500 leading-none">
+          <span className="text-xs text-zinc-400 leading-none">
             Purchase customized username colors or claim surprise loot boxes
             using Gems!
           </span>
         </div>
 
-        <div className="flex items-center gap-2 bg-zinc-950 px-4 py-2 border border-zinc-900 rounded-xl font-mono text-sm self-start shadow-inner">
-          <span className="text-zinc-500">My Balance:</span>
+        <div className="flex items-center gap-2 glass-panel px-4 py-2 border border-white/10 rounded-2xl font-mono text-sm self-start shadow-xl">
+          <span className="text-zinc-400">My Balance:</span>
           <span className="font-extrabold text-cyan-400 flex items-center gap-1">
             💎 {userStats.gems} Gems
           </span>
@@ -256,23 +256,23 @@ export default function ShopTab({
 
       {/* Crate Unboxing display panel (if reward exists) */}
       {unboxReward && (
-        <div className="bg-gradient-to-r from-orange-950/40 via-zinc-900 to-zinc-900 border border-orange-900/40 p-5 rounded-2xl flex flex-col md:flex-row justify-between items-center gap-4 animate-scale-up">
+        <div className="glass-panel border border-rose-500/30 p-5 rounded-3xl flex flex-col md:flex-row justify-between items-center gap-4 animate-scale-up shadow-2xl">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-orange-950 text-orange-400 border border-orange-900/50 flex items-center justify-center text-2xl">
+            <div className="w-12 h-12 rounded-2xl bg-rose-500/20 text-rose-300 border border-rose-500/40 flex items-center justify-center text-2xl shadow-lg">
               🎁
             </div>
             <div className="flex flex-col">
               <span className="font-extrabold text-white text-sm">
                 Crate Open Accomplished!
               </span>
-              <span className="text-xs text-zinc-400">
+              <span className="text-xs text-zinc-300">
                 Your cosmetic unboxing has rewarded you with direct cash:
               </span>
             </div>
           </div>
           <div className="flex items-center gap-4 font-mono text-xs text-right">
             <div className="flex flex-col">
-              <span className="text-[10px] text-zinc-500 uppercase">
+              <span className="text-[10px] text-zinc-400 uppercase">
                 Cash Gain
               </span>
               <span className="font-black text-emerald-400 text-sm">
@@ -280,7 +280,7 @@ export default function ShopTab({
               </span>
             </div>
             <div className="flex flex-col">
-              <span className="text-[10px] text-zinc-500 uppercase">
+              <span className="text-[10px] text-zinc-400 uppercase">
                 Bonus Gems
               </span>
               <span className="font-black text-cyan-400 text-sm">
@@ -289,7 +289,7 @@ export default function ShopTab({
             </div>
             <button
               onClick={() => setUnboxReward(null)}
-              className="bg-zinc-950 hover:bg-zinc-800 border border-zinc-850 py-1.5 px-3 rounded-lg text-zinc-300 transition-colors shrink-0"
+              className="glass-pill hover:bg-white/15 border border-white/15 py-1.5 px-3.5 rounded-xl text-white transition-colors shrink-0 font-bold text-xs cursor-pointer"
             >
               Great!
             </button>
@@ -301,8 +301,8 @@ export default function ShopTab({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Loot crates chest shop */}
         <div className="flex flex-col gap-4">
-          <h3 className="text-xs font-extrabold text-zinc-400 uppercase tracking-widest font-mono flex items-center gap-1.5">
-            <Package className="w-4 h-4 text-orange-500" /> Unlock Loot Crates
+          <h3 className="text-xs font-extrabold text-zinc-300 uppercase tracking-widest font-mono flex items-center gap-1.5">
+            <Package className="w-4 h-4 text-rose-500" /> Unlock Loot Crates
           </h3>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -312,19 +312,19 @@ export default function ShopTab({
               return (
                 <div
                   key={box.id}
-                  className="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl flex flex-col justify-between hover:border-zinc-700/60 transition-all duration-200 select-none"
+                  className="glass-panel border border-white/10 p-5 rounded-3xl flex flex-col justify-between hover:border-white/20 transition-all duration-200 select-none shadow-xl group"
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex flex-col gap-1 max-w-[70%]">
-                      <span className="font-extrabold font-mono text-zinc-200 text-sm leading-tight">
+                      <span className="font-extrabold font-mono text-zinc-100 text-sm leading-tight">
                         {box.name}
                       </span>
-                      <p className="text-[11px] text-zinc-500 font-mono italic leading-normal">
+                      <p className="text-[11px] text-zinc-400 font-mono italic leading-normal mt-0.5">
                         {box.description}
                       </p>
                     </div>
                     <div
-                      className={`w-12 h-12 bg-zinc-950 border border-zinc-850 rounded-xl flex items-center justify-center text-3xl shrink-0 ${
+                      className={`w-12 h-12 glass-card border border-white/10 rounded-2xl flex items-center justify-center text-3xl shrink-0 shadow-lg ${
                         isSpinningThis ? "animate-spin-slow brightness-110" : ""
                       }`}
                     >
@@ -332,14 +332,14 @@ export default function ShopTab({
                     </div>
                   </div>
 
-                  <div className="mt-5 pt-3 border-t border-zinc-950 flex items-center justify-between font-mono">
+                  <div className="mt-5 pt-3 border-t border-white/10 flex items-center justify-between font-mono">
                     <span className="text-xs font-black text-cyan-400 flex items-center gap-1">
                       💎 {box.costGems} Gems
                     </span>
                     <button
                       onClick={() => openCrate(box.id, box.name, box.costGems)}
                       disabled={unboxingCrate !== null}
-                      className="bg-gradient-to-r from-orange-600 to-amber-600 text-white hover:brightness-110 active:scale-98 font-bold py-1.5 px-3.5 rounded-xl text-[10px] uppercase tracking-wider transition-all disabled:opacity-40"
+                      className="bg-gradient-to-r from-rose-600 to-red-600 text-white hover:brightness-110 active:scale-98 font-black py-1.5 px-4 rounded-xl text-[10px] uppercase tracking-wider transition-all disabled:opacity-40 shadow-lg shadow-rose-950/20 border border-white/15 cursor-pointer"
                     >
                       {isSpinningThis ? "Spinning..." : "Unbox"}
                     </button>
@@ -352,29 +352,29 @@ export default function ShopTab({
 
         {/* Custom equipped color text classes */}
         <div className="flex flex-col gap-4">
-          <h3 className="text-xs font-extrabold text-zinc-400 uppercase tracking-widest font-mono flex items-center gap-1.5">
-            <Award className="w-4 h-4 text-orange-500" /> Unlock User Name
+          <h3 className="text-xs font-extrabold text-zinc-300 uppercase tracking-widest font-mono flex items-center gap-1.5">
+            <Award className="w-4 h-4 text-rose-500" /> Unlock User Name
             Colors
           </h3>
 
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 flex flex-col gap-2.5">
+          <div className="glass-panel border border-white/10 rounded-3xl p-4 flex flex-col gap-2.5 shadow-xl">
             {colorsList.map((skin) => {
               const isEquipped = userStats.nameColor === skin.colorClass;
 
               return (
                 <div
                   key={skin.id}
-                  className="bg-zinc-950/60 p-3 rounded-xl border border-zinc-900 flex items-center justify-between gap-4 font-mono text-xs select-none"
+                  className="glass-card p-3 rounded-2xl border border-white/10 flex items-center justify-between gap-4 font-mono text-xs select-none"
                 >
                   <div className="flex items-center gap-2">
-                    <span className="text-zinc-600 font-bold">@</span>
+                    <span className="text-zinc-500 font-bold">@</span>
                     <span className={`font-bold ${skin.colorClass}`}>
                       {skin.name} Styling
                     </span>
                   </div>
 
                   {isEquipped ? (
-                    <span className="text-[10px] text-emerald-400 font-extrabold bg-emerald-950/40 px-2 py-1 rounded border border-emerald-900/40 uppercase tracking-wide flex items-center gap-1">
+                    <span className="text-[10px] text-emerald-400 font-extrabold bg-emerald-500/15 px-2.5 py-1 rounded-full border border-emerald-500/30 uppercase tracking-wide flex items-center gap-1">
                       <CheckCircle2 className="w-3.5 h-3.5" /> Equipped
                     </span>
                   ) : (
@@ -387,10 +387,10 @@ export default function ShopTab({
                           skin.costGems,
                         )
                       }
-                      className="bg-zinc-900 hover:bg-zinc-805 border border-zinc-800 text-cyan-400 hover:text-cyan-300 font-bold px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-wider transition-all flex items-center gap-1"
+                      className="glass-pill hover:bg-white/15 border border-white/10 text-cyan-400 hover:text-cyan-300 font-black px-3.5 py-1.5 rounded-xl text-[10px] uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer"
                     >
                       <span>Buy Style</span>
-                      <ChevronRight className="w-3 h-3 text-cyan-405" />
+                      <ChevronRight className="w-3 h-3 text-cyan-400" />
                     </button>
                   )}
                 </div>

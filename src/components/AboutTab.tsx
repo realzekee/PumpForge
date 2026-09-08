@@ -4,7 +4,7 @@ import {
   Sliders,
   PlayCircle,
   ShieldAlert,
-  Award,
+  Gamepad2,
   Send,
   Coins,
 } from "lucide-react";
@@ -17,16 +17,16 @@ export default function AboutTab() {
     >
       <div className="flex flex-col">
         <h2 className="text-xl font-black text-white tracking-tight flex items-center gap-2">
-          <HelpCircle className="w-5 h-5 text-orange-500" /> About PumpForge
+          <HelpCircle className="w-5 h-5 text-rose-500" /> About PumpForge
         </h2>
-        <p className="text-xs text-zinc-500 font-mono tracking-wide mt-0.5">
+        <p className="text-xs text-zinc-400 font-mono tracking-wide mt-0.5">
           The ultimate decentralized meme-coin sandbox and trading engine
         </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        <div className="bg-zinc-900/30 border border-zinc-900 p-5 rounded-2xl flex flex-col gap-3">
-          <h3 className="text-sm font-extrabold text-orange-400 uppercase tracking-wider flex items-center gap-1.5 font-mono">
+        <div className="glass-panel border border-white/10 p-6 rounded-3xl flex flex-col gap-3 shadow-xl">
+          <h3 className="text-sm font-extrabold text-rose-400 uppercase tracking-wider flex items-center gap-2 font-mono">
             <PlayCircle className="w-4 h-4" /> Welcome Degen!
           </h3>
           <p className="text-xs text-zinc-300 leading-relaxed">
@@ -42,8 +42,8 @@ export default function AboutTab() {
           </p>
         </div>
 
-        <div className="bg-zinc-900/30 border border-zinc-900 p-5 rounded-2xl flex flex-col gap-3">
-          <h3 className="text-sm font-extrabold text-cyan-400 uppercase tracking-wider flex items-center gap-1.5 font-mono">
+        <div className="glass-panel border border-white/10 p-6 rounded-3xl flex flex-col gap-3 shadow-xl">
+          <h3 className="text-sm font-extrabold text-cyan-400 uppercase tracking-wider flex items-center gap-2 font-mono">
             <Sliders className="w-4 h-4" /> Sandbox Guidelines
           </h3>
           <ul className="text-xs text-zinc-300 flex flex-col gap-2.5">
@@ -79,44 +79,44 @@ export default function AboutTab() {
         </div>
       </div>
 
-      <div className="bg-zinc-950/40 border border-zinc-900 p-5 rounded-2xl flex flex-col gap-4">
+      <div className="glass-panel border border-white/10 p-6 rounded-3xl flex flex-col gap-4 shadow-xl">
         <h3 className="text-sm font-extrabold text-zinc-100 uppercase tracking-widest font-mono">
           Engine Capability Specifications
         </h3>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
-          <div className="bg-zinc-900/40 p-3.5 rounded-xl border border-zinc-900/60 flex flex-col items-center gap-1.5">
-            <Coins className="w-5 h-5 text-yellow-500" />
-            <span className="text-[10px] font-bold text-zinc-300">
+          <div className="glass-card p-3.5 rounded-2xl border border-white/10 flex flex-col items-center gap-1.5 shadow-sm">
+            <Coins className="w-5 h-5 text-yellow-400" />
+            <span className="text-[10px] font-bold text-zinc-200">
               Fast Liquidity
             </span>
-            <span className="text-[9px] font-mono text-zinc-500">
+            <span className="text-[9px] font-mono text-zinc-400">
               Instant buy & sell orders
             </span>
           </div>
-          <div className="bg-zinc-900/40 p-3.5 rounded-xl border border-zinc-900/60 flex flex-col items-center gap-1.5">
-            <ShieldAlert className="w-5 h-5 text-red-500" />
-            <span className="text-[10px] font-bold text-zinc-300">
+          <div className="glass-card p-3.5 rounded-2xl border border-white/10 flex flex-col items-center gap-1.5 shadow-sm">
+            <ShieldAlert className="w-5 h-5 text-rose-400" />
+            <span className="text-[10px] font-bold text-zinc-200">
               Dev delist
             </span>
-            <span className="text-[9px] font-mono text-zinc-500">
+            <span className="text-[9px] font-mono text-zinc-400">
               Autonomous bot dump
             </span>
           </div>
-          <div className="bg-zinc-900/40 p-3.5 rounded-xl border border-zinc-900/60 flex flex-col items-center gap-1.5">
-            <Award className="w-5 h-5 text-amber-500" />
-            <span className="text-[10px] font-bold text-zinc-300">
-              59 Achievements
+          <div className="glass-card p-3.5 rounded-2xl border border-white/10 flex flex-col items-center gap-1.5 shadow-sm">
+            <Gamepad2 className="w-5 h-5 text-amber-400" />
+            <span className="text-[10px] font-bold text-zinc-200">
+              Arcade Arena
             </span>
-            <span className="text-[9px] font-mono text-zinc-500">
-              Claim gems & modifiers
+            <span className="text-[9px] font-mono text-zinc-400">
+              Mini-games & gems
             </span>
           </div>
-          <div className="bg-zinc-900/40 p-3.5 rounded-xl border border-zinc-900/60 flex flex-col items-center gap-1.5">
+          <div className="glass-card p-3.5 rounded-2xl border border-white/10 flex flex-col items-center gap-1.5 shadow-sm">
             <Send className="w-5 h-5 text-cyan-400" />
-            <span className="text-[10px] font-bold text-zinc-300">
+            <span className="text-[10px] font-bold text-zinc-200">
               Global Transfers
             </span>
-            <span className="text-[9px] font-mono text-zinc-500">
+            <span className="text-[9px] font-mono text-zinc-400">
               Send sandboxed coins
             </span>
           </div>

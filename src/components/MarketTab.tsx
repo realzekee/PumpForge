@@ -157,28 +157,28 @@ export default function MarketTab({
   return (
     <div className="flex flex-col gap-5 animate-fade-in">
       {/* Search and stats bar */}
-      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 bg-zinc-90 w-full">
+      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 w-full">
         <div className="relative flex-1">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
           <input
             type="text"
             placeholder="Search coin name or symbol (e.g. ATI)..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 bg-zinc-900 border border-zinc-800 focus:border-orange-500/80 rounded-xl text-xs text-white focus:outline-none focus:ring-1 focus:ring-orange-500/50 transition-all font-mono"
+            className="w-full pl-10 pr-4 py-2.5 glass-input rounded-xl text-xs text-white focus:outline-none focus:border-rose-500/80 transition-all font-mono"
           />
         </div>
-        <div className="flex items-center gap-2 font-mono text-[10px] uppercase font-bold text-zinc-500 overflow-x-auto shrink-0 py-1">
+        <div className="flex items-center gap-2 font-mono text-[10px] uppercase font-bold text-zinc-400 overflow-x-auto shrink-0 py-1">
           <span>Sort:</span>
           {(["marketCap", "price", "change24h", "volume24h"] as const).map(
             (field) => (
               <button
                 key={field}
                 onClick={() => handleSort(field)}
-                className={`px-2.5 py-1.5 rounded-lg border flex items-center gap-1 transition-colors capitalize ${
+                className={`px-3 py-1.5 rounded-xl border flex items-center gap-1 transition-all capitalize cursor-pointer ${
                   sortBy === field
-                    ? "bg-zinc-800 text-orange-400 border-zinc-700 font-extrabold"
-                    : "bg-zinc-900/60 text-zinc-400 border-zinc-900 hover:text-zinc-200 hover:border-zinc-800"
+                    ? "bg-white/[0.12] text-rose-400 border-rose-500/50 font-extrabold shadow-sm"
+                    : "glass-pill text-zinc-400 hover:text-white hover:bg-white/[0.08] border-white/10"
                 }`}
               >
                 {field === "marketCap"
@@ -200,11 +200,11 @@ export default function MarketTab({
       </div>
 
       {/* Coins Market Table or List */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden select-none shadow-xl">
+      <div className="glass-panel border border-white/10 rounded-3xl overflow-hidden select-none shadow-2xl">
         {/* Desktop Table View */}
         <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left font-mono">
-            <thead className="bg-zinc-950/80 border-b border-zinc-850/80 text-[10px] text-zinc-400 uppercase tracking-wider font-extrabold">
+            <thead className="bg-white/[0.03] border-b border-white/[0.08] text-[10px] text-zinc-400 uppercase tracking-wider font-extrabold">
               <tr>
                 <th className="px-5 py-4">Meme Coin Details</th>
                 <th className="px-5 py-4 text-right">Price</th>
@@ -215,12 +215,12 @@ export default function MarketTab({
                 <th className="px-5 py-4 text-center">Action</th>
               </tr>
             </thead>
-            <tbody className="text-xs divide-y divide-zinc-900 font-semibold text-zinc-300">
+            <tbody className="text-xs divide-y divide-white/[0.06] font-semibold text-zinc-300">
               {filteredCoins.length === 0 ? (
                 <tr>
                   <td
                     colSpan={7}
-                    className="text-center py-10 text-zinc-500 text-xs font-mono"
+                    className="text-center py-10 text-zinc-400 text-xs font-mono"
                   >
                     No simulated meme coins found. Launch one!
                   </td>
@@ -233,14 +233,12 @@ export default function MarketTab({
                   return (
                     <tr
                       key={coin.id}
-                      className={`hover:bg-zinc-950/30 transition-colors ${
-                        false ? "opacity-50 hover:bg-transparent" : ""
-                      }`}
+                      className="hover:bg-white/[0.04] transition-colors"
                     >
                       {/* Name Col */}
                       <td className="px-5 py-3.5 flex items-center gap-3">
                         <div
-                          className={`w-10 h-10 rounded-xl border flex items-center justify-center text-xl shadow-inner ${coin.avatarBg}`}
+                          className={`w-10 h-10 rounded-xl border border-white/20 flex items-center justify-center text-xl shadow-inner ${coin.avatarBg}`}
                         >
                           {coin.avatarEmoji}
                         </div>
@@ -250,13 +248,13 @@ export default function MarketTab({
                               {coin.name}
                             </span>
                             {coin.isUserCreated && (
-                              <span className="text-[9px] bg-emerald-950/80 border border-emerald-900/60 text-emerald-400 px-1 py-0.2 rounded font-mono font-bold uppercase tracking-wider scale-95 leading-none">
+                              <span className="text-[9px] bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 px-1.5 py-0.5 rounded font-mono font-bold uppercase tracking-wider scale-95 leading-none">
                                 User
                               </span>
                             )}
                           </div>
-                          <div className="flex items-center gap-1.5 text-[10px] text-zinc-500 mt-1 leading-none">
-                            <span className="font-bold text-zinc-400">
+                          <div className="flex items-center gap-1.5 text-[10px] text-zinc-400 mt-1 leading-none">
+                            <span className="font-bold text-zinc-300">
                               *{coin.symbol}
                             </span>
                             <span>•</span>
@@ -269,37 +267,27 @@ export default function MarketTab({
 
                       {/* Price Col */}
                       <td className="px-5 py-3.5 text-right font-bold text-[13px]">
-                        {false ? (
-                          <span className="text-red-500 line-through">
-                            $0.0000
-                          </span>
-                        ) : (
-                          <span className="text-zinc-200">
-                            $
-                            {coin.price >= 1000
-                              ? `${(coin.price / 1000).toFixed(2)}K`
-                              : coin.price >= 1
-                              ? coin.price.toFixed(2)
-                              : coin.price >= 0.01
-                              ? coin.price.toFixed(4)
-                              : coin.price.toFixed(6)}
-                          </span>
-                        )}
+                        <span className="text-zinc-200">
+                          $
+                          {coin.price >= 1000
+                            ? `${(coin.price / 1000).toFixed(2)}K`
+                            : coin.price >= 1
+                            ? coin.price.toFixed(2)
+                            : coin.price >= 0.01
+                            ? coin.price.toFixed(4)
+                            : coin.price.toFixed(6)}
+                        </span>
                       </td>
 
                       {/* Change Col */}
                       <td className="px-5 py-3.5 text-right">
-                        {false ? (
-                          <span className="text-red-500 font-bold bg-red-950/40 border border-red-900/30 px-1.5 py-0.5 rounded">
-                            -99.9%
-                          </span>
-                        ) : coin.change24h >= 0 ? (
-                          <span className="text-emerald-400 font-bold bg-emerald-950/20 border border-emerald-900/30 px-1.5 py-0.5 rounded flex items-center gap-0.5 inline-flex ml-auto text-[11px]">
+                        {coin.change24h >= 0 ? (
+                          <span className="text-emerald-400 font-bold bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.5 rounded flex items-center gap-0.5 inline-flex ml-auto text-[11px]">
                             <TrendingUp className="w-3 h-3 text-emerald-400" />{" "}
                             +{coin.change24h.toFixed(1)}%
                           </span>
                         ) : (
-                          <span className="text-rose-400 font-bold bg-rose-950/20 border border-rose-900/30 px-1.5 py-0.5 rounded flex items-center gap-0.5 inline-flex ml-auto text-[11px]">
+                          <span className="text-rose-400 font-bold bg-rose-500/15 border border-rose-500/30 px-1.5 py-0.5 rounded flex items-center gap-0.5 inline-flex ml-auto text-[11px]">
                             <TrendingDown className="w-3 h-3 text-rose-400" />{" "}
                             {coin.change24h.toFixed(1)}%
                           </span>
@@ -309,11 +297,9 @@ export default function MarketTab({
                       {/* Marketcap Col */}
                       <td className="px-5 py-3.5 text-right font-medium text-zinc-300">
                         $
-                        {false
-                          ? "0"
-                          : coin.marketCap >= 1000
-                            ? `${(coin.marketCap / 1000).toFixed(1)}K`
-                            : coin.marketCap.toFixed(0)}
+                        {coin.marketCap >= 1000
+                          ? `${(coin.marketCap / 1000).toFixed(1)}K`
+                          : coin.marketCap.toFixed(0)}
                       </td>
 
                       {/* Volume Col */}
@@ -333,12 +319,12 @@ export default function MarketTab({
                                 maximumFractionDigits: 2,
                               })}
                             </span>
-                            <span className="text-[10px] text-zinc-500">
+                            <span className="text-[10px] text-zinc-400">
                               Value: ${(holds * coin.price).toFixed(2)}
                             </span>
                           </div>
                         ) : (
-                          <span className="text-zinc-600">—</span>
+                          <span className="text-zinc-500">—</span>
                         )}
                       </td>
 
@@ -348,12 +334,7 @@ export default function MarketTab({
                             <div className="flex gap-1.5">
                               <button
                                 onClick={() => navigate(`/coin/${coin.id}`)}
-                                disabled={false}
-                                className={`font-black py-1.5 px-3 rounded-lg text-[10px] select-none tracking-widest uppercase transition-all duration-205 leading-none ${
-                                  false
-                                    ? "bg-zinc-800 text-zinc-650 cursor-not-allowed border border-zinc-850"
-                                    : "bg-zinc-950 border border-zinc-800 text-zinc-300 hover:text-white hover:border-orange-500"
-                                }`}
+                                className="font-black py-1.5 px-3 rounded-xl text-[10px] select-none tracking-widest uppercase transition-all glass-pill hover:bg-white/[0.12] text-zinc-200 hover:text-white border-white/10 hover:border-orange-500 cursor-pointer"
                               >
                                 Trade
                               </button>
@@ -362,7 +343,7 @@ export default function MarketTab({
                                   e.stopPropagation();
                                   onDeleteOwnCoin(coin.id);
                                 }}
-                                className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white font-black px-2 py-1.5 rounded-lg text-[10px] flex items-center gap-0.5 shadow-md uppercase tracking-widest leading-none border border-zinc-850"
+                                className="glass-pill hover:bg-rose-950/40 text-rose-300 hover:text-white font-black px-2.5 py-1.5 rounded-xl text-[10px] flex items-center gap-0.5 shadow-md uppercase tracking-widest border border-rose-500/30 cursor-pointer"
                               >
                                 Delete
                               </button>
@@ -370,12 +351,7 @@ export default function MarketTab({
                           ) : (
                             <button
                               onClick={() => navigate(`/coin/${coin.id}`)}
-                              disabled={false}
-                              className={`font-black py-1.5 px-3 rounded-lg text-[10px] select-none tracking-widest uppercase transition-all duration-205 leading-none ${
-                                false
-                                  ? "bg-zinc-800 text-zinc-600 cursor-not-allowed border border-zinc-850"
-                                  : "bg-zinc-950 border border-zinc-800 text-zinc-300 hover:text-white hover:border-orange-500"
-                              }`}
+                              className="font-black py-1.5 px-3.5 rounded-xl text-[10px] select-none tracking-widest uppercase transition-all glass-pill hover:bg-white/[0.12] text-zinc-200 hover:text-white border-white/10 hover:border-rose-500 cursor-pointer"
                             >
                               Trade
                             </button>
@@ -390,10 +366,10 @@ export default function MarketTab({
           </table>
         </div>
 
-        {/* Mobile List View - Compact & Fully Visible layout (No sideway scroll required!) */}
-        <div className="block md:hidden divide-y divide-zinc-900 font-mono">
+        {/* Mobile List View */}
+        <div className="block md:hidden divide-y divide-white/[0.06] font-mono">
           {filteredCoins.length === 0 ? (
-            <div className="text-center py-10 text-zinc-500 text-xs font-mono">
+            <div className="text-center py-10 text-zinc-400 text-xs font-mono">
               No simulated meme coins found. Launch one!
             </div>
           ) : (
@@ -404,14 +380,12 @@ export default function MarketTab({
               return (
                 <div
                   key={coin.id}
-                  className={`p-3.5 flex items-center justify-between gap-2.5 hover:bg-zinc-950/20 transition-colors ${
-                    false ? "opacity-50" : ""
-                  }`}
+                  className="p-3.5 flex items-center justify-between gap-2.5 hover:bg-white/[0.04] transition-colors"
                 >
                   {/* Left: Avatar & info stacked */}
                   <div className="flex items-center gap-2.5 min-w-0 flex-1">
                     <div
-                      className={`w-9 h-9 rounded-xl border flex items-center justify-center text-lg shrink-0 shadow-inner ${coin.avatarBg}`}
+                      className={`w-9 h-9 rounded-xl border border-white/20 flex items-center justify-center text-lg shrink-0 shadow-inner ${coin.avatarBg}`}
                     >
                       {coin.avatarEmoji}
                     </div>
@@ -421,13 +395,13 @@ export default function MarketTab({
                           {coin.name}
                         </span>
                         {coin.isUserCreated && (
-                          <span className="text-[8px] bg-emerald-950/80 border border-emerald-900/60 text-emerald-400 px-1 py-0.2 rounded font-mono font-bold uppercase tracking-wider scale-90 leading-none">
+                          <span className="text-[8px] bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 px-1 py-0.2 rounded font-mono font-bold uppercase tracking-wider scale-90 leading-none">
                             User
                           </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-1 text-[9px] text-zinc-500 mt-1 leading-none">
-                        <span className="font-bold text-zinc-400">
+                      <div className="flex items-center gap-1 text-[9px] text-zinc-400 mt-1 leading-none">
+                        <span className="font-bold text-zinc-300">
                           *{coin.symbol}
                         </span>
                         <span>•</span>
@@ -453,52 +427,37 @@ export default function MarketTab({
 
                   {/* Middle: Price + Change */}
                   <div className="flex flex-col items-end text-right shrink-0">
-                    {false ? (
-                      <span className="text-red-500 line-through text-[11.5px] font-bold">
-                        $0.0000
-                      </span>
-                    ) : (
-                      <span className="text-zinc-205 text-[11.5px] font-bold">
-                        $
-                        {coin.price >= 1000
-                          ? `${(coin.price / 1000).toFixed(2)}K`
-                          : coin.price >= 1
-                          ? coin.price.toFixed(2)
-                          : coin.price >= 0.01
-                          ? coin.price.toFixed(4)
-                          : coin.price.toFixed(6)}
-                      </span>
-                    )}
+                    <span className="text-zinc-200 text-[11.5px] font-bold">
+                      $
+                      {coin.price >= 1000
+                        ? `${(coin.price / 1000).toFixed(2)}K`
+                        : coin.price >= 1
+                        ? coin.price.toFixed(2)
+                        : coin.price >= 0.01
+                        ? coin.price.toFixed(4)
+                        : coin.price.toFixed(6)}
+                    </span>
 
                     <div className="mt-1">
-                      {false ? (
-                        <span className="text-red-505 font-bold bg-red-950/40 border border-red-900/30 px-1 py-0.2 rounded text-[8px] tracking-wider font-extrabold">
-                          crash
-                        </span>
-                      ) : coin.change24h >= 0 ? (
-                        <span className="text-emerald-400 font-bold bg-emerald-950/20 border border-emerald-900/30 px-1 py-0.2 rounded text-[9.5px] flex items-center gap-0.5 inline-flex leading-none">
+                      {coin.change24h >= 0 ? (
+                        <span className="text-emerald-400 font-bold bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.5 rounded text-[9.5px] flex items-center gap-0.5 inline-flex leading-none">
                           +{coin.change24h.toFixed(1)}%
                         </span>
                       ) : (
-                        <span className="text-rose-400 font-bold bg-rose-950/20 border border-rose-900/30 px-1 py-0.2 rounded text-[9.5px] flex items-center gap-0.5 inline-flex leading-none">
+                        <span className="text-rose-400 font-bold bg-rose-500/15 border border-rose-500/30 px-1.5 py-0.5 rounded text-[9.5px] flex items-center gap-0.5 inline-flex leading-none">
                           {coin.change24h.toFixed(1)}%
                         </span>
                       )}
                     </div>
                   </div>
 
-                  {/* Right: Action Button fully visible */}
+                  {/* Right: Action Button */}
                   <div className="shrink-0 pl-1 font-mono">
                     {isCreator ? (
                       <div className="flex gap-1">
                         <button
                           onClick={() => navigate(`/coin/${coin.id}`)}
-                          disabled={false}
-                          className={`font-black py-1.5 px-2.5 rounded-lg text-[9px] select-none tracking-widest uppercase transition-all duration-205 leading-none ${
-                            false
-                              ? "bg-zinc-805 text-zinc-600 border border-zinc-850 cursor-not-allowed"
-                              : "bg-zinc-950 border border-zinc-800 text-zinc-200 hover:text-white hover:border-orange-500"
-                          }`}
+                          className="font-black py-1.5 px-2.5 rounded-xl text-[9px] select-none tracking-widest uppercase transition-all leading-none glass-pill hover:bg-white/[0.12] text-zinc-200 hover:text-white border-white/10 cursor-pointer"
                         >
                           Trade
                         </button>
@@ -507,7 +466,7 @@ export default function MarketTab({
                             e.stopPropagation();
                             onDeleteOwnCoin(coin.id);
                           }}
-                          className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white font-black px-2 py-1.5 rounded-lg text-[9px] flex items-center gap-0.5 shadow-md uppercase tracking-widest leading-none border border-zinc-850"
+                          className="glass-pill hover:bg-rose-950/40 text-rose-300 hover:text-white font-black px-2 py-1.5 rounded-xl text-[9px] flex items-center gap-0.5 shadow-md uppercase tracking-widest leading-none border border-rose-500/30 cursor-pointer"
                         >
                           Delete
                         </button>
@@ -515,12 +474,7 @@ export default function MarketTab({
                     ) : (
                       <button
                         onClick={() => navigate(`/coin/${coin.id}`)}
-                        disabled={false}
-                        className={`font-black py-2 px-3 rounded-lg text-[10px] select-none tracking-widest uppercase transition-all duration-205 leading-none ${
-                          false
-                            ? "bg-zinc-800 text-zinc-600 border border-zinc-850 cursor-not-allowed"
-                            : "bg-zinc-950 border border-zinc-800 text-zinc-200 hover:text-white hover:border-orange-500"
-                        }`}
+                        className="font-black py-1.5 px-3 rounded-xl text-[10px] select-none tracking-widest uppercase transition-all leading-none glass-pill hover:bg-white/[0.12] text-zinc-200 hover:text-white border-white/10 cursor-pointer"
                       >
                         Trade
                       </button>
@@ -535,13 +489,13 @@ export default function MarketTab({
 
       {/* Trade Modal containing interactive chart and sliders! */}
       {selectedCoin && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-3xl w-full max-w-lg overflow-hidden flex flex-col shadow-2xl relative animate-slide-up select-none">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-xl z-50 flex items-center justify-center p-4">
+          <div className="glass-modal rounded-3xl w-full max-w-lg overflow-hidden flex flex-col shadow-2xl relative animate-slide-up select-none border border-white/15">
             {/* Modal Header */}
-            <div className="p-5 border-b border-zinc-800 bg-zinc-950/80 flex items-center justify-between">
+            <div className="p-5 border-b border-white/10 bg-white/[0.04] flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div
-                  className={`w-11 h-11 rounded-xl border flex items-center justify-center text-2xl shadow-inner ${selectedCoin.avatarBg}`}
+                  className={`w-11 h-11 rounded-xl border border-white/20 flex items-center justify-center text-2xl shadow-inner ${selectedCoin.avatarBg}`}
                 >
                   {selectedCoin.avatarEmoji}
                 </div>
@@ -549,7 +503,7 @@ export default function MarketTab({
                   <h3 className="font-extrabold text-white text-[15px] leading-tight">
                     Trade {selectedCoin.name}
                   </h3>
-                  <span className="text-xs font-mono text-zinc-500">
+                  <span className="text-xs font-mono text-zinc-400">
                     *{selectedCoin.symbol} • Created by {selectedCoin.creator}
                   </span>
                 </div>
@@ -560,7 +514,7 @@ export default function MarketTab({
                   setTradeAmount("");
                   setTradePercentage(null);
                 }}
-                className="p-1 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg transition-colors"
+                className="p-1 text-zinc-400 hover:text-white hover:bg-white/[0.08] rounded-xl transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -569,10 +523,10 @@ export default function MarketTab({
             {/* Inner scrollable content */}
             <div className="p-5 overflow-y-auto max-h-[80vh] flex flex-col gap-4">
               {/* Simulated Price Chart */}
-              <div className="bg-zinc-950/80 border border-zinc-850 p-4 rounded-2xl flex flex-col gap-1 select-none">
+              <div className="glass-card p-4 rounded-2xl flex flex-col gap-1 select-none border border-white/10">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-zinc-500 uppercase font-mono tracking-widest font-bold flex items-center gap-1.5">
-                    <ChartIcon className="w-3.5 h-3.5 text-zinc-500" /> Price
+                  <span className="text-[10px] text-zinc-400 uppercase font-mono tracking-widest font-bold flex items-center gap-1.5">
+                    <ChartIcon className="w-3.5 h-3.5 text-zinc-400" /> Price
                     Chart History
                   </span>
                   <span className="text-xs font-mono font-bold text-white">
@@ -617,7 +571,7 @@ export default function MarketTab({
               </div>
 
               {/* Trade Type Selection */}
-              <div className="grid grid-cols-2 bg-zinc-950 border border-zinc-850 p-1 rounded-xl font-mono text-xs font-bold uppercase tracking-wider">
+              <div className="grid grid-cols-2 bg-white/[0.04] border border-white/10 p-1 rounded-2xl font-mono text-xs font-bold uppercase tracking-wider">
                 <button
                   type="button"
                   onClick={() => {
@@ -625,10 +579,10 @@ export default function MarketTab({
                     setTradeAmount("");
                     setTradePercentage(null);
                   }}
-                  className={`py-2 px-3 rounded-lg transition-all ${
+                  className={`py-2 px-3 rounded-xl transition-all cursor-pointer ${
                     tradeType === "BUY"
-                      ? "bg-emerald-600 text-white shadow-md"
-                      : "text-zinc-500 hover:text-zinc-300"
+                      ? "bg-emerald-600 text-white shadow-lg border border-white/20"
+                      : "text-zinc-400 hover:text-zinc-200"
                   }`}
                 >
                   Buy {selectedCoin.symbol}
@@ -640,10 +594,10 @@ export default function MarketTab({
                     setTradeAmount("");
                     setTradePercentage(null);
                   }}
-                  className={`py-2 px-3 rounded-lg transition-all ${
+                  className={`py-2 px-3 rounded-xl transition-all cursor-pointer ${
                     tradeType === "SELL"
-                      ? "bg-rose-600 text-white shadow-md"
-                      : "text-zinc-500 hover:text-zinc-300"
+                      ? "bg-rose-600 text-white shadow-lg border border-white/20"
+                      : "text-zinc-400 hover:text-zinc-200"
                   }`}
                 >
                   Sell {selectedCoin.symbol}
@@ -652,8 +606,8 @@ export default function MarketTab({
 
               {/* Balances summary */}
               <div className="grid grid-cols-2 gap-3 font-mono text-xs">
-                <div className="bg-zinc-950/40 border border-zinc-950 p-2.5 rounded-xl flex flex-col">
-                  <span className="text-[9px] text-zinc-500 uppercase">
+                <div className="glass-card p-3 rounded-xl flex flex-col border border-white/10">
+                  <span className="text-[9px] text-zinc-400 uppercase">
                     Cash Reserve
                   </span>
                   <span className="font-extrabold text-white mt-0.5">
@@ -664,11 +618,11 @@ export default function MarketTab({
                     })}
                   </span>
                 </div>
-                <div className="bg-zinc-950/40 border border-zinc-950 p-2.5 rounded-xl flex flex-col">
-                  <span className="text-[9px] text-zinc-500 uppercase">
+                <div className="glass-card p-3 rounded-xl flex flex-col border border-white/10">
+                  <span className="text-[9px] text-zinc-400 uppercase">
                     Holdings Amount
                   </span>
-                  <span className="font-extrabold text-zinc-300 mt-0.5">
+                  <span className="font-extrabold text-zinc-200 mt-0.5">
                     {getUserHolding(selectedCoin.id).toLocaleString("en-US", {
                       maximumFractionDigits: 2,
                     })}
@@ -682,7 +636,7 @@ export default function MarketTab({
                 className="flex flex-col gap-3"
               >
                 <div className="flex flex-col gap-1 font-mono">
-                  <label className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
+                  <label className="text-[10px] text-zinc-400 uppercase tracking-widest font-bold">
                     Amount (*{selectedCoin.symbol})
                   </label>
                   <div className="relative">
@@ -697,9 +651,9 @@ export default function MarketTab({
                         setTradeAmount(e.target.value);
                         setTradePercentage(null);
                       }}
-                      className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm font-bold text-white focus:outline-none focus:border-orange-500 font-mono tracking-wide"
+                      className="w-full glass-input rounded-xl px-4 py-3 text-sm font-bold text-white focus:outline-none focus:border-rose-500 font-mono tracking-wide"
                     />
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-zinc-500 font-bold uppercase tracking-wider">
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-zinc-400 font-bold uppercase tracking-wider">
                       {selectedCoin.symbol}
                     </div>
                   </div>
@@ -712,10 +666,10 @@ export default function MarketTab({
                       key={percent}
                       type="button"
                       onClick={() => handlePercentageClick(percent)}
-                      className={`py-2 rounded-xl border text-[11px] transition-colors ${
+                      className={`py-2 rounded-xl border text-[11px] transition-all cursor-pointer ${
                         tradePercentage === percent
-                          ? "bg-zinc-800 text-orange-400 border-zinc-700 font-extrabold"
-                          : "bg-zinc-950 border-zinc-850 text-zinc-400 hover:text-zinc-200 hover:border-zinc-800"
+                          ? "bg-white/[0.15] text-rose-400 border-rose-500/50 font-extrabold shadow-sm"
+                          : "glass-pill border-white/10 text-zinc-400 hover:text-white hover:bg-white/[0.08]"
                       }`}
                     >
                       {percent}%
@@ -725,15 +679,15 @@ export default function MarketTab({
 
                 {/* Estimate total Cost / Return */}
                 {tradeAmount && Number(tradeAmount) > 0 ? (
-                  <div className="bg-zinc-950/80 p-3 rounded-xl border border-zinc-950 font-mono text-xs flex flex-col gap-1 select-none">
+                  <div className="glass-card p-3 rounded-xl border border-white/10 font-mono text-xs flex flex-col gap-1 select-none">
                     <div className="flex justify-between">
-                      <span className="text-zinc-500">Estimate Price</span>
-                      <span className="text-zinc-300 font-extrabold">
+                      <span className="text-zinc-400">Estimate Price</span>
+                      <span className="text-zinc-200 font-extrabold">
                         ${selectedCoin.price.toFixed(4)}
                       </span>
                     </div>
-                    <div className="flex justify-between border-t border-zinc-900 pt-1 mt-1 font-bold">
-                      <span className="text-zinc-400">
+                    <div className="flex justify-between border-t border-white/10 pt-1 mt-1 font-bold">
+                      <span className="text-zinc-300">
                         {tradeType === "BUY"
                           ? "Estimated cost"
                           : "Estimated returns"}
@@ -754,10 +708,10 @@ export default function MarketTab({
                 {/* Submit button */}
                 <button
                   type="submit"
-                  className={`w-full py-3.5 rounded-xl font-bold text-xs select-none uppercase tracking-widest text-white shadow-lg transition-transform duration-200 ${
+                  className={`w-full py-3.5 rounded-xl font-bold text-xs select-none uppercase tracking-widest text-white shadow-xl transition-all border border-white/20 cursor-pointer active:scale-98 ${
                     tradeType === "BUY"
-                      ? "bg-emerald-600 hover:bg-emerald-500 shadow-emerald-950/10"
-                      : "bg-rose-650 hover:bg-rose-650 shadow-red-950/10"
+                      ? "bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 shadow-emerald-950/20"
+                      : "bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 shadow-red-950/20"
                   }`}
                 >
                   Confirm {tradeType === "BUY" ? "Purchase" : "Sale"}
