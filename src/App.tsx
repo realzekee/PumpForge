@@ -3235,6 +3235,7 @@ export default function App() {
                 coins={coins}
                 liveTrades={liveTrades}
                 onUpdateStats={handleUpdateStats}
+                onOpenPrestigeModal={() => setShowPrestigeModal(true)}
               />
             }
           />

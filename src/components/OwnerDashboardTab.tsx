@@ -58,6 +58,15 @@ import {
 } from "lucide-react";
 import { SkeletonLoader } from "./SkeletonLoader";
 import {
+  getStoredSanctions,
+  saveStoredSanction,
+  getStoredTitles,
+  saveStoredTitle,
+  getStoredRoles,
+  saveStoredRole,
+  clearStoredUserMeta,
+} from "../utils/userMetaStorage";
+import {
   UserStats,
   MemeCoin,
   SimulatedPlayer,
@@ -1070,6 +1079,14 @@ export default function OwnerDashboardTab({
     }
   };
 
+  const [metaUpdateTick, setMetaUpdateTick] = useState(0);
+
+  useEffect(() => {
+    const handleMetaUpdate = () => setMetaUpdateTick((t) => t + 1);
+    window.addEventListener("pf_user_meta_updated", handleMetaUpdate);
+    return () => window.removeEventListener("pf_user_meta_updated", handleMetaUpdate);
+  }, []);
+
   const handleUserPrestigeUpdate = async (
     playerHandle: string,
     isUser: boolean,
@@ -1083,8 +1100,12 @@ export default function OwnerDashboardTab({
     if (isUser) {
       try {
         const uid = targetUid || userId || (userStats as any)?.$id || userStats?.userId;
-        if (uid) {
-          await databases.updateDocument("pumpforge", "users", uid, { prestigeLevel: level });
+        if (uid && !uid.startsWith("sim_") && !uid.startsWith("usr_")) {
+          try {
+            await databases.updateDocument("pumpforge", "users", uid, { prestigeLevel: level });
+          } catch (appwriteErr) {
+            console.warn("Appwrite doc update for prestigeLevel:", appwriteErr);
+          }
           queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
         }
         onUpdateStats((stats) => {
@@ -1100,12 +1121,16 @@ export default function OwnerDashboardTab({
       try {
         const uid = targetUid;
         if (uid && !uid.startsWith("sim_") && !uid.startsWith("usr_")) {
-          await databases.updateDocument("pumpforge", "users", uid, { prestigeLevel: level });
+          try {
+            await databases.updateDocument("pumpforge", "users", uid, { prestigeLevel: level });
+          } catch (appwriteErr) {
+            console.warn("Appwrite doc update for prestigeLevel:", appwriteErr);
+          }
           queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
         }
         if (setSimulatedPlayers) {
           setSimulatedPlayers((prev) =>
-            prev.map((p) => (p.handle?.toLowerCase() === playerHandle.toLowerCase() ? { ...p, prestige: level } : p))
+            prev.map((p) => (p.handle?.toLowerCase() === playerHandle.toLowerCase() ? { ...p, prestige: level, prestigeLevel: level } : p))
           );
         }
         toast.success(`Prestige set to Level ${level} for ${playerHandle}`, { id: "prestige-" + playerHandle });
@@ -1127,11 +1152,22 @@ export default function OwnerDashboardTab({
     setIsMutatingUser(playerHandle);
     toast.loading(`Updating title for ${playerHandle}...`, { id: "title-" + playerHandle });
 
+    // Persist in custom user meta storage
+    const primaryKey = targetUid || playerHandle;
+    saveStoredTitle(primaryKey, title);
+    saveStoredTitle(playerHandle, title);
+    if (targetUid) saveStoredTitle(targetUid, title);
+
     if (isUser) {
       try {
         const uid = targetUid || userId || (userStats as any)?.$id || userStats?.userId;
-        if (uid) {
-          await databases.updateDocument("pumpforge", "users", uid, { title });
+        if (uid && !uid.startsWith("sim_") && !uid.startsWith("usr_")) {
+          try {
+            await databases.updateDocument("pumpforge", "users", uid, { title });
+          } catch (appwriteErr) {
+            // Appwrite users collection lacks 'title' attribute; gracefully handled by our storage layer
+            console.warn("Appwrite title attribute not declared, using local store:", appwriteErr);
+          }
           queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
         }
         onUpdateStats((stats) => {
@@ -1147,7 +1183,11 @@ export default function OwnerDashboardTab({
       try {
         const uid = targetUid;
         if (uid && !uid.startsWith("sim_") && !uid.startsWith("usr_")) {
-          await databases.updateDocument("pumpforge", "users", uid, { title });
+          try {
+            await databases.updateDocument("pumpforge", "users", uid, { title });
+          } catch (appwriteErr) {
+            console.warn("Appwrite title attribute not declared, using local store:", appwriteErr);
+          }
           queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
         }
         if (setSimulatedPlayers) {
@@ -1173,19 +1213,31 @@ export default function OwnerDashboardTab({
     setIsMutatingUser(playerHandle);
     toast.loading(`Updating permissions for ${playerHandle}...`, { id: "role-" + playerHandle });
 
+    const primaryKey = targetUid || playerHandle;
+    saveStoredRole(primaryKey, makeAdmin);
+    saveStoredRole(playerHandle, makeAdmin);
+    if (targetUid) saveStoredRole(targetUid, makeAdmin);
+    const assignedTitle = makeAdmin ? "Admin" : "Member";
+    saveStoredTitle(primaryKey, assignedTitle);
+    saveStoredTitle(playerHandle, assignedTitle);
+
     if (isUser) {
       try {
         const uid = targetUid || userId || (userStats as any)?.$id || userStats?.userId;
-        if (uid) {
-          await databases.updateDocument("pumpforge", "users", uid, {
-            isAdmin: makeAdmin,
-            title: makeAdmin ? "Admin" : "Member",
-          });
+        if (uid && !uid.startsWith("sim_") && !uid.startsWith("usr_")) {
+          try {
+            await databases.updateDocument("pumpforge", "users", uid, {
+              isAdmin: makeAdmin,
+              title: assignedTitle,
+            });
+          } catch (appwriteErr) {
+            console.warn("Appwrite role attribute not declared, using local store:", appwriteErr);
+          }
           queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
         }
         onUpdateStats((stats) => {
           stats.isAdmin = makeAdmin;
-          stats.title = makeAdmin ? "Admin" : "Member";
+          stats.title = assignedTitle;
         });
         toast.success(`Admin permissions ${makeAdmin ? "granted" : "revoked"}!`, { id: "role-" + playerHandle });
       } catch (e: any) {
@@ -1197,17 +1249,21 @@ export default function OwnerDashboardTab({
       try {
         const uid = targetUid;
         if (uid && !uid.startsWith("sim_") && !uid.startsWith("usr_")) {
-          await databases.updateDocument("pumpforge", "users", uid, {
-            isAdmin: makeAdmin,
-            title: makeAdmin ? "Admin" : "Trader",
-          });
+          try {
+            await databases.updateDocument("pumpforge", "users", uid, {
+              isAdmin: makeAdmin,
+              title: assignedTitle,
+            });
+          } catch (appwriteErr) {
+            console.warn("Appwrite role attribute not declared, using local store:", appwriteErr);
+          }
           queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
         }
         if (setSimulatedPlayers) {
           setSimulatedPlayers((prev) =>
             prev.map((p) =>
               p.handle?.toLowerCase() === playerHandle.toLowerCase()
-                ? { ...p, isAdmin: makeAdmin, title: makeAdmin ? "Admin" : "Trader" }
+                ? { ...p, isAdmin: makeAdmin, title: assignedTitle }
                 : p
             )
           );
@@ -1239,18 +1295,21 @@ export default function OwnerDashboardTab({
     setIsMutatingUser(playerHandle);
     toast.loading(`Resetting data for ${playerHandle}...`, { id: "reset-" + playerHandle });
 
+    // Clear stored penalties and custom overrides
+    const primaryKey = targetUid || playerHandle;
+    clearStoredUserMeta(primaryKey);
+    clearStoredUserMeta(playerHandle);
+    if (targetUid) clearStoredUserMeta(targetUid);
+
     if (isUser) {
       try {
         const uid = targetUid || userId || (userStats as any)?.$id || userStats?.userId;
-        if (uid) {
+        if (uid && !uid.startsWith("sim_") && !uid.startsWith("usr_")) {
+          // Strictly send valid Appwrite schema attributes
           await databases.updateDocument("pumpforge", "users", uid, {
             cash: 5000,
             gems: 100,
             prestigeLevel: 0,
-            totalProfit: 0,
-            isSuspended: false,
-            isBanned: false,
-            suspendedUntil: null,
           });
           queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
         }
@@ -1277,10 +1336,6 @@ export default function OwnerDashboardTab({
             cash: 5000,
             gems: 100,
             prestigeLevel: 0,
-            totalProfit: 0,
-            isSuspended: false,
-            isBanned: false,
-            suspendedUntil: null,
           });
           queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
         }
@@ -1294,6 +1349,7 @@ export default function OwnerDashboardTab({
                   cash: 5000,
                   gems: 100,
                   prestige: 0,
+                  prestigeLevel: 0,
                   isSuspended: false,
                   isBanned: false,
                 };
@@ -1323,6 +1379,17 @@ export default function OwnerDashboardTab({
     const days = customDays !== undefined ? customDays : suspendDurationDays || 1;
     const suspendMs = Date.now() + days * 86400000;
 
+    const sanctionPayload = {
+      isSuspended: isNowSuspended,
+      isBanned: isNowBanned,
+      suspendedUntil: isNowSuspended ? suspendMs : null,
+    };
+
+    const primaryKey = targetUid || playerHandle;
+    saveStoredSanction(primaryKey, sanctionPayload);
+    saveStoredSanction(playerHandle, sanctionPayload);
+    if (targetUid) saveStoredSanction(targetUid, sanctionPayload);
+
     if (isUser) {
       onUpdateStats((stats) => {
         stats.isSuspended = isNowSuspended;
@@ -1333,11 +1400,15 @@ export default function OwnerDashboardTab({
     } else {
       try {
         if (targetUid && !targetUid.startsWith("sim_") && !targetUid.startsWith("usr_")) {
-          await databases.updateDocument("pumpforge", "users", targetUid, {
-            isSuspended: isNowSuspended,
-            isBanned: isNowBanned,
-            suspendedUntil: isNowSuspended ? suspendMs : null,
-          });
+          try {
+            await databases.updateDocument("pumpforge", "users", targetUid, {
+              isSuspended: isNowSuspended,
+              isBanned: isNowBanned,
+              suspendedUntil: isNowSuspended ? suspendMs : null,
+            });
+          } catch (appwriteErr) {
+            console.warn("Appwrite sanction attributes not declared, using local store:", appwriteErr);
+          }
           queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
         }
         if (setSimulatedPlayers) {
@@ -1421,36 +1492,50 @@ export default function OwnerDashboardTab({
   // --- USERS LIST AGGREGATOR ---
   // ==========================================
 
+  const storedSanctions = getStoredSanctions();
+  const storedTitles = getStoredTitles();
+  const storedRoles = getStoredRoles();
+
   const rawSystemUsersList = [
-    {
-      uid: userId || (userStats as any)?.userId || (userStats as any)?.$id || "user_operator",
-      name: `${userStats?.username || "Operator"} (You)`,
-      handle: userStats?.handle || "@operator",
-      email: currentUserEmail || (userStats as any)?.email || "operator@pumpforge.io",
-      profit: (userStats?.totalProfit ?? 0) + (((userStats?.cash ?? 5000)) - 5000),
-      cash: userStats?.cash ?? 5000,
-      gems: userStats?.gems ?? 90,
-      prestige: userStats?.prestigeLevel ?? 0,
-      title: userStats?.title || "Owner",
-      isUser: true,
-      isSuspended: !!userStats?.isSuspended,
-      isBanned: !!userStats?.isBanned,
-      suspendedUntil: userStats?.suspendedUntil || null,
-      isAdmin: true,
-      createdAt: (userStats as any)?.createdAt || (userStats as any)?.$createdAt || "2026-05-24T06:40:00Z",
-      coinsCreatedCount: coins.filter(
-        (c) =>
-          (c.creator?.toLowerCase() === (userStats?.handle || "").toLowerCase()) ||
-          (c.creator?.toLowerCase() === (userStats?.username || "").toLowerCase()) ||
-          (c.creatorName?.toLowerCase() === (userStats?.username || "").toLowerCase())
-      ).length,
-      tradesCount: liveTrades.filter(
-        (t) =>
-          t.userHandle?.toLowerCase() === (userStats?.handle || "").toLowerCase() ||
-          t.userName?.toLowerCase() === (userStats?.username || "").toLowerCase()
-      ).length,
-      activityLog: localUserLogs,
-    },
+    (() => {
+      const uId = userId || (userStats as any)?.userId || (userStats as any)?.$id || "user_operator";
+      const uHandle = userStats?.handle || "@operator";
+      const cleanH = uHandle.toLowerCase().trim();
+      const cleanUid = String(uId).toLowerCase().trim();
+      const sanction = storedSanctions[cleanUid] || storedSanctions[cleanH];
+      const customTitle = storedTitles[cleanUid] || storedTitles[cleanH] || userStats?.title || "Owner";
+      const customAdmin = storedRoles[cleanUid] ?? storedRoles[cleanH] ?? true;
+
+      return {
+        uid: uId,
+        name: `${userStats?.username || "Operator"} (You)`,
+        handle: uHandle,
+        email: currentUserEmail || (userStats as any)?.email || "operator@pumpforge.io",
+        profit: (userStats?.totalProfit ?? 0) + (((userStats?.cash ?? 5000)) - 5000),
+        cash: userStats?.cash ?? 5000,
+        gems: userStats?.gems ?? 90,
+        prestige: userStats?.prestigeLevel ?? 0,
+        title: customTitle,
+        isUser: true,
+        isSuspended: sanction ? sanction.isSuspended : !!userStats?.isSuspended,
+        isBanned: sanction ? sanction.isBanned : !!userStats?.isBanned,
+        suspendedUntil: sanction ? sanction.suspendedUntil : userStats?.suspendedUntil || null,
+        isAdmin: customAdmin,
+        createdAt: (userStats as any)?.createdAt || (userStats as any)?.$createdAt || "2026-05-24T06:40:00Z",
+        coinsCreatedCount: coins.filter(
+          (c) =>
+            (c.creator?.toLowerCase() === (userStats?.handle || "").toLowerCase()) ||
+            (c.creator?.toLowerCase() === (userStats?.username || "").toLowerCase()) ||
+            (c.creatorName?.toLowerCase() === (userStats?.username || "").toLowerCase())
+        ).length,
+        tradesCount: liveTrades.filter(
+          (t) =>
+            t.userHandle?.toLowerCase() === (userStats?.handle || "").toLowerCase() ||
+            t.userName?.toLowerCase() === (userStats?.username || "").toLowerCase()
+        ).length,
+        activityLog: localUserLogs,
+      };
+    })(),
     ...appwriteUsers
       .filter((r) => {
         const rId = r.$id || r.userId;
@@ -1458,10 +1543,17 @@ export default function OwnerDashboardTab({
         return rId && rId !== curId;
       })
       .map((r) => {
+        const uId = r.$id || r.userId;
         const handle = r.handle || `@trader_${(r.$id || "").slice(0, 5)}`;
         const name = r.username || r.name || "Appwrite Trader";
+        const cleanH = handle.toLowerCase().trim();
+        const cleanUid = String(uId).toLowerCase().trim();
+        const sanction = storedSanctions[cleanUid] || storedSanctions[cleanH];
+        const customTitle = storedTitles[cleanUid] || storedTitles[cleanH] || r.title || (r.isAdmin ? "Admin" : "Member");
+        const customAdmin = storedRoles[cleanUid] ?? storedRoles[cleanH] ?? (!!r.isAdmin || r.title?.toLowerCase() === "owner" || r.title?.toLowerCase() === "admin");
+
         return {
-          uid: r.$id || r.userId,
+          uid: uId,
           name,
           handle,
           email: r.email || `${(r.username || "user").toLowerCase().replace(/[^a-z0-9]/g, "")}@pumpforge.io`,
@@ -1469,12 +1561,12 @@ export default function OwnerDashboardTab({
           cash: r.cash ?? 5000,
           gems: r.gems ?? 100,
           prestige: r.prestigeLevel || 0,
-          title: r.title || (r.isAdmin ? "Admin" : "Member"),
+          title: customTitle,
           isUser: false,
-          isSuspended: !!r.isSuspended,
-          isBanned: !!r.isBanned,
-          suspendedUntil: r.suspendedUntil || null,
-          isAdmin: !!r.isAdmin || r.title?.toLowerCase() === "owner" || r.title?.toLowerCase() === "admin",
+          isSuspended: sanction ? sanction.isSuspended : !!r.isSuspended,
+          isBanned: sanction ? sanction.isBanned : !!r.isBanned,
+          suspendedUntil: sanction ? sanction.suspendedUntil : r.suspendedUntil || null,
+          isAdmin: customAdmin,
           createdAt: r.$createdAt || r.createdAt || "2026-05-24T06:40:00Z",
           coinsCreatedCount: coins.filter(
             (c) =>
@@ -1490,34 +1582,43 @@ export default function OwnerDashboardTab({
           activityLog: [],
         };
       }),
-    ...(simulatedPlayers || []).map((p) => ({
-      uid: p.id || `sim_${p.handle.replace("@", "")}`,
-      name: p.name || p.handle,
-      handle: p.handle,
-      email: `${p.handle.replace("@", "").toLowerCase()}@pumpforge.io`,
-      profit: (p as any).totalProfit ?? p.profit ?? 0,
-      cash: (p as any).cash ?? 12500,
-      gems: (p as any).gems ?? 350,
-      prestige: (p as any).prestigeLevel ?? p.prestige ?? 0,
-      title: p.title || "Network Trader",
-      isUser: false,
-      isSuspended: !!p.isSuspended,
-      isBanned: !!p.isBanned,
-      suspendedUntil: null,
-      isAdmin: !!p.isAdmin,
-      createdAt: p.createdAt || "2026-05-01T12:00:00Z",
-      coinsCreatedCount: coins.filter(
-        (c) =>
-          c.creator?.toLowerCase() === p.handle.toLowerCase() ||
-          c.creator?.toLowerCase() === (p.name || "").toLowerCase()
-      ).length,
-      tradesCount: liveTrades.filter(
-        (t) =>
-          t.userHandle?.toLowerCase() === p.handle.toLowerCase() ||
-          t.userName?.toLowerCase() === (p.name || "").toLowerCase()
-      ).length,
-      activityLog: p.activityLog || [],
-    })),
+    ...(simulatedPlayers || []).map((p) => {
+      const uId = p.id || `sim_${p.handle.replace("@", "")}`;
+      const cleanH = p.handle.toLowerCase().trim();
+      const cleanUid = String(uId).toLowerCase().trim();
+      const sanction = storedSanctions[cleanUid] || storedSanctions[cleanH];
+      const customTitle = storedTitles[cleanUid] || storedTitles[cleanH] || p.title || "Network Trader";
+      const customAdmin = storedRoles[cleanUid] ?? storedRoles[cleanH] ?? !!p.isAdmin;
+
+      return {
+        uid: uId,
+        name: p.name || p.handle,
+        handle: p.handle,
+        email: `${p.handle.replace("@", "").toLowerCase()}@pumpforge.io`,
+        profit: (p as any).totalProfit ?? p.profit ?? 0,
+        cash: (p as any).cash ?? 12500,
+        gems: (p as any).gems ?? 350,
+        prestige: (p as any).prestigeLevel ?? p.prestige ?? 0,
+        title: customTitle,
+        isUser: false,
+        isSuspended: sanction ? sanction.isSuspended : !!p.isSuspended,
+        isBanned: sanction ? sanction.isBanned : !!p.isBanned,
+        suspendedUntil: sanction ? sanction.suspendedUntil : null,
+        isAdmin: customAdmin,
+        createdAt: p.createdAt || "2026-05-01T12:00:00Z",
+        coinsCreatedCount: coins.filter(
+          (c) =>
+            c.creator?.toLowerCase() === p.handle.toLowerCase() ||
+            c.creator?.toLowerCase() === (p.name || "").toLowerCase()
+        ).length,
+        tradesCount: liveTrades.filter(
+          (t) =>
+            t.userHandle?.toLowerCase() === p.handle.toLowerCase() ||
+            t.userName?.toLowerCase() === (p.name || "").toLowerCase()
+        ).length,
+        activityLog: p.activityLog || [],
+      };
+    }),
   ];
 
   // Deduplicate users by handle
@@ -2466,14 +2567,14 @@ export default function OwnerDashboardTab({
                     />
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="grid grid-cols-3 sm:flex items-center gap-2">
                     <button
                       disabled={isMutatingUser === selectedUser?.handle}
                       onClick={() => {
                         const amt = Number(userExactCashInput[selectedUser?.handle] ?? userMoneyDelta[selectedUser?.handle] ?? 10000);
                         handleUserCashOperation(selectedUser?.handle, selectedUser?.isUser, "add", Math.max(0, amt), selectedUser?.uid);
                       }}
-                      className="flex-1 sm:flex-initial px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl transition active:scale-95 flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
+                      className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl transition active:scale-95 flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
                     >
                       <Plus className="w-3.5 h-3.5" /> Credit
                     </button>
@@ -2483,7 +2584,7 @@ export default function OwnerDashboardTab({
                         const amt = Number(userExactCashInput[selectedUser?.handle] ?? userMoneyDelta[selectedUser?.handle] ?? 10000);
                         handleUserCashOperation(selectedUser?.handle, selectedUser?.isUser, "deduct", Math.max(0, amt), selectedUser?.uid);
                       }}
-                      className="flex-1 sm:flex-initial px-3.5 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl transition active:scale-95 flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
+                      className="px-3.5 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl transition active:scale-95 flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
                     >
                       <Minus className="w-3.5 h-3.5" /> Debit
                     </button>
@@ -2493,7 +2594,7 @@ export default function OwnerDashboardTab({
                         const amt = Number(userExactCashInput[selectedUser?.handle] ?? userMoneyDelta[selectedUser?.handle] ?? 10000);
                         handleUserCashOperation(selectedUser?.handle, selectedUser?.isUser, "set", Math.max(0, amt), selectedUser?.uid);
                       }}
-                      className="flex-1 sm:flex-initial px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-white/10 font-bold text-xs rounded-xl transition active:scale-95 cursor-pointer disabled:opacity-50"
+                      className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-white/10 font-bold text-xs rounded-xl transition active:scale-95 cursor-pointer disabled:opacity-50"
                     >
                       Set Exact
                     </button>
@@ -2568,14 +2669,14 @@ export default function OwnerDashboardTab({
                     />
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="grid grid-cols-3 sm:flex items-center gap-2">
                     <button
                       disabled={isMutatingUser === selectedUser?.handle}
                       onClick={() => {
                         const amt = Number(userExactGemsInput[selectedUser?.handle] ?? userGemsDelta[selectedUser?.handle] ?? 250);
                         handleUserGemsOperation(selectedUser?.handle, selectedUser?.isUser, "add", Math.max(0, amt), selectedUser?.uid);
                       }}
-                      className="flex-1 sm:flex-initial px-3.5 py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs rounded-xl transition active:scale-95 flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
+                      className="px-3.5 py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs rounded-xl transition active:scale-95 flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
                     >
                       <Plus className="w-3.5 h-3.5" /> Add
                     </button>
@@ -2585,7 +2686,7 @@ export default function OwnerDashboardTab({
                         const amt = Number(userExactGemsInput[selectedUser?.handle] ?? userGemsDelta[selectedUser?.handle] ?? 250);
                         handleUserGemsOperation(selectedUser?.handle, selectedUser?.isUser, "deduct", Math.max(0, amt), selectedUser?.uid);
                       }}
-                      className="flex-1 sm:flex-initial px-3.5 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl transition active:scale-95 flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
+                      className="px-3.5 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl transition active:scale-95 flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
                     >
                       <Minus className="w-3.5 h-3.5" /> Deduct
                     </button>
@@ -2595,7 +2696,7 @@ export default function OwnerDashboardTab({
                         const amt = Number(userExactGemsInput[selectedUser?.handle] ?? userGemsDelta[selectedUser?.handle] ?? 250);
                         handleUserGemsOperation(selectedUser?.handle, selectedUser?.isUser, "set", Math.max(0, amt), selectedUser?.uid);
                       }}
-                      className="flex-1 sm:flex-initial px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-white/10 font-bold text-xs rounded-xl transition active:scale-95 cursor-pointer disabled:opacity-50"
+                      className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-white/10 font-bold text-xs rounded-xl transition active:scale-95 cursor-pointer disabled:opacity-50"
                     >
                       Set Exact
                     </button>
@@ -2649,10 +2750,10 @@ export default function OwnerDashboardTab({
                 </div>
 
                 {/* Prestige Tier Stepper */}
-                <div className="flex items-center gap-3">
+                <div className="grid grid-cols-3 sm:flex items-center gap-2 sm:gap-3">
                   <button
                     onClick={() => handleUserPrestigeUpdate(selectedUser?.handle, selectedUser?.isUser, Math.max(0, (selectedUser?.prestige || 0) - 1), selectedUser?.uid)}
-                    className="px-3 py-2 bg-zinc-900 hover:bg-zinc-800 border border-white/10 text-zinc-300 rounded-xl text-xs font-bold transition active:scale-95 cursor-pointer"
+                    className="px-3 py-2 bg-zinc-900 hover:bg-zinc-800 border border-white/10 text-zinc-300 rounded-xl text-xs font-bold transition active:scale-95 cursor-pointer text-center"
                   >
                     -1 Tier
                   </button>
@@ -2660,18 +2761,18 @@ export default function OwnerDashboardTab({
                   <select
                     value={selectedUser?.prestige || 0}
                     onChange={(e) => handleUserPrestigeUpdate(selectedUser?.handle, selectedUser?.isUser, Number(e.target.value), selectedUser?.uid)}
-                    className="flex-1 bg-zinc-900 border border-amber-500/40 rounded-xl px-3 py-2 text-xs font-bold text-amber-400 focus:outline-none cursor-pointer"
+                    className="col-span-1 sm:flex-1 bg-zinc-900 border border-amber-500/40 rounded-xl px-2 sm:px-3 py-2 text-xs font-bold text-amber-400 focus:outline-none cursor-pointer"
                   >
                     {PRESTIGE_TIERS.map((tier) => (
                       <option key={tier.level} value={tier.level} className="bg-zinc-900 text-white">
-                        Level {tier.level}: {tier.title}
+                        Lvl {tier.level}: {tier.title}
                       </option>
                     ))}
                   </select>
 
                   <button
                     onClick={() => handleUserPrestigeUpdate(selectedUser?.handle, selectedUser?.isUser, Math.min(10, (selectedUser?.prestige || 0) + 1), selectedUser?.uid)}
-                    className="px-3 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition active:scale-95 cursor-pointer"
+                    className="px-3 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition active:scale-95 cursor-pointer text-center"
                   >
                     +1 Tier
                   </button>
@@ -2697,7 +2798,7 @@ export default function OwnerDashboardTab({
                         const newTitle = userCustomTitleDraft[selectedUser?.handle] ?? selectedUser?.title ?? "Trader";
                         handleUserTitleUpdate(selectedUser?.handle, selectedUser?.isUser, newTitle, selectedUser?.uid);
                       }}
-                      className="px-3.5 py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-xl transition active:scale-95 cursor-pointer"
+                      className="px-3.5 py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-xl transition active:scale-95 cursor-pointer shrink-0"
                     >
                       Save Title
                     </button>
@@ -2721,9 +2822,9 @@ export default function OwnerDashboardTab({
                 </div>
 
                 {/* Admin Role Permission Switch */}
-                <div className="flex items-center justify-between p-3 bg-zinc-900/80 border border-white/5 rounded-xl mt-1">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-zinc-900/80 border border-white/5 rounded-xl gap-2 mt-1">
                   <div className="flex items-center gap-2">
-                    <ShieldCheck className={`w-4 h-4 ${selectedUser?.isAdmin ? "text-emerald-400" : "text-zinc-500"}`} />
+                    <ShieldCheck className={`w-4 h-4 shrink-0 ${selectedUser?.isAdmin ? "text-emerald-400" : "text-zinc-500"}`} />
                     <div>
                       <div className="text-xs font-bold text-white">Administrator Authority</div>
                       <div className="text-[10px] text-zinc-400">Grants access to Owner Dashboard terminal</div>
@@ -2731,7 +2832,7 @@ export default function OwnerDashboardTab({
                   </div>
                   <button
                     onClick={() => handleUserRoleToggle(selectedUser?.handle, selectedUser?.isUser, !selectedUser?.isAdmin, selectedUser?.uid)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer active:scale-95 ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer active:scale-95 self-start sm:self-auto ${
                       selectedUser?.isAdmin
                         ? "bg-rose-500/20 text-rose-300 border border-rose-500/30 hover:bg-rose-500/30"
                         : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30"
@@ -2761,10 +2862,10 @@ export default function OwnerDashboardTab({
                   </span>
                 </div>
 
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <button
                     onClick={() => handleToggleSanction(selectedUser?.handle, selectedUser?.isUser, "suspend", selectedUser?.uid)}
-                    className={`py-2.5 rounded-xl text-xs font-bold transition active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer ${
+                    className={`py-2.5 px-3 rounded-xl text-xs font-bold transition active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer ${
                       selectedUser?.isSuspended
                         ? "bg-amber-500 text-black shadow-lg"
                         : "bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400"
@@ -2776,7 +2877,7 @@ export default function OwnerDashboardTab({
 
                   <button
                     onClick={() => handleToggleSanction(selectedUser?.handle, selectedUser?.isUser, "ban", selectedUser?.uid)}
-                    className={`py-2.5 rounded-xl text-xs font-bold transition active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer ${
+                    className={`py-2.5 px-3 rounded-xl text-xs font-bold transition active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer ${
                       selectedUser?.isBanned
                         ? "bg-rose-600 text-white shadow-lg"
                         : "bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400"
@@ -2788,7 +2889,7 @@ export default function OwnerDashboardTab({
 
                   <button
                     onClick={() => handleToggleSanction(selectedUser?.handle, selectedUser?.isUser, "lift", selectedUser?.uid)}
-                    className="py-2.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-xl text-xs font-bold transition active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer"
+                    className="py-2.5 px-3 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-xl text-xs font-bold transition active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     <span>Lift Sanctions</span>
@@ -2796,7 +2897,7 @@ export default function OwnerDashboardTab({
                 </div>
 
                 {/* Factory Reset Profile Action */}
-                <div className="p-3 bg-red-950/20 border border-red-500/20 rounded-xl flex items-center justify-between gap-3">
+                <div className="p-3 bg-red-950/20 border border-red-500/20 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
                     <div className="text-xs font-bold text-red-400 flex items-center gap-1.5">
                       <RotateCcw className="w-3.5 h-3.5" /> Factory Reset User Account
@@ -2807,7 +2908,7 @@ export default function OwnerDashboardTab({
                   </div>
                   <button
                     onClick={() => handleResetUserAccount(selectedUser?.handle, selectedUser?.isUser, selectedUser?.uid)}
-                    className="px-3 py-1.5 bg-red-600/80 hover:bg-red-600 text-white text-xs font-bold rounded-lg border border-red-500/40 shadow transition active:scale-95 shrink-0 cursor-pointer"
+                    className="px-3.5 py-2 bg-red-600/80 hover:bg-red-600 text-white text-xs font-bold rounded-lg border border-red-500/40 shadow transition active:scale-95 shrink-0 cursor-pointer text-center"
                   >
                     Reset Profile
                   </button>

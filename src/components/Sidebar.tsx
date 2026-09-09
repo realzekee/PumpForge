@@ -522,8 +522,12 @@ export default function Sidebar({
                         </span>
                         <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
                       </div>
-                      <span className="text-[9px] text-zinc-400 font-mono tracking-tight font-bold flex items-center gap-1">
+                      <span className="text-[9px] text-zinc-400 font-mono tracking-tight font-bold flex items-center gap-1 flex-wrap">
                         <span>{userStats.handle}</span>
+                        <span>•</span>
+                        <span className="text-amber-400 font-extrabold">
+                          Lvl {userStats.prestigeLevel || 0}
+                        </span>
                         <span>•</span>
                         <span className="text-zinc-300 font-extrabold uppercase tracking-widest scale-95">
                           {userStats.title}
@@ -674,9 +678,13 @@ export default function Sidebar({
                           </span>
                         )}
                       </div>
-                      <span className="text-[10px] text-zinc-400 font-mono tracking-tight text-glow">
-                        {userStats.handle}
-                      </span>
+                      <div className="flex items-center gap-1.5 text-[10px] text-zinc-400 font-mono tracking-tight text-glow">
+                        <span>{userStats.handle}</span>
+                        <span>•</span>
+                        <span className="text-amber-400 font-bold flex items-center gap-0.5">
+                          <Crown className="w-2.5 h-2.5" /> Lvl {userStats.prestigeLevel || 0}
+                        </span>
+                      </div>
                     </div>
                   </div>
                   <ChevronDown

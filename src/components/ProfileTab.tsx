@@ -23,7 +23,22 @@ interface ProfileProps {
   coins: MemeCoin[];
   liveTrades: any[];
   onUpdateStats?: (updater: (stats: UserStats) => void) => void;
+  onOpenPrestigeModal?: () => void;
 }
+
+const PRESTIGE_RANKS = [
+  { level: 0, title: "Rookie Trader", color: "text-zinc-400", border: "border-zinc-700/50", bg: "bg-zinc-800/30", multiplier: "1.0x" },
+  { level: 1, title: "Bronze Scalper", color: "text-amber-500", border: "border-amber-600/40", bg: "bg-amber-950/30", multiplier: "1.25x" },
+  { level: 2, title: "Silver Whale", color: "text-slate-300", border: "border-slate-400/40", bg: "bg-slate-900/30", multiplier: "1.5x" },
+  { level: 3, title: "Gold Market Maker", color: "text-yellow-400", border: "border-yellow-500/40", bg: "bg-yellow-950/30", multiplier: "1.75x" },
+  { level: 4, title: "Platinum Chad", color: "text-cyan-400", border: "border-cyan-500/40", bg: "bg-cyan-950/30", multiplier: "2.0x" },
+  { level: 5, title: "Diamond Degenerate", color: "text-blue-400", border: "border-blue-500/40", bg: "bg-blue-950/30", multiplier: "2.25x" },
+  { level: 6, title: "Emerald Oracle", color: "text-emerald-400", border: "border-emerald-500/40", bg: "bg-emerald-950/30", multiplier: "2.5x" },
+  { level: 7, title: "Ruby Overlord", color: "text-rose-500", border: "border-rose-500/40", bg: "bg-rose-950/30", multiplier: "2.75x" },
+  { level: 8, title: "Obsidian God", color: "text-purple-400", border: "border-purple-500/40", bg: "bg-purple-950/30", multiplier: "3.0x" },
+  { level: 9, title: "Black Swan Sovereign", color: "text-red-400", border: "border-red-500/50", bg: "bg-red-950/40", multiplier: "3.25x" },
+  { level: 10, title: "Apex Market Overlord", color: "text-amber-300", border: "border-amber-400/60", bg: "bg-amber-900/40", multiplier: "3.5x" },
+];
 
 export default function ProfileTab({
   userStats,
@@ -31,6 +46,7 @@ export default function ProfileTab({
   coins,
   liveTrades,
   onUpdateStats,
+  onOpenPrestigeModal,
 }: ProfileProps) {
   const { adminSettings } = useAppContext();
   const [loading, setLoading] = useState(true);
@@ -183,6 +199,19 @@ export default function ProfileTab({
             <span className="text-emerald-400 font-black text-xs border border-emerald-500/30 bg-emerald-500/15 px-2 py-0.5 rounded-full flex items-center gap-1">
               <CheckCircle className="w-3 h-3" /> VERIFIED
             </span>
+            {(() => {
+              const currentLevel = userStats.prestigeLevel || 0;
+              const rank = PRESTIGE_RANKS[Math.min(currentLevel, 10)] || PRESTIGE_RANKS[0];
+              return (
+                <button
+                  onClick={onOpenPrestigeModal}
+                  className={`text-xs ${rank.bg} border ${rank.border} ${rank.color} font-black px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-md hover:scale-105 transition cursor-pointer`}
+                  title="Click to view prestige rank details"
+                >
+                  <Crown className="w-3.5 h-3.5 text-amber-400" /> PRESTIGE LVL {currentLevel} • {rank.title.toUpperCase()}
+                </button>
+              );
+            })()}
             {hasBlackSwan && (
               <span className="text-xs bg-rose-500/20 border border-rose-500/50 text-rose-300 font-black px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-[0_0_10px_rgba(244,63,94,0.4)] animate-pulse">
                 <Crown className="w-3.5 h-3.5 text-rose-400" /> BLACK SWAN SOVEREIGN
@@ -205,12 +234,54 @@ export default function ProfileTab({
             <span className="text-[10px] text-zinc-400">
               💎 {userStats.gems.toLocaleString()} Gems
             </span>
+            <span className="text-[10px] text-amber-400 font-mono font-bold bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+              ⚡ Yield Boost: +{((userStats.prestigeLevel || 0) * 25)}%
+            </span>
           </div>
           <span className="text-[10px] text-zinc-400 block mt-2">
             Joined July 2025
           </span>
         </div>
       </div>
+
+      {/* Prestige Status Banner Card */}
+      {(() => {
+        const pLvl = userStats.prestigeLevel || 0;
+        const currentRank = PRESTIGE_RANKS[Math.min(pLvl, 10)] || PRESTIGE_RANKS[0];
+        const nextRank = PRESTIGE_RANKS[Math.min(pLvl + 1, 10)];
+        const isMaxLevel = pLvl >= 10;
+        return (
+          <div className="glass-panel border border-amber-500/30 bg-gradient-to-r from-amber-950/20 via-zinc-950 to-amber-950/10 p-4 sm:p-5 rounded-3xl flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-500/20 to-yellow-500/10 border border-amber-500/40 flex items-center justify-center text-amber-400 shadow-lg shrink-0">
+                <Crown className="w-6 h-6 animate-pulse" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-mono uppercase text-amber-400 font-black tracking-wider">CURRENT PRESTIGE RANK:</span>
+                  <span className={`text-sm font-black ${currentRank.color}`}>
+                    Level {pLvl} — {currentRank.title}
+                  </span>
+                  <span className="text-[10px] bg-amber-500/20 text-amber-300 font-bold px-2 py-0.5 rounded-full border border-amber-500/30">
+                    {currentRank.multiplier} Multiplier
+                  </span>
+                </div>
+                <p className="text-xs text-zinc-400 mt-0.5">
+                  Daily Faucet Yield: <strong className="text-emerald-400">${Math.floor(1500 * (1 + pLvl * 0.25)).toLocaleString()}</strong>
+                  {!isMaxLevel && ` • Next rank: Level ${pLvl + 1} (${nextRank.title})`}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={onOpenPrestigeModal}
+              className="px-4 py-2.5 bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500 text-white text-xs font-bold font-mono rounded-xl shadow-lg border border-amber-400/40 transition active:scale-95 cursor-pointer flex items-center gap-1.5 shrink-0"
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>{isMaxLevel ? "Prestige Maxed" : "Upgrade Prestige"}</span>
+            </button>
+          </div>
+        );
+      })()}
 
       {/* Portfolios row */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
