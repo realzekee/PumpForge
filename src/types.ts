@@ -87,6 +87,7 @@ export interface PredictionMarket {
   userBetSide: "YES" | "NO" | null;
   resolved: boolean;
   resolvedOutcome: "YES" | "NO" | null;
+  resolvedAt?: string;
   endTime: string;
   endDateIso?: string;
   category: "trading" | "general" | "arcade";

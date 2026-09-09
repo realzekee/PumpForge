@@ -1362,6 +1362,7 @@ export default function App() {
             const yesPercentage = total > 0 ? Math.round((yesPool / total) * 100) : 50;
 
             const endDateIso = d.endDate || undefined;
+            const resolvedAt = d.resolvedAt || (d.status === "closed" ? d.$updatedAt : undefined);
 
             return {
               id: d.$id,
@@ -1377,14 +1378,25 @@ export default function App() {
                 d.winningOutcome === "YES" || d.winningOutcome === "NO"
                   ? d.winningOutcome
                   : null,
+              resolvedAt,
               endTime: endDateIso || "TBD",
               endDateIso,
               category: "general",
             };
           });
 
-          setMarkets(list);
-          safeStorage.setItem("pumpforge_polymarkets", JSON.stringify(list));
+          // Filter: Active markets always stay; resolved markets only stay for 3 days (72 hours)
+          const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+          const nowMs = Date.now();
+          const filteredList = list.filter((m) => {
+            if (!m.resolved) return true;
+            const resolvedTime = new Date(m.resolvedAt || m.endDateIso || m.endTime || 0).getTime();
+            if (resolvedTime <= 0) return true;
+            return nowMs - resolvedTime <= THREE_DAYS_MS;
+          });
+
+          setMarkets(filteredList);
+          safeStorage.setItem("pumpforge_polymarkets", JSON.stringify(filteredList));
         } else {
           const nowMs = Date.now();
           const DEFAULT_MARKETS: PredictionMarket[] = [
@@ -1495,8 +1507,49 @@ export default function App() {
     // Real-time dynamic synced participants list from database
     const usersUnsub = () => {}; setRegisteredUsers([]);
 
-    // Broadcasts global real-time listener
-    const broadcastsUnsub = () => {};
+    // Broadcasts global real-time listener & initial fetch
+    const fetchBroadcasts = async () => {
+      try {
+        const { Query } = await import("appwrite");
+        const res = await databases.listDocuments("pumpforge", "broadcasts", [
+          Query.orderDesc("timestamp"),
+          Query.limit(50),
+        ]);
+        const now = Date.now();
+        const activeBroadcasts = res.documents
+          .map((doc: any) => ({
+            id: doc.id || doc.$id,
+            title: doc.title || "Announcement",
+            message: doc.message || "",
+            type: (doc.type || "info") as "info" | "trade" | "crash" | "achievement",
+            timestamp: doc.timestamp || doc.$createdAt,
+            expiresAt: doc.expiresAt,
+          }))
+          .filter((b: any) => {
+            if (b.expiresAt) {
+              return new Date(b.expiresAt).getTime() > now;
+            }
+            return true;
+          });
+        setBroadcasts(activeBroadcasts);
+      } catch (err) {
+        console.warn("Failed to fetch Appwrite broadcasts:", err);
+      }
+    };
+
+    fetchBroadcasts();
+
+    let broadcastsUnsub = () => {};
+    try {
+      broadcastsUnsub = client.subscribe(
+        "databases.pumpforge.collections.broadcasts.documents",
+        () => {
+          fetchBroadcasts();
+        }
+      );
+    } catch (e) {
+      console.warn("Broadcasts subscription error:", e);
+    }
 
     return () => {
       coinsUnsub();

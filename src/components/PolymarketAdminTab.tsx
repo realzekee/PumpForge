@@ -41,6 +41,7 @@ export default function PolymarketAdminTab() {
       await databases.updateDocument("pumpforge", "polymarkets", marketId, {
         status: "closed",
         winningOutcome: winningChoice,
+        resolvedAt: new Date().toISOString(),
       });
 
       // 2. Query all wagers

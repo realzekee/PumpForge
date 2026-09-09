@@ -34,8 +34,15 @@ export default function PolymarketTab({
     endTime: getDefaultDateIso(),
   });
 
+  const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+  const now = Date.now();
   const activeMarkets = markets.filter((m) => !m.resolved);
-  const resolvedMarkets = markets.filter((m) => m.resolved);
+  const resolvedMarkets = markets.filter((m) => {
+    if (!m.resolved) return false;
+    const resolvedTime = new Date(m.resolvedAt || m.endDateIso || m.endTime || 0).getTime();
+    if (resolvedTime <= 0) return true;
+    return now - resolvedTime <= THREE_DAYS_MS;
+  });
 
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
