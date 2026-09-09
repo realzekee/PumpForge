@@ -38,6 +38,7 @@ import {
   Broadcast,
 } from "./types";
 import { INITIAL_COINS } from "./data/memeCoins";
+import { getDeletedCoins, getStoredCoinOverrides, saveStoredCoinOverride } from "./utils/userMetaStorage";
 import {
   Gift,
   Sparkles,
@@ -368,18 +369,19 @@ export default function App() {
 
   // Core local states (fallbacks/synced depending on auth)
   const [coins, setCoins] = useState<MemeCoin[]>(() => {
+    const deleted = getDeletedCoins();
     const cached = safeStorage.getItem("pumpforge_cached_coins");
     if (cached) {
       try {
         const parsed = JSON.parse(cached);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
+          return parsed.filter((c: any) => !deleted.includes(c.id) && !deleted.includes(c.$id));
         }
       } catch (e) {
         console.warn("Failed to load cached coins:", e);
       }
     }
-    return INITIAL_COINS;
+    return INITIAL_COINS.filter((c) => !deleted.includes(c.id));
   });
   const [userStats, setUserStats] = useState<UserStats>(() => {
     const cachedUser = safeStorage.getItem("cached_appwrite_user");
@@ -1217,53 +1219,45 @@ export default function App() {
     const fetchCoins = async () => {
       try {
         const { Query } = await import("appwrite");
-        const res = await databases.listDocuments("pumpforge", "coins", [
-          Query.limit(100),
-        ]);
-        const appwriteCoins = res.documents.map((d) => {
-          const c = { ...d } as any;
-          delete c.$databaseId;
-          delete c.$collectionId;
-          delete c.$permissions;
-          delete c.$updatedAt;
-          if (c.creator === "@zeke" || c.creator === "zeke") {
-            c.creator = "@system";
-          }
-          c.id = d.$id;
-          c.createdAt = d.$createdAt;
+        const deletedIds = getDeletedCoins();
+        const storedOverrides = getStoredCoinOverrides();
 
-          c.supply = c.supply || 1000000;
-          c.marketCap = c.marketCap || Math.floor((c.price || 0.01) * c.supply);
-          c.totalLiquidity = d.total_value || c.totalLiquidity || c.marketCap || 1000;
-          c.volume24h = c.volume24h || 0;
-          c.change24h = c.change24h || 0;
-          c.history =
-            c.history && Array.isArray(c.history) && c.history.length > 0
-              ? c.history
-              : [c.price || 0.01];
-          c.avatarEmoji = c.avatarEmoji || "🪙";
-          c.avatarBg = c.avatarBg || "bg-zinc-900 border-zinc-800";
+        let appwriteCoins: MemeCoin[] = [];
+        try {
+          const res = await databases.listDocuments("pumpforge", "coins", [
+            Query.limit(100),
+          ]);
+          appwriteCoins = res.documents
+            .filter((d) => !deletedIds.includes(d.$id) && !deletedIds.includes(d.coinId))
+            .map((d) => {
+              const c = { ...d } as any;
+              delete c.$databaseId;
+              delete c.$collectionId;
+              delete c.$permissions;
+              delete c.$updatedAt;
+              if (c.creator === "@zeke" || c.creator === "zeke") {
+                c.creator = "@system";
+              }
+              c.id = d.$id;
+              c.createdAt = d.$createdAt;
 
-          return c as MemeCoin;
-        });
+              c.supply = c.supply || 1000000;
+              c.marketCap = c.marketCap || Math.floor((c.price || 0.01) * c.supply);
+              c.totalLiquidity = d.total_value || c.totalLiquidity || c.marketCap || 1000;
+              c.volume24h = c.volume24h || 0;
+              c.change24h = c.change24h || 0;
+              c.history =
+                c.history && Array.isArray(c.history) && c.history.length > 0
+                  ? c.history
+                  : [c.price || 0.01];
+              c.avatarEmoji = c.avatarEmoji || "🪙";
+              c.avatarBg = c.avatarBg || "bg-zinc-900 border-zinc-800";
 
-        const appwriteMap = new Map(appwriteCoins.map((c) => [c.id, c]));
-        const mergedCoins: MemeCoin[] = [];
-
-        INITIAL_COINS.forEach((initCoin) => {
-          if (appwriteMap.has(initCoin.id)) {
-            mergedCoins.push(appwriteMap.get(initCoin.id)!);
-            appwriteMap.delete(initCoin.id);
-          } else {
-            mergedCoins.push(initCoin);
-          }
-        });
-
-        appwriteCoins.forEach((appCoin) => {
-          if (appwriteMap.has(appCoin.id)) {
-            mergedCoins.push(appCoin);
-          }
-        });
+              return c as MemeCoin;
+            });
+        } catch (dbErr) {
+          console.warn("Appwrite coins list failed, using cached/overrides fallback:", dbErr);
+        }
 
         setCoins((prev) => {
           const prevMap = new Map<string, MemeCoin>((prev || []).map((c) => [c.id, c]));
@@ -1271,33 +1265,38 @@ export default function App() {
           const mergedCoins: MemeCoin[] = [];
 
           INITIAL_COINS.forEach((initCoin) => {
+            if (deletedIds.includes(initCoin.id)) return;
+
             const fromPrev = prevMap.get(initCoin.id);
             const fromAppwrite = appwriteMap.get(initCoin.id);
-
-            const bestPrice = Math.max(
-              initCoin.price || 0,
-              fromPrev?.price || 0,
-              fromAppwrite?.price || 0
-            );
-            const bestVol = Math.max(
-              fromPrev?.volume24h || 0,
-              fromAppwrite?.volume24h || 0,
-              initCoin.volume24h || 0
-            );
-            const bestHist =
-              fromPrev?.history && fromPrev.history.length > 1
-                ? fromPrev.history
-                : fromAppwrite?.history && fromAppwrite.history.length > 1
-                ? fromAppwrite.history
-                : initCoin.history;
+            const override = storedOverrides[initCoin.id] || storedOverrides[initCoin.symbol?.toLowerCase()] || ((fromAppwrite as any)?.coinId ? storedOverrides[(fromAppwrite as any).coinId] : undefined);
 
             const baseCoin = fromAppwrite || fromPrev || initCoin;
+            const actualPrice = override?.price !== undefined
+              ? Number(override.price)
+              : fromAppwrite
+              ? Number(fromAppwrite.price)
+              : fromPrev
+              ? Number(fromPrev.price)
+              : Number(initCoin.price);
+
+            const actualHist = override?.history && override.history.length > 0
+              ? override.history
+              : fromAppwrite?.history && fromAppwrite.history.length > 1
+              ? fromAppwrite.history
+              : fromPrev?.history && fromPrev.history.length > 1
+              ? fromPrev.history
+              : initCoin.history;
+
             const updated: MemeCoin = {
+              ...initCoin,
               ...baseCoin,
-              price: bestPrice,
-              marketCap: Math.floor((baseCoin.supply || 1000000) * bestPrice),
-              volume24h: bestVol,
-              history: bestHist,
+              price: actualPrice,
+              marketCap: override?.marketCap ?? fromAppwrite?.marketCap ?? fromPrev?.marketCap ?? Math.floor((baseCoin.supply || 1000000) * actualPrice),
+              volume24h: override?.volume24h ?? fromAppwrite?.volume24h ?? fromPrev?.volume24h ?? initCoin.volume24h ?? 0,
+              change24h: override?.change24h ?? fromAppwrite?.change24h ?? fromPrev?.change24h ?? initCoin.change24h ?? 0,
+              totalLiquidity: override?.totalLiquidity ?? fromAppwrite?.totalLiquidity ?? fromPrev?.totalLiquidity ?? initCoin.totalLiquidity ?? 1000,
+              history: actualHist,
             };
             mergedCoins.push(updated);
 
@@ -1307,26 +1306,43 @@ export default function App() {
 
           appwriteCoins.forEach((appCoin) => {
             if (appwriteMap.has(appCoin.id)) {
-              const fromPrev = prevMap.get(appCoin.id);
-              const bestPrice = Math.max(appCoin.price || 0, fromPrev?.price || 0);
-              const bestHist =
-                fromPrev?.history && fromPrev.history.length > 1
-                  ? fromPrev.history
-                  : appCoin.history;
-
-              mergedCoins.push({
-                ...appCoin,
-                price: bestPrice,
-                marketCap: Math.floor((appCoin.supply || 1000000) * bestPrice),
-                history: bestHist,
-              });
+              if (deletedIds.includes(appCoin.id)) return;
+              const override = storedOverrides[appCoin.id] || ((appCoin as any).coinId ? storedOverrides[(appCoin as any).coinId] : undefined);
+              if (override) {
+                mergedCoins.push({
+                  ...appCoin,
+                  price: override.price ?? appCoin.price,
+                  marketCap: override.marketCap ?? appCoin.marketCap,
+                  totalLiquidity: override.totalLiquidity ?? appCoin.totalLiquidity,
+                  change24h: override.change24h ?? appCoin.change24h,
+                  volume24h: override.volume24h ?? appCoin.volume24h,
+                  history: override.history ?? appCoin.history,
+                });
+              } else {
+                mergedCoins.push(appCoin);
+              }
               appwriteMap.delete(appCoin.id);
               prevMap.delete(appCoin.id);
             }
           });
 
           prevMap.forEach((localCoin: MemeCoin) => {
-            mergedCoins.push(localCoin);
+            if (!deletedIds.includes(localCoin.id)) {
+              const override = storedOverrides[localCoin.id] || ((localCoin as any).coinId ? storedOverrides[(localCoin as any).coinId] : undefined);
+              if (override) {
+                mergedCoins.push({
+                  ...localCoin,
+                  price: override.price ?? localCoin.price,
+                  marketCap: override.marketCap ?? localCoin.marketCap,
+                  totalLiquidity: override.totalLiquidity ?? localCoin.totalLiquidity,
+                  change24h: override.change24h ?? localCoin.change24h,
+                  volume24h: override.volume24h ?? localCoin.volume24h,
+                  history: override.history ?? localCoin.history,
+                });
+              } else {
+                mergedCoins.push(localCoin);
+              }
+            }
           });
 
           safeStorage.setItem("pumpforge_cached_coins", JSON.stringify(mergedCoins));
@@ -1338,6 +1354,9 @@ export default function App() {
     };
 
     fetchCoins();
+    const handleCoinsEvent = () => fetchCoins();
+    window.addEventListener("pf_coins_updated", handleCoinsEvent);
+
     const coinsUnsub = client.subscribe("databases.pumpforge.collections.coins.documents", () => {
        fetchCoins();
     });
@@ -3192,6 +3211,7 @@ export default function App() {
                   liveTrades={liveTrades}
                   registeredUsers={registeredUsers}
                   currentUserEmail={currentUser?.email}
+                  onUpdateStats={handleUpdateStats}
                 />
               );
             })()}

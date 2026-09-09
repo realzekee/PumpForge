@@ -18,6 +18,7 @@ import {
   Skull,
   UserCheck,
   UserX,
+  Users,
   ShieldCheck,
   Search,
   RefreshCw,
@@ -65,6 +66,9 @@ import {
   getStoredRoles,
   saveStoredRole,
   clearStoredUserMeta,
+  saveDeletedCoin,
+  saveStoredCoinOverride,
+  getStoredCoinOverrides,
 } from "../utils/userMetaStorage";
 import {
   UserStats,
@@ -89,6 +93,7 @@ interface OwnerDashboardProps {
   liveTrades?: LiveTrade[];
   registeredUsers?: any[];
   currentUserEmail?: string;
+  onUpdateStats?: (updater: (stats: UserStats) => void) => void;
 }
 
 type AdminSubTab = "overview" | "users" | "market" | "coins" | "announcements" | "bugs";
@@ -102,6 +107,7 @@ export default function OwnerDashboardTab({
   liveTrades = [],
   registeredUsers = [],
   currentUserEmail,
+  onUpdateStats: propOnUpdateStats,
 }: OwnerDashboardProps) {
   const navigate = useNavigate();
   const { userStats, cash, setCash, gems, setGems, userId, adminSettings, setAdminSettings } = useAppContext();
@@ -234,6 +240,9 @@ export default function OwnerDashboardTab({
 
   // Sync state update helper
   const onUpdateStats = (updater: (stats: UserStats) => void) => {
+    if (propOnUpdateStats) {
+      propOnUpdateStats(updater);
+    }
     const newStats = { ...(userStats || {}) } as UserStats;
     updater(newStats);
     if (newStats.cash !== undefined) setCash(newStats.cash);
@@ -244,13 +253,27 @@ export default function OwnerDashboardTab({
         cash: newStats.cash,
         gems: newStats.gems,
         prestigeLevel: newStats.prestigeLevel,
+        isSuspended: newStats.isSuspended,
+        isBanned: newStats.isBanned,
+        suspendedUntil: newStats.suspendedUntil,
+        title: newStats.title,
       }).catch((e) => console.warn("Failed to persist stats update to Appwrite:", e));
     }
   };
 
-  // Helper to persist coin updates to Appwrite
-  const updateCoinInAppwrite = async (coinId: string, updates: Partial<MemeCoin>) => {
+  // Helper to persist coin updates to Appwrite & persistent local store
+  const updateCoinInAppwrite = async (coinId: string, updates: Partial<MemeCoin>, fullCoin?: MemeCoin) => {
     try {
+      // 1. Immediately persist to client overrides map so refresh never loses the edit
+      saveStoredCoinOverride(coinId, {
+        price: updates.price !== undefined ? Number(updates.price) : undefined,
+        marketCap: updates.marketCap !== undefined ? Math.floor(Number(updates.marketCap)) : undefined,
+        totalLiquidity: updates.totalLiquidity !== undefined ? Number(updates.totalLiquidity) : undefined,
+        change24h: updates.change24h !== undefined ? Number(updates.change24h) : undefined,
+        volume24h: updates.volume24h !== undefined ? Number(updates.volume24h) : undefined,
+        history: updates.history,
+      });
+
       const payload: any = {};
       if (updates.price !== undefined) payload.price = Number(updates.price);
       if (updates.history !== undefined) payload.history = updates.history;
@@ -261,6 +284,9 @@ export default function OwnerDashboardTab({
         payload.totalLiquidity = Number(updates.totalLiquidity);
         payload.total_value = Number(updates.totalLiquidity);
       }
+      if (updates.name !== undefined) payload.name = updates.name;
+      if (updates.symbol !== undefined) payload.symbol = updates.symbol;
+      if (updates.supply !== undefined) payload.supply = Number(updates.supply);
 
       try {
         await databases.updateDocument("pumpforge", "coins", coinId, payload);
@@ -269,6 +295,44 @@ export default function OwnerDashboardTab({
         const res = await databases.listDocuments("pumpforge", "coins", [Query.equal("coinId", coinId)]);
         if (res.documents.length > 0) {
           await databases.updateDocument("pumpforge", "coins", res.documents[0].$id, payload);
+          return;
+        }
+
+        // If not found in Appwrite (e.g. standard preset coin), create it so it persists!
+        const coinToCreate = fullCoin || coins.find((c) => c.id === coinId);
+        if (coinToCreate) {
+          const createPayload = {
+            coinId: coinId,
+            creator: coinToCreate.creator || "@system",
+            creatorId: coinToCreate.creatorId || "system",
+            creatorName: coinToCreate.creatorName || "System",
+            name: updates.name || coinToCreate.name,
+            symbol: updates.symbol || coinToCreate.symbol,
+            description: coinToCreate.description || "",
+            price: Number(updates.price ?? coinToCreate.price),
+            marketCap: Math.floor(updates.marketCap ?? coinToCreate.marketCap ?? 0),
+            totalLiquidity: Number(updates.totalLiquidity ?? coinToCreate.totalLiquidity ?? 0),
+            total_value: Number(updates.totalLiquidity ?? coinToCreate.totalLiquidity ?? 0),
+            volume24h: Number(updates.volume24h ?? coinToCreate.volume24h ?? 0),
+            change24h: Number(updates.change24h ?? coinToCreate.change24h ?? 0),
+            history: Array.isArray(updates.history) ? updates.history : coinToCreate.history || [coinToCreate.price],
+            avatarEmoji: coinToCreate.avatarEmoji || "🪙",
+            avatarBg: coinToCreate.avatarBg || "bg-zinc-900 border-zinc-800",
+            supply: Number(updates.supply ?? coinToCreate.supply ?? 1000000),
+          };
+          try {
+            await databases.createDocument("pumpforge", "coins", coinId, createPayload, [
+              Permission.read(Role.any()),
+              Permission.update(Role.any()),
+              Permission.delete(Role.any()),
+            ]);
+          } catch (createErr) {
+            await databases.createDocument("pumpforge", "coins", ID.unique(), createPayload, [
+              Permission.read(Role.any()),
+              Permission.update(Role.any()),
+              Permission.delete(Role.any()),
+            ]);
+          }
         }
       }
     } catch (e) {
@@ -303,6 +367,9 @@ export default function OwnerDashboardTab({
     });
 
     setCoins(updatedCoins);
+    try {
+      localStorage.setItem("pumpforge_cached_coins", JSON.stringify(updatedCoins));
+    } catch (e) {}
 
     // Sync all to Appwrite in parallel
     await Promise.allSettled(
@@ -312,7 +379,7 @@ export default function OwnerDashboardTab({
           history: c.history,
           change24h: c.change24h,
           marketCap: c.marketCap,
-        })
+        }, c)
       )
     );
 
@@ -347,6 +414,9 @@ export default function OwnerDashboardTab({
     });
 
     setCoins(updatedCoins);
+    try {
+      localStorage.setItem("pumpforge_cached_coins", JSON.stringify(updatedCoins));
+    } catch (e) {}
 
     await Promise.allSettled(
       updatedCoins.map((c) =>
@@ -355,7 +425,7 @@ export default function OwnerDashboardTab({
           history: c.history,
           change24h: c.change24h,
           marketCap: c.marketCap,
-        })
+        }, c)
       )
     );
 
@@ -449,20 +519,28 @@ export default function OwnerDashboardTab({
       const newChange = Number(targetCoin.change24h || 0) + changeDelta;
       const newCap = Math.floor(finalPrice * (Number(targetCoin.supply) || 1000000));
 
-      setCoins((prev) =>
-        prev.map((c) =>
-          c.id === botRaidCoinId
-            ? { ...c, price: finalPrice, history: newHistory, change24h: newChange, marketCap: newCap }
-            : c
-        )
-      );
+      const updatedCoin: MemeCoin = {
+        ...targetCoin,
+        price: finalPrice,
+        history: newHistory,
+        change24h: newChange,
+        marketCap: newCap,
+      };
+
+      setCoins((prev) => {
+        const next = prev.map((c) => (c.id === botRaidCoinId ? updatedCoin : c));
+        try {
+          localStorage.setItem("pumpforge_cached_coins", JSON.stringify(next));
+        } catch (e) {}
+        return next;
+      });
 
       await updateCoinInAppwrite(botRaidCoinId, {
         price: finalPrice,
         history: newHistory,
         change24h: newChange,
         marketCap: newCap,
-      });
+      }, updatedCoin);
 
       toast.success(
         `Bot Raid Finished: *${targetCoin.symbol} shifted from $${targetCoin.price} to $${finalPrice.toFixed(4)} (${botRaidDirection === "BUY" ? "+380% PUMP" : "-92% DUMP"})!`,
@@ -497,20 +575,28 @@ export default function OwnerDashboardTab({
     const newChange = Number(coin.change24h || 0) + changeBoost;
     const newCap = Math.floor(newPrice * (Number(coin.supply) || 1000000));
 
-    setCoins((prev) =>
-      prev.map((c) =>
-        c.id === coinId
-          ? { ...c, price: newPrice, history: newHistory, change24h: newChange, marketCap: newCap }
-          : c
-      )
-    );
+    const updatedCoin: MemeCoin = {
+      ...coin,
+      price: newPrice,
+      history: newHistory,
+      change24h: newChange,
+      marketCap: newCap,
+    };
+
+    setCoins((prev) => {
+      const next = prev.map((c) => (c.id === coinId ? updatedCoin : c));
+      try {
+        localStorage.setItem("pumpforge_cached_coins", JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
 
     await updateCoinInAppwrite(coinId, {
       price: newPrice,
       history: newHistory,
       change24h: newChange,
       marketCap: newCap,
-    });
+    }, updatedCoin);
 
     toast.success(`*${coin.symbol} pumped to $${newPrice.toFixed(4)} (+${changeBoost}%)!`, { id: "pump-" + coinId });
     onAddNotification(
@@ -531,20 +617,28 @@ export default function OwnerDashboardTab({
     const newChange = Number(coin.change24h || 0) - changeDrop;
     const newCap = Math.floor(newPrice * (Number(coin.supply) || 1000000));
 
-    setCoins((prev) =>
-      prev.map((c) =>
-        c.id === coinId
-          ? { ...c, price: newPrice, history: newHistory, change24h: newChange, marketCap: newCap }
-          : c
-      )
-    );
+    const updatedCoin: MemeCoin = {
+      ...coin,
+      price: newPrice,
+      history: newHistory,
+      change24h: newChange,
+      marketCap: newCap,
+    };
+
+    setCoins((prev) => {
+      const next = prev.map((c) => (c.id === coinId ? updatedCoin : c));
+      try {
+        localStorage.setItem("pumpforge_cached_coins", JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
 
     await updateCoinInAppwrite(coinId, {
       price: newPrice,
       history: newHistory,
       change24h: newChange,
       marketCap: newCap,
-    });
+    }, updatedCoin);
 
     toast.success(`*${coin.symbol} dumped to $${newPrice.toFixed(4)} (-${changeDrop}%)!`, { id: "dump-" + coinId });
     onAddNotification(
@@ -562,20 +656,22 @@ export default function OwnerDashboardTab({
     const newPrice = 0.000001;
     const newHistory = [...(coin.history || [coin.price]), newPrice].slice(-24);
 
-    setCoins((prev) =>
-      prev.map((c) =>
-        c.id === coinId
-          ? {
-              ...c,
-              price: newPrice,
-              history: newHistory,
-              change24h: -99.9,
-              totalLiquidity: 0,
-              marketCap: 0,
-            }
-          : c
-      )
-    );
+    const updatedCoin: MemeCoin = {
+      ...coin,
+      price: newPrice,
+      history: newHistory,
+      change24h: -99.9,
+      totalLiquidity: 0,
+      marketCap: 0,
+    };
+
+    setCoins((prev) => {
+      const next = prev.map((c) => (c.id === coinId ? updatedCoin : c));
+      try {
+        localStorage.setItem("pumpforge_cached_coins", JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
 
     await updateCoinInAppwrite(coinId, {
       price: newPrice,
@@ -583,7 +679,7 @@ export default function OwnerDashboardTab({
       change24h: -99.9,
       totalLiquidity: 0,
       marketCap: 0,
-    });
+    }, updatedCoin);
 
     toast.error(`💀 Liquidity drained on *${coin.symbol}!`, { id: "drain-" + coinId });
     onAddNotification(
@@ -596,15 +692,24 @@ export default function OwnerDashboardTab({
   const handleDeleteCoin = async (coinId: string) => {
     if (!window.confirm("Are you sure you want to permanently delete this coin from Appwrite?")) return;
     try {
+      saveDeletedCoin(coinId);
       try {
         await databases.deleteDocument("pumpforge", "coins", coinId);
       } catch (err1) {
-        const res = await databases.listDocuments("pumpforge", "coins", [Query.equal("coinId", coinId)]);
-        if (res.documents.length > 0) {
-          await databases.deleteDocument("pumpforge", "coins", res.documents[0].$id);
-        }
+        try {
+          const res = await databases.listDocuments("pumpforge", "coins", [Query.equal("coinId", coinId)]);
+          if (res.documents.length > 0) {
+            await databases.deleteDocument("pumpforge", "coins", res.documents[0].$id);
+          }
+        } catch (err2) {}
       }
-      setCoins((prev) => prev.filter((c) => c.id !== coinId));
+      setCoins((prev) => {
+        const next = prev.filter((c) => c.id !== coinId && (c as any).$id !== coinId);
+        try {
+          localStorage.setItem("pumpforge_cached_coins", JSON.stringify(next));
+        } catch (e) {}
+        return next;
+      });
       toast.success("Coin permanently deleted from database.");
       onAddNotification("🗑️ Coin Removed", "Coin permanently purged from database.", "trade");
     } catch (e: any) {
@@ -630,20 +735,28 @@ export default function OwnerDashboardTab({
     const change = Math.round(((newPrice - oldPrice) / oldPrice) * 100);
     const newCap = Math.floor(newPrice * (Number(coin.supply) || 1000000));
 
-    setCoins((prev) =>
-      prev.map((c) =>
-        c.id === coinId
-          ? { ...c, price: newPrice, history: newHistory, change24h: change, marketCap: newCap }
-          : c
-      )
-    );
+    const updatedCoin: MemeCoin = {
+      ...coin,
+      price: newPrice,
+      history: newHistory,
+      change24h: change,
+      marketCap: newCap,
+    };
+
+    setCoins((prev) => {
+      const next = prev.map((c) => (c.id === coinId ? updatedCoin : c));
+      try {
+        localStorage.setItem("pumpforge_cached_coins", JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
 
     await updateCoinInAppwrite(coinId, {
       price: newPrice,
       history: newHistory,
       change24h: change,
       marketCap: newCap,
-    });
+    }, updatedCoin);
 
     setCustomCoinPrices((prev) => ({ ...prev, [coinId]: "" }));
     toast.success(`*${coin.symbol} price set to $${newPrice}!`, { id: "custom-" + coinId });
@@ -1157,6 +1270,7 @@ export default function OwnerDashboardTab({
     saveStoredTitle(primaryKey, title);
     saveStoredTitle(playerHandle, title);
     if (targetUid) saveStoredTitle(targetUid, title);
+    setStoredTitles(getStoredTitles());
 
     if (isUser) {
       try {
@@ -1220,6 +1334,8 @@ export default function OwnerDashboardTab({
     const assignedTitle = makeAdmin ? "Admin" : "Member";
     saveStoredTitle(primaryKey, assignedTitle);
     saveStoredTitle(playerHandle, assignedTitle);
+    setStoredRoles(getStoredRoles());
+    setStoredTitles(getStoredTitles());
 
     if (isUser) {
       try {
@@ -1300,6 +1416,9 @@ export default function OwnerDashboardTab({
     clearStoredUserMeta(primaryKey);
     clearStoredUserMeta(playerHandle);
     if (targetUid) clearStoredUserMeta(targetUid);
+    setStoredSanctions(getStoredSanctions());
+    setStoredTitles(getStoredTitles());
+    setStoredRoles(getStoredRoles());
 
     if (isUser) {
       try {
@@ -1374,10 +1493,30 @@ export default function OwnerDashboardTab({
     targetUid?: string,
     customDays?: number,
   ) => {
-    const isNowSuspended = action === "suspend";
-    const isNowBanned = action === "ban";
+    const primaryKey = targetUid || playerHandle;
+    const cleanKey = primaryKey.toLowerCase().trim();
+    const cleanH = playerHandle.toLowerCase().trim();
+    const currentSanction = storedSanctions[cleanKey] || storedSanctions[cleanH] || {
+      isSuspended: isUser ? !!userStats?.isSuspended : false,
+      isBanned: isUser ? !!userStats?.isBanned : false,
+      suspendedUntil: null,
+    };
+
+    let isNowSuspended = false;
+    let isNowBanned = false;
     const days = customDays !== undefined ? customDays : suspendDurationDays || 1;
     const suspendMs = Date.now() + days * 86400000;
+
+    if (action === "suspend") {
+      isNowSuspended = !currentSanction.isSuspended;
+      isNowBanned = false;
+    } else if (action === "ban") {
+      isNowBanned = !currentSanction.isBanned;
+      isNowSuspended = false;
+    } else if (action === "lift") {
+      isNowSuspended = false;
+      isNowBanned = false;
+    }
 
     const sanctionPayload = {
       isSuspended: isNowSuspended,
@@ -1385,10 +1524,10 @@ export default function OwnerDashboardTab({
       suspendedUntil: isNowSuspended ? suspendMs : null,
     };
 
-    const primaryKey = targetUid || playerHandle;
     saveStoredSanction(primaryKey, sanctionPayload);
     saveStoredSanction(playerHandle, sanctionPayload);
     if (targetUid) saveStoredSanction(targetUid, sanctionPayload);
+    setStoredSanctions(getStoredSanctions());
 
     if (isUser) {
       onUpdateStats((stats) => {
@@ -1396,7 +1535,13 @@ export default function OwnerDashboardTab({
         stats.isBanned = isNowBanned;
         stats.suspendedUntil = isNowSuspended ? suspendMs : null;
       });
-      toast.success(action === "lift" ? "Sanctions lifted on your account" : `Account ${action} applied.`);
+      toast.success(
+        action === "lift" || (!isNowSuspended && !isNowBanned)
+          ? "Sanctions lifted on your account (Good Standing)"
+          : isNowBanned
+          ? "Blacklist ban applied to your account"
+          : `Account suspended for ${days} day(s)`
+      );
     } else {
       try {
         if (targetUid && !targetUid.startsWith("sim_") && !targetUid.startsWith("usr_")) {
@@ -1421,7 +1566,13 @@ export default function OwnerDashboardTab({
             })
           );
         }
-        toast.success(`Sanction update applied to ${playerHandle}`);
+        toast.success(
+          action === "lift" || (!isNowSuspended && !isNowBanned)
+            ? `Sanctions lifted on ${playerHandle}`
+            : isNowBanned
+            ? `Blacklist ban applied to ${playerHandle}`
+            : `Suspension applied to ${playerHandle} (${days}d)`
+        );
       } catch (e: any) {
         toast.error("Failed to apply sanction: " + e.message);
       }
@@ -1492,9 +1643,19 @@ export default function OwnerDashboardTab({
   // --- USERS LIST AGGREGATOR ---
   // ==========================================
 
-  const storedSanctions = getStoredSanctions();
-  const storedTitles = getStoredTitles();
-  const storedRoles = getStoredRoles();
+  const [storedSanctions, setStoredSanctions] = useState(getStoredSanctions());
+  const [storedTitles, setStoredTitles] = useState(getStoredTitles());
+  const [storedRoles, setStoredRoles] = useState(getStoredRoles());
+
+  useEffect(() => {
+    const handleMetaUpdate = () => {
+      setStoredSanctions(getStoredSanctions());
+      setStoredTitles(getStoredTitles());
+      setStoredRoles(getStoredRoles());
+    };
+    window.addEventListener("pf_user_meta_updated", handleMetaUpdate);
+    return () => window.removeEventListener("pf_user_meta_updated", handleMetaUpdate);
+  }, []);
 
   const rawSystemUsersList = [
     (() => {
@@ -1695,26 +1856,39 @@ export default function OwnerDashboardTab({
         </div>
 
         {/* Quick telemetry pills */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6 pt-5 border-t border-white/10">
-          <div className="bg-zinc-950/60 border border-white/5 rounded-2xl p-3">
-            <span className="text-[10px] font-mono text-zinc-400 uppercase">Circulating Tokens</span>
-            <div className="text-lg font-black text-emerald-400 mt-0.5">{coins.length} Coins</div>
-          </div>
-          <div className="bg-zinc-950/60 border border-white/5 rounded-2xl p-3">
-            <span className="text-[10px] font-mono text-zinc-400 uppercase">Active Accounts</span>
-            <div className="text-lg font-black text-indigo-400 mt-0.5">{systemUsersList.length} Registered</div>
-          </div>
-          <div className="bg-zinc-950/60 border border-white/5 rounded-2xl p-3">
-            <span className="text-[10px] font-mono text-zinc-400 uppercase">Arcade Mechanics</span>
-            <div className="text-lg font-black text-amber-400 mt-0.5 uppercase">
-              {adminSettings?.arcadeRigMode || "FAIR RNG"}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mt-6 pt-5 border-t border-white/10">
+          <div className="bg-zinc-950/60 border border-amber-500/30 rounded-2xl p-3">
+            <span className="text-[10px] font-mono text-zinc-400 uppercase">Your Prestige Level</span>
+            <div className="text-lg font-black text-amber-400 mt-0.5">
+              Rank {userStats?.prestigeLevel ?? 0}
+            </div>
+            <div className="text-[10px] text-amber-300/80 font-bold truncate">
+              {PRESTIGE_TIERS[Math.min(userStats?.prestigeLevel ?? 0, 10)]?.title || "Novice Trader"}
             </div>
           </div>
           <div className="bg-zinc-950/60 border border-white/5 rounded-2xl p-3">
+            <span className="text-[10px] font-mono text-zinc-400 uppercase">Circulating Tokens</span>
+            <div className="text-lg font-black text-emerald-400 mt-0.5">{coins.length} Coins</div>
+            <div className="text-[10px] text-zinc-500">Live in bonding curve</div>
+          </div>
+          <div className="bg-zinc-950/60 border border-white/5 rounded-2xl p-3">
+            <span className="text-[10px] font-mono text-zinc-400 uppercase">Active Accounts</span>
+            <div className="text-lg font-black text-indigo-400 mt-0.5">{systemUsersList.length} Accounts</div>
+            <div className="text-[10px] text-zinc-500">Registered & simulated</div>
+          </div>
+          <div className="bg-zinc-950/60 border border-white/5 rounded-2xl p-3">
+            <span className="text-[10px] font-mono text-zinc-400 uppercase">Arcade RNG</span>
+            <div className="text-lg font-black text-cyan-400 mt-0.5 uppercase truncate">
+              {adminSettings?.arcadeRigMode || "FAIR RNG"}
+            </div>
+            <div className="text-[10px] text-zinc-500">Probability engine</div>
+          </div>
+          <div className="col-span-2 sm:col-span-1 bg-zinc-950/60 border border-white/5 rounded-2xl p-3">
             <span className="text-[10px] font-mono text-zinc-400 uppercase">Open Bug Reports</span>
             <div className="text-lg font-black text-rose-400 mt-0.5">
               {bugReports.filter((b) => b.status !== "resolved").length} Open
             </div>
+            <div className="text-[10px] text-zinc-500">Awaiting review</div>
           </div>
         </div>
       </div>
@@ -2958,6 +3132,145 @@ export default function OwnerDashboardTab({
                     No recent suspicious flags or security audit infractions recorded for this account.
                   </div>
                 )}
+              </div>
+            </div>
+
+            {/* Module 6: 👥 All Registered & Simulated Traders Directory */}
+            <div className="bg-zinc-950/60 border border-white/10 rounded-2xl p-4 sm:p-5 flex flex-col gap-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/5 pb-3">
+                <div className="flex items-center gap-2">
+                  <Users className="w-4 h-4 text-indigo-400" />
+                  <div>
+                    <h4 className="text-xs font-black text-white">Full User & Prestige Directory ({systemUsersList.length})</h4>
+                    <p className="text-[10px] text-zinc-400">All authenticated traders, ranking prestige levels, titles, and live status</p>
+                  </div>
+                </div>
+                <div className="relative w-full sm:w-64">
+                  <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={dropdownSearch}
+                    onChange={(e) => setDropdownSearch(e.target.value)}
+                    placeholder="Filter by name, handle, or title..."
+                    className="w-full bg-zinc-900 border border-white/10 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 font-sans"
+                  />
+                </div>
+              </div>
+
+              {/* Responsive Cards / Table View */}
+              <div className="flex flex-col gap-2.5">
+                {filteredDropdownUsers.map((u) => {
+                  const tier = PRESTIGE_TIERS[Math.min(u.prestige || 0, 10)] || PRESTIGE_TIERS[0];
+                  const isSelected = selectedUser?.uid === u.uid;
+                  return (
+                    <div
+                      key={u.uid}
+                      className={`p-3.5 rounded-2xl border transition flex flex-col md:flex-row md:items-center justify-between gap-3 ${
+                        isSelected
+                          ? "bg-indigo-950/40 border-indigo-500/50 shadow-md shadow-indigo-950/30"
+                          : "bg-zinc-900/40 hover:bg-zinc-900/70 border-white/5"
+                      }`}
+                    >
+                      {/* User identity & prestige info */}
+                      <div className="flex items-start sm:items-center gap-3 min-w-0">
+                        <div className="w-10 h-10 rounded-xl bg-zinc-800 border border-white/10 flex items-center justify-center text-sm font-black text-white shrink-0">
+                          {u.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-black text-white truncate">{u.name}</span>
+                            <span className="text-[11px] text-indigo-400 font-mono font-bold">{u.handle}</span>
+                            {u.isUser && (
+                              <span className="text-[8px] bg-amber-500/20 text-amber-300 font-bold px-1.5 py-0.5 rounded uppercase">
+                                YOU
+                              </span>
+                            )}
+                            {u.isAdmin && (
+                              <span className="text-[8px] bg-emerald-500/20 text-emerald-300 font-bold px-1.5 py-0.5 rounded uppercase">
+                                ADMIN
+                              </span>
+                            )}
+                            {u.isSuspended && (
+                              <span className="text-[8px] bg-amber-500/20 text-amber-300 font-bold px-1.5 py-0.5 rounded uppercase">
+                                SUSPENDED
+                              </span>
+                            )}
+                            {u.isBanned && (
+                              <span className="text-[8px] bg-rose-500/20 text-rose-300 font-bold px-1.5 py-0.5 rounded uppercase">
+                                BANNED
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-2 text-[10px] text-zinc-400 font-mono mt-1 flex-wrap">
+                            <span className={`px-2 py-0.5 rounded-md border font-bold ${tier.badge}`}>
+                              ⭐ Prestige Lvl {u.prestige || 0} ({tier.title})
+                            </span>
+                            <span className="px-2 py-0.5 rounded-md bg-purple-500/10 border border-purple-500/30 text-purple-300 font-bold">
+                              🏷️ {u.title || "Trader"}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Balances & Fast Controls */}
+                      <div className="flex items-center justify-between md:justify-end gap-3 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-white/5">
+                        <div className="text-left md:text-right font-mono text-xs">
+                          <div className="text-emerald-400 font-bold">${(u.cash ?? 5000).toLocaleString()}</div>
+                          <div className="text-cyan-400 text-[10px]">💎 {(u.gems ?? 100).toLocaleString()}</div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => {
+                              setSelectedUserId(u.uid);
+                              window.scrollTo({ top: 300, behavior: "smooth" });
+                            }}
+                            className={`px-3 py-2 text-xs font-bold rounded-xl transition cursor-pointer active:scale-95 ${
+                              isSelected
+                                ? "bg-indigo-600 text-white shadow-md shadow-indigo-950/40"
+                                : "bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white border border-white/10"
+                            }`}
+                          >
+                            {isSelected ? "Active Dossier" : "Inspect"}
+                          </button>
+
+                          <button
+                            onClick={() => handleToggleSanction(u.handle, u.isUser, u.isSuspended ? "lift" : "suspend", u.uid)}
+                            className={`p-2 rounded-xl text-xs transition cursor-pointer active:scale-95 ${
+                              u.isSuspended
+                                ? "bg-amber-500/30 border border-amber-500/50 text-amber-300"
+                                : "bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-amber-400"
+                            }`}
+                            title={u.isSuspended ? "Lift Suspension" : "Quick Suspend"}
+                          >
+                            <AlertTriangle className="w-3.5 h-3.5" />
+                          </button>
+
+                          <button
+                            onClick={() => handleToggleSanction(u.handle, u.isUser, u.isBanned ? "lift" : "ban", u.uid)}
+                            className={`p-2 rounded-xl text-xs transition cursor-pointer active:scale-95 ${
+                              u.isBanned
+                                ? "bg-rose-500/30 border border-rose-500/50 text-rose-300"
+                                : "bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-400"
+                            }`}
+                            title={u.isBanned ? "Lift Ban" : "Quick Ban"}
+                          >
+                            <Skull className="w-3.5 h-3.5" />
+                          </button>
+
+                          <button
+                            onClick={() => handleResetUserAccount(u.handle, u.isUser, u.uid)}
+                            className="p-2 bg-red-950/20 hover:bg-red-950/60 border border-red-500/20 text-red-400 rounded-xl text-xs transition cursor-pointer active:scale-95"
+                            title="Reset Account to Defaults"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>

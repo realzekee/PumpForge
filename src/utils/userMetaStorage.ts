@@ -16,6 +16,37 @@ export interface UserMetaData {
 const SANCTIONS_KEY = "pf_global_user_sanctions";
 const TITLES_KEY = "pf_global_user_titles";
 const ROLES_KEY = "pf_global_user_roles";
+const DELETED_COINS_KEY = "pf_global_deleted_coins";
+
+export const getDeletedCoins = (): string[] => {
+  try {
+    const raw = localStorage.getItem(DELETED_COINS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+};
+
+export const saveDeletedCoin = (coinId: string) => {
+  try {
+    const list = getDeletedCoins();
+    const cleanId = String(coinId).trim();
+    if (!list.includes(cleanId)) {
+      list.push(cleanId);
+      localStorage.setItem(DELETED_COINS_KEY, JSON.stringify(list));
+      window.dispatchEvent(new CustomEvent("pf_coins_updated", { detail: { type: "delete", coinId: cleanId } }));
+    }
+  } catch (e) {
+    console.warn("Failed to save deleted coin:", e);
+  }
+};
+
+export const clearDeletedCoin = (coinId: string) => {
+  try {
+    const list = getDeletedCoins().filter((id) => id !== String(coinId).trim());
+    localStorage.setItem(DELETED_COINS_KEY, JSON.stringify(list));
+  } catch (e) {}
+};
 
 export const getStoredSanctions = (): Record<string, UserSanction> => {
   try {
@@ -100,4 +131,48 @@ export const clearStoredUserMeta = (key: string) => {
   } catch (e) {
     console.warn("Failed to clear user meta:", e);
   }
+};
+
+const COIN_OVERRIDES_KEY = "pf_global_coin_overrides";
+
+export interface StoredCoinOverride {
+  price?: number;
+  marketCap?: number;
+  totalLiquidity?: number;
+  change24h?: number;
+  volume24h?: number;
+  history?: number[];
+}
+
+export const getStoredCoinOverrides = (): Record<string, StoredCoinOverride> => {
+  try {
+    const raw = localStorage.getItem(COIN_OVERRIDES_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    return {};
+  }
+};
+
+export const saveStoredCoinOverride = (coinId: string, override: StoredCoinOverride) => {
+  try {
+    const overrides = getStoredCoinOverrides();
+    const cleanId = String(coinId).trim();
+    overrides[cleanId] = {
+      ...(overrides[cleanId] || {}),
+      ...override,
+    };
+    localStorage.setItem(COIN_OVERRIDES_KEY, JSON.stringify(overrides));
+    window.dispatchEvent(new CustomEvent("pf_coins_updated", { detail: { type: "override", coinId: cleanId, override } }));
+  } catch (e) {
+    console.warn("Failed to save coin override:", e);
+  }
+};
+
+export const clearStoredCoinOverride = (coinId: string) => {
+  try {
+    const overrides = getStoredCoinOverrides();
+    const cleanId = String(coinId).trim();
+    delete overrides[cleanId];
+    localStorage.setItem(COIN_OVERRIDES_KEY, JSON.stringify(overrides));
+  } catch (e) {}
 };
