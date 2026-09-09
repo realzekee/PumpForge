@@ -77,37 +77,6 @@ export default function OwnerDashboardTab({
 
   const { data: usersQueryData = [], isLoading: isUsersLoading, isError: isUsersError, error: usersError } = useQuery({ queryKey: ["registeredUsers"], queryFn: async () => { const { Query } = await import("appwrite"); const res = await databases.listDocuments("pumpforge", "users", [Query.limit(1000)]); return res.documents; } });
 
-  if (!userStats || Object.keys(userStats).length === 0) {
-    return <SkeletonLoader type="dashboard" />;
-  }
-
-  useEffect(() => {
-    if (isUsersError && (usersError as any)?.code === 403) {
-      import("sonner").then(({ toast }) => {
-        toast.error(
-          "Owner Dashboard Error (403): You don't have permission to list Appwrite users.",
-        );
-      });
-    }
-  }, [isUsersError, usersError]);
-
-  const appwriteUsers = usersQueryData;
-
-  const onUpdateStats = (updater: (stats: UserStats) => void) => {
-    // Legacy support since we migrated to AppContext
-    const newStats = { ...userStats };
-    updater(newStats);
-    setCash(newStats.cash);
-    setGems(newStats.gems);
-    if (userId) {
-      databases.updateDocument("pumpforge", "users", userId, {
-        cash: newStats.cash,
-        gems: newStats.gems,
-        prestigeLevel: newStats.prestigeLevel,
-      });
-    }
-  };
-
   // Local state for creator controls
   const [customCash, setCustomCash] = useState<number>(50000);
   const [customGems, setCustomGems] = useState<number>(500);
@@ -174,6 +143,71 @@ export default function OwnerDashboardTab({
       category: "auth",
     },
   ]);
+
+  // Bug reports local real-time state and operations
+  const [bugReports, setBugReports] = useState<any[]>([]);
+  const [isPruningBugs, setIsPruningBugs] = useState(false);
+
+  // Modify money state
+  const [isMutatingUser, setIsMutatingUser] = useState<string | null>(null);
+
+  // Promo Code Publisher State
+  const [promoPubIsLoading, setPromoPubIsLoading] = useState(false);
+  const [promoPubCode, setPromoPubCode] = useState("");
+  const [promoPubType, setPromoPubType] = useState<"cash" | "gems">("cash");
+  const [promoPubAmount, setPromoPubAmount] = useState("");
+  const [promoPubExpiresAt, setPromoPubExpiresAt] = useState("");
+
+  // User Management Dropdown State
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
+  const [dropdownSearch, setDropdownSearch] = useState("");
+
+  useEffect(() => {
+    if (isUsersError && (usersError as any)?.code === 403) {
+      import("sonner").then(({ toast }) => {
+        toast.error(
+          "Owner Dashboard Error (403): You don't have permission to list Appwrite users.",
+        );
+      });
+    }
+  }, [isUsersError, usersError]);
+
+  useEffect(() => {
+    let active = true;
+    const fetchBugs = async () => {
+      try {
+        const { Query } = await import("appwrite");
+        const res = await databases.listDocuments("pumpforge", "bugs", [Query.orderDesc("timestamp")]);
+        if (active) {
+          setBugReports(res.documents.map((d) => ({ id: d.$id, ...d })));
+        }
+      } catch (err) {
+      }
+    };
+    fetchBugs();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const appwriteUsers = usersQueryData;
+
+  const onUpdateStats = (updater: (stats: UserStats) => void) => {
+    // Legacy support since we migrated to AppContext
+    const newStats = { ...(userStats || {}) };
+    updater(newStats);
+    if (newStats.cash !== undefined) setCash(newStats.cash);
+    if (newStats.gems !== undefined) setGems(newStats.gems);
+    const targetId = userId || userStats?.$id || userStats?.userId;
+    if (targetId) {
+      databases.updateDocument("pumpforge", "users", targetId, {
+        cash: newStats.cash,
+        gems: newStats.gems,
+        prestigeLevel: newStats.prestigeLevel,
+      });
+    }
+  };
 
   const formatDate = (isoStr: string) => {
     try {
@@ -464,28 +498,6 @@ export default function OwnerDashboardTab({
     }
   };
 
-  // Bug reports local real-time state and operations
-  const [bugReports, setBugReports] = useState<any[]>([]);
-  const [isPruningBugs, setIsPruningBugs] = useState(false);
-
-  useEffect(() => {
-    
-    let active = true;
-    const fetchBugs = async () => {
-      try {
-        const { Query } = await import("appwrite");
-        const res = await databases.listDocuments("pumpforge", "bugs", [Query.orderDesc("timestamp")]);
-        if (active) {
-          setBugReports(res.documents.map(d => ({ id: d.$id, ...d })));
-        }
-      } catch (err) {
-      }
-    };
-    fetchBugs();
-    return () => { active = false; };
-  }, []);
-
-
   const handleToggleBugStatus = async (
     bugId: string,
     currentStatus: string,
@@ -562,9 +574,6 @@ export default function OwnerDashboardTab({
       setIsPruningBugs(false);
     }
   };
-
-  // Modify money state
-  const [isMutatingUser, setIsMutatingUser] = useState<string | null>(null);
 
   const handleUserCashDose = async (
     playerHandle: string,
@@ -1130,31 +1139,38 @@ export default function OwnerDashboardTab({
   // Mint instant resources (Cash/Gems self adjustments)
   const handleMintCash = async () => {
     try {
-      // Find current user's uid from registeredUsers if available, fallback to search based on handle
       const currentUserReg = registeredUsers.find(
         (u) =>
           u.handle &&
-          userStats.handle &&
+          userStats?.handle &&
           u.handle.toLowerCase() === userStats.handle.toLowerCase(),
       );
-      if (currentUserReg?.uid) {
+      const uid =
+        currentUserReg?.uid ||
+        userId ||
+        userStats?.$id ||
+        userStats?.userId;
+      const amountToAdd = Number(customCash) || 0;
+      const targetCash = (Number(userStats?.cash) || 0) + amountToAdd;
+
+      if (uid) {
         await databases.updateDocument(
           "pumpforge",
           "users",
-          currentUserReg.uid,
+          uid,
           {
-            cash: userStats.cash + customCash,
+            cash: targetCash,
           },
         );
         queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
       }
 
       onUpdateStats((stats) => {
-        stats.cash += customCash;
+        stats.cash = (Number(stats.cash) || 0) + amountToAdd;
       });
       onAddNotification(
         "💸 Owner Resource Mint",
-        `Minted $${customCash.toLocaleString()} cash from central reserve.`,
+        `Minted $${amountToAdd.toLocaleString()} cash from central reserve.`,
         "achievement",
       );
     } catch (e: any) {
@@ -1172,27 +1188,35 @@ export default function OwnerDashboardTab({
       const currentUserReg = registeredUsers.find(
         (u) =>
           u.handle &&
-          userStats.handle &&
+          userStats?.handle &&
           u.handle.toLowerCase() === userStats.handle.toLowerCase(),
       );
-      if (currentUserReg?.uid) {
+      const uid =
+        currentUserReg?.uid ||
+        userId ||
+        userStats?.$id ||
+        userStats?.userId;
+      const amountToAdd = Number(customGems) || 0;
+      const targetGems = (Number(userStats?.gems) || 0) + amountToAdd;
+
+      if (uid) {
         await databases.updateDocument(
           "pumpforge",
           "users",
-          currentUserReg.uid,
+          uid,
           {
-            gems: userStats.gems + customGems,
+            gems: targetGems,
           },
         );
         queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
       }
 
       onUpdateStats((stats) => {
-        stats.gems += customGems;
+        stats.gems = (Number(stats.gems) || 0) + amountToAdd;
       });
       onAddNotification(
         "💎 Owner Resource Mint",
-        `Minted ${customGems} gems directly to your profile.`,
+        `Minted ${amountToAdd.toLocaleString()} gems directly to your profile.`,
         "achievement",
       );
     } catch (e: any) {
@@ -1687,13 +1711,6 @@ export default function OwnerDashboardTab({
     );
   };
 
-  // Promo Code Publisher State
-  const [promoPubIsLoading, setPromoPubIsLoading] = useState(false);
-  const [promoPubCode, setPromoPubCode] = useState("");
-  const [promoPubType, setPromoPubType] = useState<"cash" | "gems">("cash");
-  const [promoPubAmount, setPromoPubAmount] = useState("");
-  const [promoPubExpiresAt, setPromoPubExpiresAt] = useState("");
-
   const handlePublishPromoCode = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!promoPubCode || !promoPubAmount) return;
@@ -1732,10 +1749,9 @@ export default function OwnerDashboardTab({
     toast.error("Database purge disabled via sandbox");
   };
 
-  // User Management Dropdown State
-  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
-  const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
-  const [dropdownSearch, setDropdownSearch] = useState("");
+  if (!userStats || Object.keys(userStats).length === 0) {
+    return <SkeletonLoader type="dashboard" />;
+  }
 
   // Combine active profile + registered + Appwrite + simulated players
   const rawSystemUsersList = [

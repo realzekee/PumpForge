@@ -50,10 +50,6 @@ export default function PortfolioTab({
   const [sendAmount, setSendAmount] = useState<string>("");
   const [successMsg, setSuccessMsg] = useState("");
 
-  if (!userStats || Object.keys(userStats).length === 0) {
-    return <SkeletonLoader type="portfolio" />;
-  }
-
   useEffect(() => {
     // Simulator loading pattern to match the video
     const timer = setTimeout(() => {
@@ -61,6 +57,10 @@ export default function PortfolioTab({
     }, 450);
     return () => clearTimeout(timer);
   }, []);
+
+  if (!userStats || Object.keys(userStats).length === 0) {
+    return <SkeletonLoader type="portfolio" />;
+  }
 
   // Calculate current holdings value (exclude list of inactive)
   const holdingsValue = (holdings || []).reduce((sum, h) => {
