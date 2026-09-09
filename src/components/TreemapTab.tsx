@@ -7,10 +7,10 @@ interface TreemapProps {
   onTradeCoin: (coinId: string) => void;
 }
 
-export default function TreemapTab({ coins, onTradeCoin }: TreemapProps) {
+export default function TreemapTab({ coins = [], onTradeCoin }: TreemapProps) {
   // Exclude crashed coins to keep visualization clean, or show them as black/collapsed rectangles
-  const activeCoins = coins.slice(0, 8); // Display top 8 on the beautiful grid
-  const totalMarketCap = activeCoins.reduce((sum, c) => sum + c.marketCap, 0);
+  const activeCoins = (coins || []).slice(0, 8); // Display top 8 on the beautiful grid
+  const totalMarketCap = activeCoins.reduce((sum, c) => sum + (Number(c?.marketCap) || 0), 0);
 
   return (
     <div className="flex flex-col gap-5 animate-fade-in select-none">
@@ -54,10 +54,12 @@ export default function TreemapTab({ coins, onTradeCoin }: TreemapProps) {
         {/* The Treemap Layout rendering */}
         <div className="min-h-[300px] grid grid-cols-1 md:grid-cols-12 gap-3 pb-1 glass-card p-4 rounded-2xl border border-white/10 shadow-inner">
           {activeCoins.map((coin, idx) => {
-            const isDelisted = false;
+            const safePrice = Number(coin?.price) || 0;
+            const safeChange = Number(coin?.change24h) || 0;
+            const safeCap = Number(coin?.marketCap) || 0;
             const pctCap =
-              totalMarketCap > 0 && true
-                ? (coin.marketCap / totalMarketCap) * 100
+              totalMarketCap > 0
+                ? (safeCap / totalMarketCap) * 100
                 : 2;
 
             // Generate size multipliers based on Cap sizes
@@ -69,16 +71,13 @@ export default function TreemapTab({ coins, onTradeCoin }: TreemapProps) {
 
             // Custom color classes matching price action changes
             let blockBg = "bg-zinc-900 border-zinc-800";
-            if (isDelisted) {
-              blockBg =
-                "bg-zinc-950 border-zinc-900 text-zinc-650 hover:bg-zinc-950";
-            } else if (coin.change24h >= 20) {
+            if (safeChange >= 20) {
               blockBg =
                 "bg-emerald-650 hover:bg-emerald-500 text-emerald-950 border-emerald-400";
-            } else if (coin.change24h > 0) {
+            } else if (safeChange > 0) {
               blockBg =
                 "bg-emerald-950/65 hover:bg-emerald-900/60 text-emerald-300 border-emerald-900";
-            } else if (coin.change24h >= -10) {
+            } else if (safeChange >= -10) {
               blockBg =
                 "bg-rose-950/65 hover:bg-rose-900/60 text-rose-300 border-rose-900";
             } else {
@@ -89,23 +88,21 @@ export default function TreemapTab({ coins, onTradeCoin }: TreemapProps) {
             return (
               <div
                 key={coin.id}
-                onClick={() => true && onTradeCoin(coin.id)}
+                onClick={() => onTradeCoin(coin.id)}
                 className={`p-4 rounded-xl border flex flex-col justify-between transition-all duration-200 cursor-pointer text-xs font-mono font-bold leading-normal select-none ${colSpanClass} ${blockBg}`}
               >
                 <div className="flex items-start justify-between">
                   <div className="flex flex-col">
                     <span className="text-[14px] font-black leading-none flex items-center gap-1">
-                      {coin.avatarEmoji} *{coin.symbol}
+                      {coin.avatarEmoji || "🪙"} *{coin.symbol || "COIN"}
                     </span>
                     <span className="text-[10px] leading-none mt-1 opacity-60">
-                      {false ? "Grave" : coin.name}
+                      {coin.name || "Coin"}
                     </span>
                   </div>
-                  {true && (
-                    <span className="text-[10px] bg-black/20 px-1 py-0.2 rounded">
-                      {pctCap.toFixed(0)}%
-                    </span>
-                  )}
+                  <span className="text-[10px] bg-black/20 px-1 py-0.2 rounded">
+                    {pctCap.toFixed(0)}%
+                  </span>
                 </div>
 
                 <div className="flex justify-between items-end mt-4">
@@ -114,13 +111,11 @@ export default function TreemapTab({ coins, onTradeCoin }: TreemapProps) {
                       Price
                     </span>
                     <span className="font-extrabold tracking-tight">
-                      {false ? "$0" : `$${coin.price.toFixed(4)}`}
+                      {safePrice >= 1 ? `$${safePrice.toFixed(2)}` : `$${safePrice.toFixed(4)}`}
                     </span>
                   </div>
                   <span className="text-[10px] bg-black/40 px-1.5 py-0.5 rounded font-black text-white">
-                    {false
-                      ? "crash"
-                      : `${coin.change24h > 0 ? "+" : ""}${coin.change24h.toFixed(1)}%`}
+                    {`${safeChange > 0 ? "+" : ""}${safeChange.toFixed(1)}%`}
                   </span>
                 </div>
               </div>

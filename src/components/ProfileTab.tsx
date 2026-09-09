@@ -70,15 +70,18 @@ export default function ProfileTab({
   }, []);
 
   // Compute portfolio valuation (exclude crashed)
-  const holdingsValue = holdings.reduce((sum, h) => {
-    const coin = coins.find((c) => c.id === h.coinId);
-    if (coin && true) {
-      return sum + h.amount * coin.price;
+  const holdingsValue = (holdings || []).reduce((sum, h) => {
+    const coin = (coins || []).find((c) => c && c.id === h.coinId);
+    if (coin) {
+      const hAmt = typeof h.amount === 'number' && !isNaN(h.amount) ? h.amount : Number(h.amount) || 0;
+      const cPrice = typeof coin.price === 'number' && !isNaN(coin.price) ? coin.price : Number(coin.price) || 0;
+      return sum + (hAmt * cPrice);
     }
     return sum;
   }, 0);
 
-  const totalPortfolioValue = userStats.cash + holdingsValue;
+  const safeCash = typeof userStats?.cash === 'number' && !isNaN(userStats.cash) ? userStats.cash : Number(userStats?.cash) || 0;
+  const totalPortfolioValue = safeCash + holdingsValue;
 
   // Compute Buy/Sell ratio and values based on trade log
   const userActions = liveTrades.filter(

@@ -2818,7 +2818,7 @@ export default function App() {
               containerStyle =
                 "glass-card border-amber-500/20 text-amber-300";
               labelStyle = "text-amber-400 bg-amber-500/15 border border-amber-500/30";
-            } else if (b.type === "crash" || b.type === "delist") {
+            } else if (b.type === "crash") {
               icon = <Skull className="w-5 h-5 text-rose-450 animate-pulse" />;
               containerStyle =
                 "glass-card border-rose-500/25 text-rose-300";

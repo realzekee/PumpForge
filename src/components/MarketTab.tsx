@@ -123,19 +123,23 @@ export default function MarketTab({
 
   // SVG Chart drawer helper
   const drawSVGChartPath = (history: number[]) => {
-    if (history.length === 0) return "M 0 0 L 100 100";
-    const maxVal = Math.max(...history);
-    const minVal = Math.min(...history);
-    const range = maxVal - minVal || 1;
+    const validHistory = Array.isArray(history)
+      ? history.map((n) => Number(n)).filter((n) => !isNaN(n) && isFinite(n))
+      : [];
+    if (validHistory.length <= 1) return "M 10 55 L 290 55";
+    const maxVal = Math.max(...validHistory);
+    const minVal = Math.min(...validHistory);
+    const range = maxVal - minVal || (maxVal > 0 ? maxVal * 0.1 : 1);
     const width = 300;
     const height = 110;
     const padding = 10;
 
-    const points = history.map((val, idx) => {
-      const x = padding + (idx / (history.length - 1)) * (width - padding * 2);
+    const points = validHistory.map((val, idx) => {
+      const denom = validHistory.length > 1 ? validHistory.length - 1 : 1;
+      const x = padding + (idx / denom) * (width - padding * 2);
       const y =
         height - padding - ((val - minVal) / range) * (height - padding * 2);
-      return `${x},${y}`;
+      return `${Number(x.toFixed(1))},${Number(y.toFixed(1))}`;
     });
 
     return `M ${points.join(" L ")}`;
@@ -269,27 +273,27 @@ export default function MarketTab({
                       <td className="px-5 py-3.5 text-right font-bold text-[13px]">
                         <span className="text-zinc-200">
                           $
-                          {coin.price >= 1000
-                            ? `${(coin.price / 1000).toFixed(2)}K`
-                            : coin.price >= 1
-                            ? coin.price.toFixed(2)
-                            : coin.price >= 0.01
-                            ? coin.price.toFixed(4)
-                            : coin.price.toFixed(6)}
+                          {(Number(coin.price) || 0) >= 1000
+                            ? `${((Number(coin.price) || 0) / 1000).toFixed(2)}K`
+                            : (Number(coin.price) || 0) >= 1
+                            ? (Number(coin.price) || 0).toFixed(2)
+                            : (Number(coin.price) || 0) >= 0.01
+                            ? (Number(coin.price) || 0).toFixed(4)
+                            : (Number(coin.price) || 0).toFixed(6)}
                         </span>
                       </td>
 
                       {/* Change Col */}
                       <td className="px-5 py-3.5 text-right">
-                        {coin.change24h >= 0 ? (
+                        {(Number(coin.change24h) || 0) >= 0 ? (
                           <span className="text-emerald-400 font-bold bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.5 rounded flex items-center gap-0.5 inline-flex ml-auto text-[11px]">
                             <TrendingUp className="w-3 h-3 text-emerald-400" />{" "}
-                            +{coin.change24h.toFixed(1)}%
+                            +{(Number(coin.change24h) || 0).toFixed(1)}%
                           </span>
                         ) : (
                           <span className="text-rose-400 font-bold bg-rose-500/15 border border-rose-500/30 px-1.5 py-0.5 rounded flex items-center gap-0.5 inline-flex ml-auto text-[11px]">
                             <TrendingDown className="w-3 h-3 text-rose-400" />{" "}
-                            {coin.change24h.toFixed(1)}%
+                            {(Number(coin.change24h) || 0).toFixed(1)}%
                           </span>
                         )}
                       </td>
@@ -297,17 +301,17 @@ export default function MarketTab({
                       {/* Marketcap Col */}
                       <td className="px-5 py-3.5 text-right font-medium text-zinc-300">
                         $
-                        {coin.marketCap >= 1000
-                          ? `${(coin.marketCap / 1000).toFixed(1)}K`
-                          : coin.marketCap.toFixed(0)}
+                        {(Number(coin.marketCap) || 0) >= 1000
+                          ? `${((Number(coin.marketCap) || 0) / 1000).toFixed(1)}K`
+                          : (Number(coin.marketCap) || 0).toFixed(0)}
                       </td>
 
                       {/* Volume Col */}
                       <td className="px-5 py-3.5 text-right text-zinc-400 font-medium">
                         $
-                        {coin.volume24h >= 1000
-                          ? `${(coin.volume24h / 1000).toFixed(1)}K`
-                          : coin.volume24h.toFixed(0)}
+                        {(Number(coin.volume24h) || 0) >= 1000
+                          ? `${((Number(coin.volume24h) || 0) / 1000).toFixed(1)}K`
+                          : (Number(coin.volume24h) || 0).toFixed(0)}
                       </td>
 
                       {/* Holdings Col */}
@@ -320,7 +324,7 @@ export default function MarketTab({
                               })}
                             </span>
                             <span className="text-[10px] text-zinc-400">
-                              Value: ${(holds * coin.price).toFixed(2)}
+                              Value: ${(holds * (Number(coin.price) || 0)).toFixed(2)}
                             </span>
                           </div>
                         ) : (
@@ -416,7 +420,7 @@ export default function MarketTab({
                             maximumFractionDigits: 1,
                           })}{" "}
                           ($
-                          {(holds * coin.price).toLocaleString("en-US", {
+                          {(holds * (Number(coin.price) || 0)).toLocaleString("en-US", {
                             maximumFractionDigits: 1,
                           })}
                           )
@@ -429,23 +433,23 @@ export default function MarketTab({
                   <div className="flex flex-col items-end text-right shrink-0">
                     <span className="text-zinc-200 text-[11.5px] font-bold">
                       $
-                      {coin.price >= 1000
-                        ? `${(coin.price / 1000).toFixed(2)}K`
-                        : coin.price >= 1
-                        ? coin.price.toFixed(2)
-                        : coin.price >= 0.01
-                        ? coin.price.toFixed(4)
-                        : coin.price.toFixed(6)}
+                      {(Number(coin.price) || 0) >= 1000
+                        ? `${((Number(coin.price) || 0) / 1000).toFixed(2)}K`
+                        : (Number(coin.price) || 0) >= 1
+                        ? (Number(coin.price) || 0).toFixed(2)
+                        : (Number(coin.price) || 0) >= 0.01
+                        ? (Number(coin.price) || 0).toFixed(4)
+                        : (Number(coin.price) || 0).toFixed(6)}
                     </span>
 
                     <div className="mt-1">
-                      {coin.change24h >= 0 ? (
+                      {(Number(coin.change24h) || 0) >= 0 ? (
                         <span className="text-emerald-400 font-bold bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.5 rounded text-[9.5px] flex items-center gap-0.5 inline-flex leading-none">
-                          +{coin.change24h.toFixed(1)}%
+                          +{(Number(coin.change24h) || 0).toFixed(1)}%
                         </span>
                       ) : (
                         <span className="text-rose-400 font-bold bg-rose-500/15 border border-rose-500/30 px-1.5 py-0.5 rounded text-[9.5px] flex items-center gap-0.5 inline-flex leading-none">
-                          {coin.change24h.toFixed(1)}%
+                          {(Number(coin.change24h) || 0).toFixed(1)}%
                         </span>
                       )}
                     </div>

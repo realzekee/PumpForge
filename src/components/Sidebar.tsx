@@ -151,15 +151,18 @@ export default function Sidebar({
   ];
 
   // Calculate quick metrics for the middle sidebar card
-  const holdingsValue = holdings.reduce((sum, h) => {
-    const coin = coins.find((c) => c.id === h.coinId);
-    if (coin && true) {
-      return sum + h.amount * coin.price;
+  const holdingsValue = (holdings || []).reduce((sum, h) => {
+    const coin = (coins || []).find((c) => c && c.id === h.coinId);
+    if (coin) {
+      const hAmt = typeof h.amount === 'number' && !isNaN(h.amount) ? h.amount : Number(h.amount) || 0;
+      const cPrice = typeof coin.price === 'number' && !isNaN(coin.price) ? coin.price : Number(coin.price) || 0;
+      return sum + (hAmt * cPrice);
     }
     return sum;
   }, 0);
 
-  const totalPortfolioValue = userStats.cash + holdingsValue;
+  const safeCash = typeof userStats?.cash === 'number' && !isNaN(userStats.cash) ? userStats.cash : Number(userStats?.cash) || 0;
+  const totalPortfolioValue = safeCash + holdingsValue;
 
   const handlePromoSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -465,7 +468,7 @@ export default function Sidebar({
                   </span>
                   <span className="text-emerald-400 font-extrabold tracking-tight">
                     $
-                    {totalPortfolioValue.toLocaleString("en-US", {
+                    {(Number(totalPortfolioValue) || 0).toLocaleString("en-US", {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
                     })}
@@ -475,7 +478,7 @@ export default function Sidebar({
                   <span className="text-zinc-400">Cash:</span>
                   <span className="text-zinc-200 font-bold">
                     $
-                    {userStats.cash.toLocaleString("en-US", {
+                    {(Number(userStats?.cash) || 0).toLocaleString("en-US", {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
                     })}
@@ -485,7 +488,7 @@ export default function Sidebar({
                   <span className="text-zinc-400">Coins:</span>
                   <span className="text-zinc-200 font-bold">
                     $
-                    {holdingsValue.toLocaleString("en-US", {
+                    {(Number(holdingsValue) || 0).toLocaleString("en-US", {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
                     })}
@@ -494,7 +497,7 @@ export default function Sidebar({
                 <div className="flex justify-between items-center py-0.5 px-1 text-[10px]">
                   <span className="text-zinc-400">Gems:</span>
                   <span className="text-cyan-400 font-bold flex items-center gap-1">
-                    💎 {userStats.gems}
+                    💎 {Number(userStats?.gems) || 0}
                   </span>
                 </div>
               </div>

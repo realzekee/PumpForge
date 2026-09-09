@@ -131,12 +131,15 @@ export interface SimulatedPlayer {
   name: string;
   handle: string;
   profit: number;
+  totalProfit?: number;
+  cash?: number;
+  gems?: number;
   prestige: number;
   title: string;
   nameColor: string;
   isSuspended: boolean;
   isBanned?: boolean;
-  suspendedUntil?: string | null; // ISO timestamp or null if permanent/lifted
+  suspendedUntil?: number | string | null; // Timestamp or ISO string or null if permanent/lifted
   isAdmin: boolean;
   createdAt?: string; // Account registration ISO date
   activityLog?: Array<{
