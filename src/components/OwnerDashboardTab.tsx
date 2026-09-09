@@ -48,6 +48,13 @@ import {
   ChevronRight,
   Send,
   Ticket,
+  Mail,
+  Fingerprint,
+  Star,
+  RotateCcw,
+  BadgeCheck,
+  Lock,
+  Unlock,
 } from "lucide-react";
 import { SkeletonLoader } from "./SkeletonLoader";
 import {
@@ -128,6 +135,10 @@ export default function OwnerDashboardTab({
   const [suspendDurationDays, setSuspendDurationDays] = useState<number>(1);
   const [userMoneyDelta, setUserMoneyDelta] = useState<Record<string, number>>({});
   const [userGemsDelta, setUserGemsDelta] = useState<Record<string, number>>({});
+  const [userExactCashInput, setUserExactCashInput] = useState<Record<string, string>>({});
+  const [userExactGemsInput, setUserExactGemsInput] = useState<Record<string, string>>({});
+  const [userCustomTitleDraft, setUserCustomTitleDraft] = useState<Record<string, string>>({});
+  const [copiedField, setCopiedField] = useState<string | null>(null);
   const [expandedPlayerHandle, setExpandedPlayerHandle] = useState<string | null>(null);
   const [customActionTexts, setCustomActionTexts] = useState<Record<string, string>>({});
 
@@ -878,29 +889,37 @@ export default function OwnerDashboardTab({
   // --- USER MANAGEMENT CONTROLLERS ---
   // ==========================================
 
-  const handleUserCashDose = async (
+  const handleCopyText = (text: string, label: string) => {
+    if (!text) return;
+    try {
+      navigator.clipboard.writeText(text);
+      setCopiedField(label);
+      toast.success(`Copied ${label} to clipboard!`);
+      setTimeout(() => setCopiedField(null), 2000);
+    } catch {
+      toast.info(`Value: ${text}`);
+    }
+  };
+
+  const handleUserCashOperation = async (
     playerHandle: string,
     isUser: boolean,
-    isAddition: boolean,
+    mode: "add" | "deduct" | "set",
+    amount: number,
     targetUid?: string,
-    customAmount?: number,
   ) => {
     setIsMutatingUser(playerHandle);
-    toast.loading(`Processing cash update for ${playerHandle}...`, {
+    toast.loading(`Updating cash balance for ${playerHandle}...`, {
       id: "mutate-" + playerHandle,
     });
-    const deltaStr = userMoneyDelta[playerHandle];
-    const val =
-      customAmount !== undefined
-        ? customAmount
-        : deltaStr !== undefined && !isNaN(Number(deltaStr))
-          ? Math.max(0, Number(deltaStr))
-          : 10000;
 
     if (isUser) {
-      const newCash = isAddition
-        ? (Number(userStats?.cash) || 0) + val
-        : Math.max(0, (Number(userStats?.cash) || 0) - val);
+      const currentCash = Number(userStats?.cash) || 0;
+      let newCash = currentCash;
+      if (mode === "add") newCash += amount;
+      else if (mode === "deduct") newCash = Math.max(0, currentCash - amount);
+      else if (mode === "set") newCash = Math.max(0, amount);
+
       try {
         const uid = targetUid || userId || (userStats as any)?.$id || userStats?.userId;
         if (uid) {
@@ -910,12 +929,20 @@ export default function OwnerDashboardTab({
         onUpdateStats((stats) => {
           stats.cash = newCash;
         });
-        toast.success(`Successfully ${isAddition ? "added" : "removed"} $${val.toLocaleString()}`, {
-          id: "mutate-" + playerHandle,
-        });
-      } catch (err) {
+        toast.success(
+          mode === "set"
+            ? `Cash balance set to $${newCash.toLocaleString()}`
+            : `Successfully ${mode === "add" ? "credited" : "debited"} $${amount.toLocaleString()}`,
+          { id: "mutate-" + playerHandle }
+        );
+        onAddNotification(
+          "💵 Cash Balance Updated",
+          `Central Treasury adjusted your cash balance: Now $${newCash.toLocaleString()}`,
+          "achievement"
+        );
+      } catch (err: any) {
         console.error(err);
-        toast.error("Transaction failed", { id: "mutate-" + playerHandle });
+        toast.error("Cash update failed: " + err.message, { id: "mutate-" + playerHandle });
       } finally {
         setIsMutatingUser(null);
       }
@@ -925,8 +952,12 @@ export default function OwnerDashboardTab({
         if (uid && !uid.startsWith("sim_") && !uid.startsWith("usr_")) {
           const userDoc = await databases.getDocument("pumpforge", "users", uid);
           const currentBal = Number(userDoc?.cash) || 5000;
-          const updatedBal = isAddition ? currentBal + val : Math.max(0, currentBal - val);
-          await databases.updateDocument("pumpforge", "users", uid, { cash: updatedBal });
+          let finalCash = currentBal;
+          if (mode === "add") finalCash += amount;
+          else if (mode === "deduct") finalCash = Math.max(0, currentBal - amount);
+          else if (mode === "set") finalCash = Math.max(0, amount);
+
+          await databases.updateDocument("pumpforge", "users", uid, { cash: finalCash });
           queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
         }
 
@@ -935,18 +966,345 @@ export default function OwnerDashboardTab({
             prev.map((p) => {
               if (p.handle?.toLowerCase() === playerHandle.toLowerCase()) {
                 const cur = Number(p.profit) || 0;
-                return { ...p, profit: isAddition ? cur + val : cur - val };
+                const newProfit = mode === "add" ? cur + amount : mode === "deduct" ? cur - amount : amount;
+                return { ...p, profit: newProfit };
               }
               return p;
             })
           );
         }
 
-        toast.success(`Successfully ${isAddition ? "credited" : "debited"} $${val.toLocaleString()} to ${playerHandle}`, {
-          id: "mutate-" + playerHandle,
-        });
+        toast.success(
+          mode === "set"
+            ? `Cash for ${playerHandle} set to $${amount.toLocaleString()}`
+            : `Successfully ${mode === "add" ? "credited" : "debited"} $${amount.toLocaleString()} for ${playerHandle}`,
+          { id: "mutate-" + playerHandle }
+        );
       } catch (e: any) {
         toast.error(`Update failed: ${e.message}`, { id: "mutate-" + playerHandle });
+      } finally {
+        setIsMutatingUser(null);
+      }
+    }
+  };
+
+  const handleUserGemsOperation = async (
+    playerHandle: string,
+    isUser: boolean,
+    mode: "add" | "deduct" | "set",
+    amount: number,
+    targetUid?: string,
+  ) => {
+    setIsMutatingUser(playerHandle);
+    toast.loading(`Updating gems reserve for ${playerHandle}...`, {
+      id: "mutate-gems-" + playerHandle,
+    });
+
+    if (isUser) {
+      const currentGems = Number(userStats?.gems) || 0;
+      let newGems = currentGems;
+      if (mode === "add") newGems += amount;
+      else if (mode === "deduct") newGems = Math.max(0, currentGems - amount);
+      else if (mode === "set") newGems = Math.max(0, amount);
+
+      try {
+        const uid = targetUid || userId || (userStats as any)?.$id || userStats?.userId;
+        if (uid) {
+          await databases.updateDocument("pumpforge", "users", uid, { gems: newGems });
+          queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
+        }
+        onUpdateStats((stats) => {
+          stats.gems = newGems;
+        });
+        toast.success(
+          mode === "set"
+            ? `Gems reserve set to 💎 ${newGems.toLocaleString()}`
+            : `Successfully ${mode === "add" ? "added" : "deducted"} 💎 ${amount.toLocaleString()} gems`,
+          { id: "mutate-gems-" + playerHandle }
+        );
+      } catch (err: any) {
+        console.error(err);
+        toast.error("Gems update failed: " + err.message, { id: "mutate-gems-" + playerHandle });
+      } finally {
+        setIsMutatingUser(null);
+      }
+    } else {
+      try {
+        const uid = targetUid;
+        if (uid && !uid.startsWith("sim_") && !uid.startsWith("usr_")) {
+          const userDoc = await databases.getDocument("pumpforge", "users", uid);
+          const currentGems = Number(userDoc?.gems) || 100;
+          let finalGems = currentGems;
+          if (mode === "add") finalGems += amount;
+          else if (mode === "deduct") finalGems = Math.max(0, currentGems - amount);
+          else if (mode === "set") finalGems = Math.max(0, amount);
+
+          await databases.updateDocument("pumpforge", "users", uid, { gems: finalGems });
+          queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
+        }
+
+        if (setSimulatedPlayers) {
+          setSimulatedPlayers((prev) =>
+            prev.map((p) => {
+              if (p.handle?.toLowerCase() === playerHandle.toLowerCase()) {
+                const cur = Number((p as any).gems) || 350;
+                const newGems = mode === "add" ? cur + amount : mode === "deduct" ? Math.max(0, cur - amount) : amount;
+                return { ...p, gems: newGems };
+              }
+              return p;
+            })
+          );
+        }
+
+        toast.success(
+          mode === "set"
+            ? `Gems for ${playerHandle} set to 💎 ${amount.toLocaleString()}`
+            : `Successfully ${mode === "add" ? "credited" : "debited"} 💎 ${amount.toLocaleString()} gems for ${playerHandle}`,
+          { id: "mutate-gems-" + playerHandle }
+        );
+      } catch (e: any) {
+        toast.error(`Update failed: ${e.message}`, { id: "mutate-gems-" + playerHandle });
+      } finally {
+        setIsMutatingUser(null);
+      }
+    }
+  };
+
+  const handleUserPrestigeUpdate = async (
+    playerHandle: string,
+    isUser: boolean,
+    targetLevel: number,
+    targetUid?: string,
+  ) => {
+    const level = Math.max(0, Math.min(10, targetLevel));
+    setIsMutatingUser(playerHandle);
+    toast.loading(`Setting prestige level ${level} for ${playerHandle}...`, { id: "prestige-" + playerHandle });
+
+    if (isUser) {
+      try {
+        const uid = targetUid || userId || (userStats as any)?.$id || userStats?.userId;
+        if (uid) {
+          await databases.updateDocument("pumpforge", "users", uid, { prestigeLevel: level });
+          queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
+        }
+        onUpdateStats((stats) => {
+          stats.prestigeLevel = level;
+        });
+        toast.success(`Prestige tier updated to Level ${level}!`, { id: "prestige-" + playerHandle });
+      } catch (e: any) {
+        toast.error("Failed to update prestige: " + e.message, { id: "prestige-" + playerHandle });
+      } finally {
+        setIsMutatingUser(null);
+      }
+    } else {
+      try {
+        const uid = targetUid;
+        if (uid && !uid.startsWith("sim_") && !uid.startsWith("usr_")) {
+          await databases.updateDocument("pumpforge", "users", uid, { prestigeLevel: level });
+          queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
+        }
+        if (setSimulatedPlayers) {
+          setSimulatedPlayers((prev) =>
+            prev.map((p) => (p.handle?.toLowerCase() === playerHandle.toLowerCase() ? { ...p, prestige: level } : p))
+          );
+        }
+        toast.success(`Prestige set to Level ${level} for ${playerHandle}`, { id: "prestige-" + playerHandle });
+      } catch (e: any) {
+        toast.error("Failed to set prestige: " + e.message, { id: "prestige-" + playerHandle });
+      } finally {
+        setIsMutatingUser(null);
+      }
+    }
+  };
+
+  const handleUserTitleUpdate = async (
+    playerHandle: string,
+    isUser: boolean,
+    newTitle: string,
+    targetUid?: string,
+  ) => {
+    const title = newTitle.trim() || "Trader";
+    setIsMutatingUser(playerHandle);
+    toast.loading(`Updating title for ${playerHandle}...`, { id: "title-" + playerHandle });
+
+    if (isUser) {
+      try {
+        const uid = targetUid || userId || (userStats as any)?.$id || userStats?.userId;
+        if (uid) {
+          await databases.updateDocument("pumpforge", "users", uid, { title });
+          queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
+        }
+        onUpdateStats((stats) => {
+          stats.title = title;
+        });
+        toast.success(`User title set to "${title}"!`, { id: "title-" + playerHandle });
+      } catch (e: any) {
+        toast.error("Failed to update title: " + e.message, { id: "title-" + playerHandle });
+      } finally {
+        setIsMutatingUser(null);
+      }
+    } else {
+      try {
+        const uid = targetUid;
+        if (uid && !uid.startsWith("sim_") && !uid.startsWith("usr_")) {
+          await databases.updateDocument("pumpforge", "users", uid, { title });
+          queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
+        }
+        if (setSimulatedPlayers) {
+          setSimulatedPlayers((prev) =>
+            prev.map((p) => (p.handle?.toLowerCase() === playerHandle.toLowerCase() ? { ...p, title } : p))
+          );
+        }
+        toast.success(`Title for ${playerHandle} updated to "${title}"`, { id: "title-" + playerHandle });
+      } catch (e: any) {
+        toast.error("Failed to set title: " + e.message, { id: "title-" + playerHandle });
+      } finally {
+        setIsMutatingUser(null);
+      }
+    }
+  };
+
+  const handleUserRoleToggle = async (
+    playerHandle: string,
+    isUser: boolean,
+    makeAdmin: boolean,
+    targetUid?: string,
+  ) => {
+    setIsMutatingUser(playerHandle);
+    toast.loading(`Updating permissions for ${playerHandle}...`, { id: "role-" + playerHandle });
+
+    if (isUser) {
+      try {
+        const uid = targetUid || userId || (userStats as any)?.$id || userStats?.userId;
+        if (uid) {
+          await databases.updateDocument("pumpforge", "users", uid, {
+            isAdmin: makeAdmin,
+            title: makeAdmin ? "Admin" : "Member",
+          });
+          queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
+        }
+        onUpdateStats((stats) => {
+          stats.isAdmin = makeAdmin;
+          stats.title = makeAdmin ? "Admin" : "Member";
+        });
+        toast.success(`Admin permissions ${makeAdmin ? "granted" : "revoked"}!`, { id: "role-" + playerHandle });
+      } catch (e: any) {
+        toast.error("Role update failed: " + e.message, { id: "role-" + playerHandle });
+      } finally {
+        setIsMutatingUser(null);
+      }
+    } else {
+      try {
+        const uid = targetUid;
+        if (uid && !uid.startsWith("sim_") && !uid.startsWith("usr_")) {
+          await databases.updateDocument("pumpforge", "users", uid, {
+            isAdmin: makeAdmin,
+            title: makeAdmin ? "Admin" : "Trader",
+          });
+          queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
+        }
+        if (setSimulatedPlayers) {
+          setSimulatedPlayers((prev) =>
+            prev.map((p) =>
+              p.handle?.toLowerCase() === playerHandle.toLowerCase()
+                ? { ...p, isAdmin: makeAdmin, title: makeAdmin ? "Admin" : "Trader" }
+                : p
+            )
+          );
+        }
+        toast.success(`${playerHandle} is ${makeAdmin ? "now an Admin" : "now a standard Trader"}`, {
+          id: "role-" + playerHandle,
+        });
+      } catch (e: any) {
+        toast.error("Role update failed: " + e.message, { id: "role-" + playerHandle });
+      } finally {
+        setIsMutatingUser(null);
+      }
+    }
+  };
+
+  const handleResetUserAccount = async (
+    playerHandle: string,
+    isUser: boolean,
+    targetUid?: string,
+  ) => {
+    if (
+      !window.confirm(
+        `Are you sure you want to reset all profile data for ${playerHandle} back to initial defaults ($5,000 cash, 100 gems, prestige 0, and clear all penalties)?`
+      )
+    ) {
+      return;
+    }
+
+    setIsMutatingUser(playerHandle);
+    toast.loading(`Resetting data for ${playerHandle}...`, { id: "reset-" + playerHandle });
+
+    if (isUser) {
+      try {
+        const uid = targetUid || userId || (userStats as any)?.$id || userStats?.userId;
+        if (uid) {
+          await databases.updateDocument("pumpforge", "users", uid, {
+            cash: 5000,
+            gems: 100,
+            prestigeLevel: 0,
+            totalProfit: 0,
+            isSuspended: false,
+            isBanned: false,
+            suspendedUntil: null,
+          });
+          queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
+        }
+        onUpdateStats((stats) => {
+          stats.cash = 5000;
+          stats.gems = 100;
+          stats.prestigeLevel = 0;
+          stats.totalProfit = 0;
+          stats.isSuspended = false;
+          stats.isBanned = false;
+          stats.suspendedUntil = null;
+        });
+        toast.success("Profile restored to starting defaults.", { id: "reset-" + playerHandle });
+      } catch (e: any) {
+        toast.error("Reset failed: " + e.message, { id: "reset-" + playerHandle });
+      } finally {
+        setIsMutatingUser(null);
+      }
+    } else {
+      try {
+        const uid = targetUid;
+        if (uid && !uid.startsWith("sim_") && !uid.startsWith("usr_")) {
+          await databases.updateDocument("pumpforge", "users", uid, {
+            cash: 5000,
+            gems: 100,
+            prestigeLevel: 0,
+            totalProfit: 0,
+            isSuspended: false,
+            isBanned: false,
+            suspendedUntil: null,
+          });
+          queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
+        }
+        if (setSimulatedPlayers) {
+          setSimulatedPlayers((prev) =>
+            prev.map((p) => {
+              if (p.handle?.toLowerCase() === playerHandle.toLowerCase()) {
+                return {
+                  ...p,
+                  profit: 0,
+                  cash: 5000,
+                  gems: 100,
+                  prestige: 0,
+                  isSuspended: false,
+                  isBanned: false,
+                };
+              }
+              return p;
+            })
+          );
+        }
+        toast.success(`Account data for ${playerHandle} restored to defaults.`, { id: "reset-" + playerHandle });
+      } catch (e: any) {
+        toast.error("Reset failed: " + e.message, { id: "reset-" + playerHandle });
       } finally {
         setIsMutatingUser(null);
       }
@@ -958,10 +1316,11 @@ export default function OwnerDashboardTab({
     isUser: boolean,
     action: "suspend" | "ban" | "lift",
     targetUid?: string,
+    customDays?: number,
   ) => {
     const isNowSuspended = action === "suspend";
     const isNowBanned = action === "ban";
-    const days = suspendDurationDays || 1;
+    const days = customDays !== undefined ? customDays : suspendDurationDays || 1;
     const suspendMs = Date.now() + days * 86400000;
 
     if (isUser) {
@@ -1041,6 +1400,24 @@ export default function OwnerDashboardTab({
   };
 
   // ==========================================
+  // --- PRESTIGE TIERS & TITLES ---
+  // ==========================================
+
+  const PRESTIGE_TIERS = [
+    { level: 0, title: "Novice Trader", color: "text-zinc-400", badge: "bg-zinc-500/10 text-zinc-300 border-zinc-500/30" },
+    { level: 1, title: "Apprentice Speculator", color: "text-emerald-400", badge: "bg-emerald-500/10 text-emerald-300 border-emerald-500/30" },
+    { level: 2, title: "Verified Scalper", color: "text-cyan-400", badge: "bg-cyan-500/10 text-cyan-300 border-cyan-500/30" },
+    { level: 3, title: "Pro Swing Trader", color: "text-blue-400", badge: "bg-blue-500/10 text-blue-300 border-blue-500/30" },
+    { level: 4, title: "High Roller VIP", color: "text-indigo-400", badge: "bg-indigo-500/10 text-indigo-300 border-indigo-500/30" },
+    { level: 5, title: "Whale Dev", color: "text-purple-400", badge: "bg-purple-500/10 text-purple-300 border-purple-500/30" },
+    { level: 6, title: "Market Maker", color: "text-amber-400", badge: "bg-amber-500/10 text-amber-300 border-amber-500/30" },
+    { level: 7, title: "Liquidity Monarch", color: "text-orange-400", badge: "bg-orange-500/10 text-orange-300 border-orange-500/30" },
+    { level: 8, title: "Central Titan", color: "text-rose-400", badge: "bg-rose-500/10 text-rose-300 border-rose-500/30" },
+    { level: 9, title: "Sovereign Apex", color: "text-fuchsia-400", badge: "bg-fuchsia-500/10 text-fuchsia-300 border-fuchsia-500/30" },
+    { level: 10, title: "Grandmaster Overlord", color: "text-yellow-400", badge: "bg-yellow-500/20 text-yellow-300 border-yellow-400/50" },
+  ];
+
+  // ==========================================
   // --- USERS LIST AGGREGATOR ---
   // ==========================================
 
@@ -1058,8 +1435,20 @@ export default function OwnerDashboardTab({
       isUser: true,
       isSuspended: !!userStats?.isSuspended,
       isBanned: !!userStats?.isBanned,
+      suspendedUntil: userStats?.suspendedUntil || null,
       isAdmin: true,
       createdAt: (userStats as any)?.createdAt || (userStats as any)?.$createdAt || "2026-05-24T06:40:00Z",
+      coinsCreatedCount: coins.filter(
+        (c) =>
+          (c.creator?.toLowerCase() === (userStats?.handle || "").toLowerCase()) ||
+          (c.creator?.toLowerCase() === (userStats?.username || "").toLowerCase()) ||
+          (c.creatorName?.toLowerCase() === (userStats?.username || "").toLowerCase())
+      ).length,
+      tradesCount: liveTrades.filter(
+        (t) =>
+          t.userHandle?.toLowerCase() === (userStats?.handle || "").toLowerCase() ||
+          t.userName?.toLowerCase() === (userStats?.username || "").toLowerCase()
+      ).length,
       activityLog: localUserLogs,
     },
     ...appwriteUsers
@@ -1068,23 +1457,39 @@ export default function OwnerDashboardTab({
         const curId = userId || (userStats as any)?.userId || (userStats as any)?.$id;
         return rId && rId !== curId;
       })
-      .map((r) => ({
-        uid: r.$id || r.userId,
-        name: r.username || r.name || "Appwrite Trader",
-        handle: r.handle || `@trader_${(r.$id || "").slice(0, 5)}`,
-        email: r.email || `${(r.username || "user").toLowerCase().replace(/[^a-z0-9]/g, "")}@pumpforge.io`,
-        profit: (r.totalProfit ?? 0) + ((r.cash ?? 5000) - 5000),
-        cash: r.cash ?? 5000,
-        gems: r.gems ?? 100,
-        prestige: r.prestigeLevel || 0,
-        title: r.title || (r.isAdmin ? "Admin" : "Member"),
-        isUser: false,
-        isSuspended: !!r.isSuspended,
-        isBanned: !!r.isBanned,
-        isAdmin: !!r.isAdmin || r.title?.toLowerCase() === "owner" || r.title?.toLowerCase() === "admin",
-        createdAt: r.$createdAt || r.createdAt || "2026-05-24T06:40:00Z",
-        activityLog: [],
-      })),
+      .map((r) => {
+        const handle = r.handle || `@trader_${(r.$id || "").slice(0, 5)}`;
+        const name = r.username || r.name || "Appwrite Trader";
+        return {
+          uid: r.$id || r.userId,
+          name,
+          handle,
+          email: r.email || `${(r.username || "user").toLowerCase().replace(/[^a-z0-9]/g, "")}@pumpforge.io`,
+          profit: (r.totalProfit ?? 0) + ((r.cash ?? 5000) - 5000),
+          cash: r.cash ?? 5000,
+          gems: r.gems ?? 100,
+          prestige: r.prestigeLevel || 0,
+          title: r.title || (r.isAdmin ? "Admin" : "Member"),
+          isUser: false,
+          isSuspended: !!r.isSuspended,
+          isBanned: !!r.isBanned,
+          suspendedUntil: r.suspendedUntil || null,
+          isAdmin: !!r.isAdmin || r.title?.toLowerCase() === "owner" || r.title?.toLowerCase() === "admin",
+          createdAt: r.$createdAt || r.createdAt || "2026-05-24T06:40:00Z",
+          coinsCreatedCount: coins.filter(
+            (c) =>
+              c.creator?.toLowerCase() === handle.toLowerCase() ||
+              c.creator?.toLowerCase() === name.toLowerCase() ||
+              c.creatorName?.toLowerCase() === name.toLowerCase()
+          ).length,
+          tradesCount: liveTrades.filter(
+            (t) =>
+              t.userHandle?.toLowerCase() === handle.toLowerCase() ||
+              t.userName?.toLowerCase() === name.toLowerCase()
+          ).length,
+          activityLog: [],
+        };
+      }),
     ...(simulatedPlayers || []).map((p) => ({
       uid: p.id || `sim_${p.handle.replace("@", "")}`,
       name: p.name || p.handle,
@@ -1098,8 +1503,19 @@ export default function OwnerDashboardTab({
       isUser: false,
       isSuspended: !!p.isSuspended,
       isBanned: !!p.isBanned,
+      suspendedUntil: null,
       isAdmin: !!p.isAdmin,
       createdAt: p.createdAt || "2026-05-01T12:00:00Z",
+      coinsCreatedCount: coins.filter(
+        (c) =>
+          c.creator?.toLowerCase() === p.handle.toLowerCase() ||
+          c.creator?.toLowerCase() === (p.name || "").toLowerCase()
+      ).length,
+      tradesCount: liveTrades.filter(
+        (t) =>
+          t.userHandle?.toLowerCase() === p.handle.toLowerCase() ||
+          t.userName?.toLowerCase() === (p.name || "").toLowerCase()
+      ).length,
       activityLog: p.activityLog || [],
     })),
   ];
@@ -1712,198 +2128,735 @@ export default function OwnerDashboardTab({
       {/* ==================================================== */}
       {activeSubTab === "users" && (
         <div className="flex flex-col gap-6 animate-fade-in">
-          {/* User selector dropdown */}
-          <div className="glass-panel border border-indigo-500/30 bg-indigo-950/10 rounded-3xl p-6 flex flex-col gap-5 shadow-2xl relative">
+          {/* Top Control Bar with User Switcher and Sanction Length */}
+          <div className="glass-panel border border-indigo-500/30 bg-indigo-950/10 rounded-3xl p-5 sm:p-6 flex flex-col gap-5 shadow-2xl relative">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-4">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shrink-0">
                   <UserCheck className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-black text-sm text-white flex items-center gap-2">
+                  <h3 className="font-black text-sm sm:text-base text-white flex items-center gap-2 flex-wrap">
                     User Management Terminal
-                    <span className="text-[9px] bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 px-2 py-0.5 rounded-full font-mono">
-                      {systemUsersList.length} Accounts
+                    <span className="text-[10px] bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 px-2 py-0.5 rounded-full font-mono">
+                      {systemUsersList.length} Active Accounts
+                    </span>
+                    <span className="text-[10px] bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 px-2 py-0.5 rounded-full font-mono flex items-center gap-1">
+                      <Database className="w-2.5 h-2.5" /> Appwrite Synced
                     </span>
                   </h3>
                   <p className="text-xs text-zinc-400 mt-0.5">
-                    Select any account to credit balance, modify gems, apply suspension sanctions, or promote to Admin.
+                    Command center for user balances, gems, custom titles, prestige ranks, permissions, and sanctions.
                   </p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 text-xs bg-zinc-950 border border-white/10 rounded-xl px-3 py-2">
+              <div className="flex items-center gap-2 self-start md:self-auto text-xs bg-zinc-950 border border-white/10 rounded-xl px-3 py-2">
                 <Clock className="w-3.5 h-3.5 text-zinc-400" />
-                <span className="text-[10px] text-zinc-400 font-bold uppercase">Sanction Length:</span>
+                <span className="text-[10px] text-zinc-400 font-bold uppercase">Sanction Preset:</span>
                 <select
                   value={suspendDurationDays}
                   onChange={(e) => setSuspendDurationDays(Number(e.target.value))}
                   className="bg-transparent text-amber-400 font-bold focus:outline-none cursor-pointer text-xs"
                 >
+                  <option value={0.0416} className="bg-zinc-900 text-white">1 Hour</option>
+                  <option value={0.5} className="bg-zinc-900 text-white">12 Hours</option>
                   <option value={1} className="bg-zinc-900 text-white">1 Day</option>
+                  <option value={3} className="bg-zinc-900 text-white">3 Days</option>
                   <option value={7} className="bg-zinc-900 text-white">1 Week</option>
                   <option value={30} className="bg-zinc-900 text-white">1 Month</option>
+                  <option value={3650} className="bg-zinc-900 text-white">Permanent</option>
                 </select>
               </div>
             </div>
 
-            {/* Selected User Overview Card */}
+            {/* Selected User Hero Dossier */}
             <div className="relative">
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 p-4 bg-zinc-950/80 border border-indigo-500/30 rounded-2xl shadow-inner">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500/30 to-purple-500/30 border border-indigo-500/40 flex items-center justify-center text-white font-black text-base shrink-0">
-                    {selectedUser?.name ? selectedUser.name.charAt(0).toUpperCase() : "U"}
+              <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4 p-4 sm:p-5 bg-zinc-950/80 border border-indigo-500/30 rounded-2xl shadow-inner">
+                <div className="flex items-start sm:items-center gap-3.5 min-w-0">
+                  <div className="relative shrink-0">
+                    <div className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-br from-indigo-500/40 via-purple-500/30 to-zinc-900 border border-indigo-500/50 flex items-center justify-center text-white font-black text-lg sm:text-xl shadow-lg">
+                      {selectedUser?.name ? selectedUser.name.charAt(0).toUpperCase() : "U"}
+                    </div>
+                    <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-zinc-950 flex items-center justify-center ${
+                      selectedUser?.isBanned
+                        ? "bg-rose-500"
+                        : selectedUser?.isSuspended
+                        ? "bg-amber-500"
+                        : "bg-emerald-500"
+                    }`} />
                   </div>
-                  <div className="min-w-0">
+
+                  <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-black text-white truncate">{selectedUser?.name}</span>
+                      <span className="text-base font-black text-white truncate">{selectedUser?.name}</span>
                       <span className="text-xs text-indigo-400 font-mono font-bold">{selectedUser?.handle}</span>
                       {selectedUser?.isUser && (
                         <span className="text-[9px] bg-amber-500/20 border border-amber-500/40 text-amber-300 font-black px-2 py-0.5 rounded uppercase">
-                          YOU
+                          YOU (ADMIN)
                         </span>
                       )}
                       {selectedUser?.isAdmin && (
                         <span className="text-[9px] bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-black px-2 py-0.5 rounded uppercase flex items-center gap-1">
-                          <ShieldCheck className="w-2.5 h-2.5" /> ADMIN
+                          <ShieldCheck className="w-2.5 h-2.5" /> ADMIN ROLE
                         </span>
                       )}
                       {selectedUser?.isSuspended && (
-                        <span className="text-[9px] bg-amber-500/20 border border-amber-500/40 text-amber-300 font-black px-2 py-0.5 rounded uppercase">
-                          SUSPENDED
+                        <span className="text-[9px] bg-amber-500/20 border border-amber-500/40 text-amber-300 font-black px-2 py-0.5 rounded uppercase flex items-center gap-1">
+                          <AlertTriangle className="w-2.5 h-2.5" /> SUSPENDED
                         </span>
                       )}
                       {selectedUser?.isBanned && (
-                        <span className="text-[9px] bg-rose-500/20 border border-rose-500/40 text-rose-300 font-black px-2 py-0.5 rounded uppercase">
-                          BANNED
+                        <span className="text-[9px] bg-rose-500/20 border border-rose-500/40 text-rose-300 font-black px-2 py-0.5 rounded uppercase flex items-center gap-1">
+                          <Skull className="w-2.5 h-2.5" /> BANNED
+                        </span>
+                      )}
+                      {!selectedUser?.isSuspended && !selectedUser?.isBanned && (
+                        <span className="text-[9px] bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold px-2 py-0.5 rounded uppercase">
+                          ACTIVE / GOOD STANDING
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-3 text-[11px] text-zinc-400 font-mono mt-1 flex-wrap">
-                      <span>Cash: <strong className="text-emerald-400">${(selectedUser?.cash ?? 5000).toLocaleString()}</strong></span>
-                      <span>•</span>
-                      <span>Gems: <strong className="text-cyan-400">💎 {(selectedUser?.gems ?? 100).toLocaleString()}</strong></span>
-                      <span>•</span>
-                      <span>Prestige: <strong className="text-amber-400">{selectedUser?.prestige || 0}</strong></span>
+
+                    {/* Metadata Strip */}
+                    <div className="flex items-center gap-2 sm:gap-4 text-[11px] text-zinc-400 font-mono mt-2 flex-wrap">
+                      <div className="flex items-center gap-1 bg-zinc-900/80 px-2 py-1 rounded-lg border border-white/5">
+                        <Fingerprint className="w-3 h-3 text-indigo-400" />
+                        <span className="truncate max-w-[130px] sm:max-w-[180px]">{selectedUser?.uid}</span>
+                        <button
+                          onClick={() => handleCopyText(selectedUser?.uid || "", "User ID")}
+                          className="text-zinc-500 hover:text-white ml-1 p-0.5 transition cursor-pointer"
+                          title="Copy User ID"
+                        >
+                          {copiedField === "User ID" ? (
+                            <Check className="w-3 h-3 text-emerald-400" />
+                          ) : (
+                            <Copy className="w-3 h-3" />
+                          )}
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-1 bg-zinc-900/80 px-2 py-1 rounded-lg border border-white/5">
+                        <Mail className="w-3 h-3 text-cyan-400" />
+                        <span className="truncate max-w-[130px] sm:max-w-[200px]">{selectedUser?.email}</span>
+                        <button
+                          onClick={() => handleCopyText(selectedUser?.email || "", "Email")}
+                          className="text-zinc-500 hover:text-white ml-1 p-0.5 transition cursor-pointer"
+                          title="Copy Email"
+                        >
+                          {copiedField === "Email" ? (
+                            <Check className="w-3 h-3 text-emerald-400" />
+                          ) : (
+                            <Copy className="w-3 h-3" />
+                          )}
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-1 text-zinc-500">
+                        <Calendar className="w-3 h-3" />
+                        <span>Joined: {new Date(selectedUser?.createdAt || Date.now()).toLocaleDateString()}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
-                  className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black rounded-xl border border-indigo-400/40 shadow-lg flex items-center justify-center gap-2 transition active:scale-95 shrink-0 cursor-pointer"
-                >
-                  <span>{isUserDropdownOpen ? "Close List" : "Switch User"}</span>
-                  <ChevronDown className={`w-4 h-4 transition-transform ${isUserDropdownOpen ? "rotate-180" : ""}`} />
-                </button>
+                {/* Switch User CTA */}
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
+                    className="w-full sm:w-auto px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white text-xs font-black rounded-xl border border-indigo-400/40 shadow-lg flex items-center justify-center gap-2 transition active:scale-95 cursor-pointer"
+                  >
+                    <UserCheck className="w-4 h-4" />
+                    <span>{isUserDropdownOpen ? "Close Directory" : "Switch User"}</span>
+                    <ChevronDown className={`w-4 h-4 transition-transform ${isUserDropdownOpen ? "rotate-180" : ""}`} />
+                  </button>
+                </div>
               </div>
 
-              {/* Popover Dropdown */}
+              {/* Popover User Directory Dropdown */}
               {isUserDropdownOpen && (
-                <div className="absolute top-full left-0 right-0 mt-2 z-50 bg-zinc-950 border border-indigo-500/40 rounded-2xl shadow-2xl p-4 flex flex-col gap-3 max-h-[380px] animate-fade-in backdrop-blur-xl">
+                <div className="absolute top-full left-0 right-0 mt-2 z-50 bg-zinc-950/95 border border-indigo-500/40 rounded-2xl shadow-2xl p-4 flex flex-col gap-3 max-h-[420px] animate-fade-in backdrop-blur-2xl">
                   <div className="relative">
                     <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
                       type="text"
                       value={dropdownSearch}
                       onChange={(e) => setDropdownSearch(e.target.value)}
-                      placeholder="Search by name, handle, or role..."
+                      placeholder="Search accounts by username, @handle, role, or UID..."
                       className="w-full bg-zinc-900 border border-white/10 rounded-xl pl-9 pr-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
                     />
                   </div>
-                  <div className="flex flex-col gap-1 overflow-y-auto max-h-[280px] pr-1">
-                    {filteredDropdownUsers.map((u) => (
-                      <button
-                        key={u.uid}
-                        onClick={() => {
-                          setSelectedUserId(u.uid);
-                          setIsUserDropdownOpen(false);
-                        }}
-                        className={`flex items-center justify-between p-2.5 rounded-xl text-left transition cursor-pointer ${
-                          selectedUser?.uid === u.uid
-                            ? "bg-indigo-600/30 border border-indigo-500/50 text-white"
-                            : "hover:bg-zinc-900 border border-transparent text-zinc-300"
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div className="w-8 h-8 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-bold shrink-0">
-                            {u.name.charAt(0).toUpperCase()}
+                  <div className="flex flex-col gap-1 overflow-y-auto max-h-[300px] pr-1">
+                    {filteredDropdownUsers.map((u) => {
+                      const tier = PRESTIGE_TIERS[Math.min(u.prestige || 0, 10)] || PRESTIGE_TIERS[0];
+                      return (
+                        <button
+                          key={u.uid}
+                          onClick={() => {
+                            setSelectedUserId(u.uid);
+                            setIsUserDropdownOpen(false);
+                          }}
+                          className={`flex items-center justify-between p-2.5 rounded-xl text-left transition cursor-pointer ${
+                            selectedUser?.uid === u.uid
+                              ? "bg-indigo-600/30 border border-indigo-500/50 text-white"
+                              : "hover:bg-zinc-900 border border-transparent text-zinc-300"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-8 h-8 rounded-lg bg-zinc-800 border border-white/10 flex items-center justify-center text-xs font-bold shrink-0">
+                              {u.name.charAt(0).toUpperCase()}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-xs font-bold truncate text-white flex items-center gap-1.5">
+                                {u.name}
+                                {u.isAdmin && (
+                                  <span className="text-[8px] bg-emerald-500/20 text-emerald-300 font-bold px-1 rounded">ADMIN</span>
+                                )}
+                                {u.isSuspended && (
+                                  <span className="text-[8px] bg-amber-500/20 text-amber-300 font-bold px-1 rounded">SUSPENDED</span>
+                                )}
+                                {u.isBanned && (
+                                  <span className="text-[8px] bg-rose-500/20 text-rose-300 font-bold px-1 rounded">BANNED</span>
+                                )}
+                              </div>
+                              <div className="text-[10px] text-zinc-400 font-mono flex items-center gap-2">
+                                <span>{u.handle}</span>
+                                <span>•</span>
+                                <span className={tier.color}>Lvl {u.prestige || 0}</span>
+                              </div>
+                            </div>
                           </div>
-                          <div className="min-w-0">
-                            <div className="text-xs font-bold truncate text-white">{u.name}</div>
-                            <div className="text-[10px] text-zinc-400 font-mono">{u.handle}</div>
+                          <div className="text-right font-mono text-[11px] shrink-0">
+                            <div className="text-emerald-400 font-bold">${(u.cash ?? 5000).toLocaleString()}</div>
+                            <div className="text-cyan-400 text-[9px]">💎 {(u.gems ?? 100).toLocaleString()}</div>
                           </div>
-                        </div>
-                        <div className="text-right font-mono text-[11px] text-emerald-400 font-bold shrink-0">
-                          ${(u.cash ?? 5000).toLocaleString()}
-                        </div>
-                      </button>
-                    ))}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Targeted User Operations */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-              {/* Cash Adjuster */}
-              <div className="bg-zinc-950/60 border border-white/5 rounded-2xl p-4 flex flex-col gap-3">
-                <span className="text-xs font-extrabold text-zinc-300 flex items-center gap-1.5">
-                  <DollarSign className="w-4 h-4 text-emerald-400" /> Adjust User Cash Balance
-                </span>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    value={userMoneyDelta[selectedUser.handle] ?? 10000}
-                    onChange={(e) =>
-                      setUserMoneyDelta((prev) => ({
-                        ...prev,
-                        [selectedUser.handle]: Math.max(0, Number(e.target.value)),
-                      }))
-                    }
-                    className="flex-1 bg-zinc-900 border border-white/10 rounded-xl px-3 py-2 text-xs font-bold text-emerald-400 focus:outline-none"
-                  />
+            {/* 6-Metric Visual Telemetry Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              {/* Liquid Cash */}
+              <div className="p-3 bg-zinc-950/60 border border-emerald-500/20 rounded-2xl flex flex-col justify-between">
+                <div className="flex items-center justify-between text-zinc-400 text-[10px] font-mono">
+                  <span>LIQUID CASH</span>
+                  <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
+                </div>
+                <div className="text-base sm:text-lg font-black text-emerald-400 font-mono mt-1 truncate">
+                  ${(selectedUser?.cash ?? 5000).toLocaleString()}
+                </div>
+                <div className="text-[9px] text-zinc-500 mt-1">Available for trades</div>
+              </div>
+
+              {/* Arcade Gems */}
+              <div className="p-3 bg-zinc-950/60 border border-cyan-500/20 rounded-2xl flex flex-col justify-between">
+                <div className="flex items-center justify-between text-zinc-400 text-[10px] font-mono">
+                  <span>ARCADE GEMS</span>
+                  <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                </div>
+                <div className="text-base sm:text-lg font-black text-cyan-400 font-mono mt-1 truncate">
+                  💎 {(selectedUser?.gems ?? 100).toLocaleString()}
+                </div>
+                <div className="text-[9px] text-zinc-500 mt-1">Boosters & minigames</div>
+              </div>
+
+              {/* Net PnL */}
+              <div className="p-3 bg-zinc-950/60 border border-indigo-500/20 rounded-2xl flex flex-col justify-between">
+                <div className="flex items-center justify-between text-zinc-400 text-[10px] font-mono">
+                  <span>TOTAL PNL</span>
+                  <TrendingUp className="w-3.5 h-3.5 text-indigo-400" />
+                </div>
+                <div className={`text-base sm:text-lg font-black font-mono mt-1 truncate ${
+                  (selectedUser?.profit ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400"
+                }`}>
+                  {(selectedUser?.profit ?? 0) >= 0 ? "+" : ""}${(selectedUser?.profit ?? 0).toLocaleString()}
+                </div>
+                <div className="text-[9px] text-zinc-500 mt-1">Lifetime performance</div>
+              </div>
+
+              {/* Prestige Tier */}
+              {(() => {
+                const tier = PRESTIGE_TIERS[Math.min(selectedUser?.prestige || 0, 10)] || PRESTIGE_TIERS[0];
+                return (
+                  <div className="p-3 bg-zinc-950/60 border border-amber-500/20 rounded-2xl flex flex-col justify-between">
+                    <div className="flex items-center justify-between text-zinc-400 text-[10px] font-mono">
+                      <span>PRESTIGE</span>
+                      <Crown className="w-3.5 h-3.5 text-amber-400" />
+                    </div>
+                    <div className="text-base sm:text-lg font-black text-amber-400 font-mono mt-1 truncate">
+                      Lvl {selectedUser?.prestige || 0}
+                    </div>
+                    <div className={`text-[9px] font-bold truncate ${tier.color}`}>
+                      {tier.title}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Assigned Title */}
+              <div className="p-3 bg-zinc-950/60 border border-purple-500/20 rounded-2xl flex flex-col justify-between">
+                <div className="flex items-center justify-between text-zinc-400 text-[10px] font-mono">
+                  <span>CUSTOM TITLE</span>
+                  <Tag className="w-3.5 h-3.5 text-purple-400" />
+                </div>
+                <div className="text-xs sm:text-sm font-black text-purple-300 mt-1 truncate">
+                  {selectedUser?.title || "Trader"}
+                </div>
+                <div className="text-[9px] text-zinc-500 mt-1">Public profile flair</div>
+              </div>
+
+              {/* Standing */}
+              <div className="p-3 bg-zinc-950/60 border border-white/10 rounded-2xl flex flex-col justify-between">
+                <div className="flex items-center justify-between text-zinc-400 text-[10px] font-mono">
+                  <span>ACCOUNT STATUS</span>
+                  <ShieldCheck className="w-3.5 h-3.5 text-zinc-400" />
+                </div>
+                <div className="text-xs sm:text-sm font-black mt-1 truncate flex items-center gap-1">
+                  {selectedUser?.isBanned ? (
+                    <span className="text-rose-400">Banned</span>
+                  ) : selectedUser?.isSuspended ? (
+                    <span className="text-amber-400">Suspended</span>
+                  ) : (
+                    <span className="text-emerald-400">Good Standing</span>
+                  )}
+                </div>
+                <div className="text-[9px] text-zinc-500 mt-1">
+                  {selectedUser?.isAdmin ? "Admin authority" : "Standard trader"}
+                </div>
+              </div>
+            </div>
+
+            {/* Comprehensive Operational Modules */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 pt-2">
+              {/* Module 1: 💵 Cash Balance Management */}
+              <div className="bg-zinc-950/70 border border-emerald-500/30 rounded-2xl p-4 sm:p-5 flex flex-col gap-4 shadow-lg">
+                <div className="flex items-center justify-between border-b border-white/5 pb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400">
+                      <DollarSign className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black text-white">Cash Balance Management</h4>
+                      <p className="text-[10px] text-zinc-400">Credit, debit, or set exact liquid cash balance</p>
+                    </div>
+                  </div>
+                  <span className="text-xs font-mono font-bold text-emerald-400">
+                    Current: ${(selectedUser?.cash ?? 5000).toLocaleString()}
+                  </span>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                  <div className="relative flex-1">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-emerald-400">$</span>
+                    <input
+                      type="number"
+                      placeholder="Enter amount..."
+                      value={userExactCashInput[selectedUser?.handle] ?? userMoneyDelta[selectedUser?.handle] ?? 10000}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setUserExactCashInput((prev) => ({ ...prev, [selectedUser?.handle]: val }));
+                        setUserMoneyDelta((prev) => ({ ...prev, [selectedUser?.handle]: Number(val) }));
+                      }}
+                      className="w-full bg-zinc-900 border border-emerald-500/30 rounded-xl pl-7 pr-3 py-2 text-xs font-mono font-bold text-emerald-400 focus:outline-none focus:border-emerald-400"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      disabled={isMutatingUser === selectedUser?.handle}
+                      onClick={() => {
+                        const amt = Number(userExactCashInput[selectedUser?.handle] ?? userMoneyDelta[selectedUser?.handle] ?? 10000);
+                        handleUserCashOperation(selectedUser?.handle, selectedUser?.isUser, "add", Math.max(0, amt), selectedUser?.uid);
+                      }}
+                      className="flex-1 sm:flex-initial px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl transition active:scale-95 flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Credit
+                    </button>
+                    <button
+                      disabled={isMutatingUser === selectedUser?.handle}
+                      onClick={() => {
+                        const amt = Number(userExactCashInput[selectedUser?.handle] ?? userMoneyDelta[selectedUser?.handle] ?? 10000);
+                        handleUserCashOperation(selectedUser?.handle, selectedUser?.isUser, "deduct", Math.max(0, amt), selectedUser?.uid);
+                      }}
+                      className="flex-1 sm:flex-initial px-3.5 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl transition active:scale-95 flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
+                    >
+                      <Minus className="w-3.5 h-3.5" /> Debit
+                    </button>
+                    <button
+                      disabled={isMutatingUser === selectedUser?.handle}
+                      onClick={() => {
+                        const amt = Number(userExactCashInput[selectedUser?.handle] ?? userMoneyDelta[selectedUser?.handle] ?? 10000);
+                        handleUserCashOperation(selectedUser?.handle, selectedUser?.isUser, "set", Math.max(0, amt), selectedUser?.uid);
+                      }}
+                      className="flex-1 sm:flex-initial px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-white/10 font-bold text-xs rounded-xl transition active:scale-95 cursor-pointer disabled:opacity-50"
+                    >
+                      Set Exact
+                    </button>
+                  </div>
+                </div>
+
+                {/* Quick Presets for Cash */}
+                <div>
+                  <span className="text-[10px] font-mono text-zinc-400 block mb-1.5 font-bold uppercase">Quick Dose Presets:</span>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {[1000, 10000, 50000, 250000, 1000000].map((amt) => (
+                      <button
+                        key={amt}
+                        onClick={() => handleUserCashOperation(selectedUser?.handle, selectedUser?.isUser, "add", amt, selectedUser?.uid)}
+                        className="px-2.5 py-1 bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-500/30 text-emerald-300 rounded-lg text-[10px] font-mono font-bold transition active:scale-95 cursor-pointer"
+                      >
+                        +${amt >= 1000000 ? `${amt / 1000000}M` : `${amt / 1000}k`}
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => handleUserCashOperation(selectedUser?.handle, selectedUser?.isUser, "deduct", 50000, selectedUser?.uid)}
+                      className="px-2.5 py-1 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/30 text-rose-300 rounded-lg text-[10px] font-mono font-bold transition active:scale-95 cursor-pointer"
+                    >
+                      -$50k
+                    </button>
+                    <button
+                      onClick={() => handleUserCashOperation(selectedUser?.handle, selectedUser?.isUser, "set", 5000, selectedUser?.uid)}
+                      className="px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 border border-white/10 text-zinc-300 rounded-lg text-[10px] font-mono font-bold transition active:scale-95 cursor-pointer"
+                    >
+                      Reset $5k
+                    </button>
+                    <button
+                      onClick={() => handleUserCashOperation(selectedUser?.handle, selectedUser?.isUser, "set", 0, selectedUser?.uid)}
+                      className="px-2.5 py-1 bg-rose-950/20 hover:bg-rose-900/40 border border-rose-800/30 text-rose-400 rounded-lg text-[10px] font-mono font-bold transition active:scale-95 cursor-pointer"
+                    >
+                      Zero ($0)
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Module 2: 💎 Arcade Gems Reserve Management */}
+              <div className="bg-zinc-950/70 border border-cyan-500/30 rounded-2xl p-4 sm:p-5 flex flex-col gap-4 shadow-lg">
+                <div className="flex items-center justify-between border-b border-white/5 pb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-cyan-500/20 flex items-center justify-center text-cyan-400">
+                      <Sparkles className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black text-white">Arcade Gems Reserve</h4>
+                      <p className="text-[10px] text-zinc-400">Credit, deduct, or adjust arcade gems balance</p>
+                    </div>
+                  </div>
+                  <span className="text-xs font-mono font-bold text-cyan-400">
+                    Current: 💎 {(selectedUser?.gems ?? 100).toLocaleString()}
+                  </span>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                  <div className="relative flex-1">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-cyan-400">💎</span>
+                    <input
+                      type="number"
+                      placeholder="Gems amount..."
+                      value={userExactGemsInput[selectedUser?.handle] ?? userGemsDelta[selectedUser?.handle] ?? 250}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setUserExactGemsInput((prev) => ({ ...prev, [selectedUser?.handle]: val }));
+                        setUserGemsDelta((prev) => ({ ...prev, [selectedUser?.handle]: Number(val) }));
+                      }}
+                      className="w-full bg-zinc-900 border border-cyan-500/30 rounded-xl pl-7 pr-3 py-2 text-xs font-mono font-bold text-cyan-400 focus:outline-none focus:border-cyan-400"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      disabled={isMutatingUser === selectedUser?.handle}
+                      onClick={() => {
+                        const amt = Number(userExactGemsInput[selectedUser?.handle] ?? userGemsDelta[selectedUser?.handle] ?? 250);
+                        handleUserGemsOperation(selectedUser?.handle, selectedUser?.isUser, "add", Math.max(0, amt), selectedUser?.uid);
+                      }}
+                      className="flex-1 sm:flex-initial px-3.5 py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs rounded-xl transition active:scale-95 flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Add
+                    </button>
+                    <button
+                      disabled={isMutatingUser === selectedUser?.handle}
+                      onClick={() => {
+                        const amt = Number(userExactGemsInput[selectedUser?.handle] ?? userGemsDelta[selectedUser?.handle] ?? 250);
+                        handleUserGemsOperation(selectedUser?.handle, selectedUser?.isUser, "deduct", Math.max(0, amt), selectedUser?.uid);
+                      }}
+                      className="flex-1 sm:flex-initial px-3.5 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl transition active:scale-95 flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
+                    >
+                      <Minus className="w-3.5 h-3.5" /> Deduct
+                    </button>
+                    <button
+                      disabled={isMutatingUser === selectedUser?.handle}
+                      onClick={() => {
+                        const amt = Number(userExactGemsInput[selectedUser?.handle] ?? userGemsDelta[selectedUser?.handle] ?? 250);
+                        handleUserGemsOperation(selectedUser?.handle, selectedUser?.isUser, "set", Math.max(0, amt), selectedUser?.uid);
+                      }}
+                      className="flex-1 sm:flex-initial px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-white/10 font-bold text-xs rounded-xl transition active:scale-95 cursor-pointer disabled:opacity-50"
+                    >
+                      Set Exact
+                    </button>
+                  </div>
+                </div>
+
+                {/* Quick Presets for Gems */}
+                <div>
+                  <span className="text-[10px] font-mono text-zinc-400 block mb-1.5 font-bold uppercase">Quick Gem Bundles:</span>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {[50, 250, 1000, 5000, 25000].map((amt) => (
+                      <button
+                        key={amt}
+                        onClick={() => handleUserGemsOperation(selectedUser?.handle, selectedUser?.isUser, "add", amt, selectedUser?.uid)}
+                        className="px-2.5 py-1 bg-cyan-950/40 hover:bg-cyan-900/60 border border-cyan-500/30 text-cyan-300 rounded-lg text-[10px] font-mono font-bold transition active:scale-95 cursor-pointer"
+                      >
+                        +💎 {amt >= 1000 ? `${amt / 1000}k` : amt}
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => handleUserGemsOperation(selectedUser?.handle, selectedUser?.isUser, "deduct", 500, selectedUser?.uid)}
+                      className="px-2.5 py-1 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/30 text-rose-300 rounded-lg text-[10px] font-mono font-bold transition active:scale-95 cursor-pointer"
+                    >
+                      -500 💎
+                    </button>
+                    <button
+                      onClick={() => handleUserGemsOperation(selectedUser?.handle, selectedUser?.isUser, "set", 100, selectedUser?.uid)}
+                      className="px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 border border-white/10 text-zinc-300 rounded-lg text-[10px] font-mono font-bold transition active:scale-95 cursor-pointer"
+                    >
+                      Reset 100 💎
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Module 3: 👑 Prestige Tier, Custom Titles & Permissions */}
+              <div className="bg-zinc-950/70 border border-amber-500/30 rounded-2xl p-4 sm:p-5 flex flex-col gap-4 shadow-lg">
+                <div className="flex items-center justify-between border-b border-white/5 pb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-amber-500/20 flex items-center justify-center text-amber-400">
+                      <Crown className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black text-white">Prestige Rank & Custom Titles</h4>
+                      <p className="text-[10px] text-zinc-400">Assign prestige tier level (0-10) and custom title flair</p>
+                    </div>
+                  </div>
+                  <span className="text-xs font-mono font-bold text-amber-400">
+                    Tier Lvl {selectedUser?.prestige || 0}
+                  </span>
+                </div>
+
+                {/* Prestige Tier Stepper */}
+                <div className="flex items-center gap-3">
                   <button
-                    onClick={() => handleUserCashDose(selectedUser.handle, selectedUser.isUser, true, selectedUser.uid)}
-                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl transition active:scale-95 cursor-pointer"
+                    onClick={() => handleUserPrestigeUpdate(selectedUser?.handle, selectedUser?.isUser, Math.max(0, (selectedUser?.prestige || 0) - 1), selectedUser?.uid)}
+                    className="px-3 py-2 bg-zinc-900 hover:bg-zinc-800 border border-white/10 text-zinc-300 rounded-xl text-xs font-bold transition active:scale-95 cursor-pointer"
                   >
-                    + Add
+                    -1 Tier
                   </button>
-                  <button
-                    onClick={() => handleUserCashDose(selectedUser.handle, selectedUser.isUser, false, selectedUser.uid)}
-                    className="px-3.5 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl transition active:scale-95 cursor-pointer"
+
+                  <select
+                    value={selectedUser?.prestige || 0}
+                    onChange={(e) => handleUserPrestigeUpdate(selectedUser?.handle, selectedUser?.isUser, Number(e.target.value), selectedUser?.uid)}
+                    className="flex-1 bg-zinc-900 border border-amber-500/40 rounded-xl px-3 py-2 text-xs font-bold text-amber-400 focus:outline-none cursor-pointer"
                   >
-                    - Deduct
+                    {PRESTIGE_TIERS.map((tier) => (
+                      <option key={tier.level} value={tier.level} className="bg-zinc-900 text-white">
+                        Level {tier.level}: {tier.title}
+                      </option>
+                    ))}
+                  </select>
+
+                  <button
+                    onClick={() => handleUserPrestigeUpdate(selectedUser?.handle, selectedUser?.isUser, Math.min(10, (selectedUser?.prestige || 0) + 1), selectedUser?.uid)}
+                    className="px-3 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition active:scale-95 cursor-pointer"
+                  >
+                    +1 Tier
+                  </button>
+                </div>
+
+                {/* Custom Title Input & Fast Chips */}
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      placeholder="Enter custom title / flair..."
+                      value={userCustomTitleDraft[selectedUser?.handle] ?? selectedUser?.title ?? "Trader"}
+                      onChange={(e) =>
+                        setUserCustomTitleDraft((prev) => ({
+                          ...prev,
+                          [selectedUser?.handle]: e.target.value,
+                        }))
+                      }
+                      className="flex-1 bg-zinc-900 border border-purple-500/30 rounded-xl px-3 py-2 text-xs font-bold text-purple-300 focus:outline-none focus:border-purple-400"
+                    />
+                    <button
+                      onClick={() => {
+                        const newTitle = userCustomTitleDraft[selectedUser?.handle] ?? selectedUser?.title ?? "Trader";
+                        handleUserTitleUpdate(selectedUser?.handle, selectedUser?.isUser, newTitle, selectedUser?.uid);
+                      }}
+                      className="px-3.5 py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-xl transition active:scale-95 cursor-pointer"
+                    >
+                      Save Title
+                    </button>
+                  </div>
+
+                  {/* Title Preset Chips */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {["Whale Dev", "Alpha Hunter", "Market Maker", "VIP Scalper", "Liquidity King", "Degenerate Ape", "Root Admin"].map((t) => (
+                      <button
+                        key={t}
+                        onClick={() => {
+                          setUserCustomTitleDraft((prev) => ({ ...prev, [selectedUser?.handle]: t }));
+                          handleUserTitleUpdate(selectedUser?.handle, selectedUser?.isUser, t, selectedUser?.uid);
+                        }}
+                        className="px-2 py-0.5 bg-purple-950/30 hover:bg-purple-900/50 border border-purple-500/20 text-purple-300 rounded-lg text-[9px] font-mono font-bold transition active:scale-95 cursor-pointer"
+                      >
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Admin Role Permission Switch */}
+                <div className="flex items-center justify-between p-3 bg-zinc-900/80 border border-white/5 rounded-xl mt-1">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className={`w-4 h-4 ${selectedUser?.isAdmin ? "text-emerald-400" : "text-zinc-500"}`} />
+                    <div>
+                      <div className="text-xs font-bold text-white">Administrator Authority</div>
+                      <div className="text-[10px] text-zinc-400">Grants access to Owner Dashboard terminal</div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleUserRoleToggle(selectedUser?.handle, selectedUser?.isUser, !selectedUser?.isAdmin, selectedUser?.uid)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer active:scale-95 ${
+                      selectedUser?.isAdmin
+                        ? "bg-rose-500/20 text-rose-300 border border-rose-500/30 hover:bg-rose-500/30"
+                        : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30"
+                    }`}
+                  >
+                    {selectedUser?.isAdmin ? "Revoke Admin" : "Promote Admin"}
                   </button>
                 </div>
               </div>
 
-              {/* Sanctions & Permissions */}
-              <div className="bg-zinc-950/60 border border-white/5 rounded-2xl p-4 flex flex-col gap-3">
-                <span className="text-xs font-extrabold text-zinc-300 flex items-center gap-1.5">
-                  <ShieldAlert className="w-4 h-4 text-amber-400" /> Account Sanctions & Permissions
-                </span>
+              {/* Module 4: 🛡️ Sanctions & Security Enforcement */}
+              <div className="bg-zinc-950/70 border border-rose-500/30 rounded-2xl p-4 sm:p-5 flex flex-col gap-4 shadow-lg">
+                <div className="flex items-center justify-between border-b border-white/5 pb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-rose-500/20 flex items-center justify-center text-rose-400">
+                      <ShieldAlert className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black text-white">Account Sanctions & Enforcement</h4>
+                      <p className="text-[10px] text-zinc-400">Apply timed suspensions, permanent bans, or clear penalties</p>
+                    </div>
+                  </div>
+                  <span className={`text-xs font-mono font-bold ${
+                    selectedUser?.isBanned ? "text-rose-400" : selectedUser?.isSuspended ? "text-amber-400" : "text-emerald-400"
+                  }`}>
+                    {selectedUser?.isBanned ? "BANNED" : selectedUser?.isSuspended ? "SUSPENDED" : "GOOD STANDING"}
+                  </span>
+                </div>
+
                 <div className="grid grid-cols-3 gap-2">
                   <button
-                    onClick={() => handleToggleSanction(selectedUser.handle, selectedUser.isUser, "suspend", selectedUser.uid)}
-                    className="py-2 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 rounded-xl text-xs font-bold transition active:scale-95 cursor-pointer"
+                    onClick={() => handleToggleSanction(selectedUser?.handle, selectedUser?.isUser, "suspend", selectedUser?.uid)}
+                    className={`py-2.5 rounded-xl text-xs font-bold transition active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer ${
+                      selectedUser?.isSuspended
+                        ? "bg-amber-500 text-black shadow-lg"
+                        : "bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400"
+                    }`}
                   >
-                    Suspend
+                    <AlertTriangle className="w-3.5 h-3.5" />
+                    <span>Suspend ({suspendDurationDays >= 1 ? `${suspendDurationDays}d` : `${Math.round(suspendDurationDays * 24)}h`})</span>
                   </button>
+
                   <button
-                    onClick={() => handleToggleSanction(selectedUser.handle, selectedUser.isUser, "ban", selectedUser.uid)}
-                    className="py-2 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 rounded-xl text-xs font-bold transition active:scale-95 cursor-pointer"
+                    onClick={() => handleToggleSanction(selectedUser?.handle, selectedUser?.isUser, "ban", selectedUser?.uid)}
+                    className={`py-2.5 rounded-xl text-xs font-bold transition active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer ${
+                      selectedUser?.isBanned
+                        ? "bg-rose-600 text-white shadow-lg"
+                        : "bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400"
+                    }`}
                   >
-                    Ban
+                    <Skull className="w-3.5 h-3.5" />
+                    <span>Blacklist Ban</span>
                   </button>
+
                   <button
-                    onClick={() => handleToggleSanction(selectedUser.handle, selectedUser.isUser, "lift", selectedUser.uid)}
-                    className="py-2 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-xl text-xs font-bold transition active:scale-95 cursor-pointer"
+                    onClick={() => handleToggleSanction(selectedUser?.handle, selectedUser?.isUser, "lift", selectedUser?.uid)}
+                    className="py-2.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-xl text-xs font-bold transition active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer"
                   >
-                    Lift
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Lift Sanctions</span>
                   </button>
                 </div>
+
+                {/* Factory Reset Profile Action */}
+                <div className="p-3 bg-red-950/20 border border-red-500/20 rounded-xl flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-bold text-red-400 flex items-center gap-1.5">
+                      <RotateCcw className="w-3.5 h-3.5" /> Factory Reset User Account
+                    </div>
+                    <div className="text-[10px] text-zinc-400">
+                      Restores balance to $5,000, 100 gems, prestige 0, and clears all sanctions.
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleResetUserAccount(selectedUser?.handle, selectedUser?.isUser, selectedUser?.uid)}
+                    className="px-3 py-1.5 bg-red-600/80 hover:bg-red-600 text-white text-xs font-bold rounded-lg border border-red-500/40 shadow transition active:scale-95 shrink-0 cursor-pointer"
+                  >
+                    Reset Profile
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Module 5: 📜 User Activity & Execution History */}
+            <div className="bg-zinc-950/60 border border-white/10 rounded-2xl p-4 sm:p-5 flex flex-col gap-3">
+              <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                <div className="flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-indigo-400" />
+                  <span className="text-xs font-bold text-white">Live Activity & Trade History for {selectedUser?.name}</span>
+                </div>
+                <span className="text-[10px] font-mono text-zinc-400">
+                  {selectedUser?.tradesCount || 0} Trades Recorded • {selectedUser?.coinsCreatedCount || 0} Coins Launched
+                </span>
+              </div>
+
+              {/* Logs stream */}
+              <div className="flex flex-col gap-2 max-h-[160px] overflow-y-auto pr-1">
+                {(selectedUser?.activityLog && selectedUser.activityLog.length > 0) ? (
+                  selectedUser.activityLog.map((log: any, idx: number) => (
+                    <div
+                      key={log.id || idx}
+                      className="flex items-center justify-between p-2 rounded-xl bg-zinc-900/60 border border-white/5 text-xs font-mono"
+                    >
+                      <div className="flex items-center gap-2 truncate">
+                        <span className={`px-1.5 py-0.5 rounded text-[9px] uppercase font-bold ${
+                          log.category === "trade"
+                            ? "bg-emerald-500/20 text-emerald-400"
+                            : log.category === "risk"
+                            ? "bg-rose-500/20 text-rose-400"
+                            : "bg-indigo-500/20 text-indigo-400"
+                        }`}>
+                          {log.category || "activity"}
+                        </span>
+                        <span className="text-zinc-300 truncate">{log.action || log.message || "Executed operation"}</span>
+                      </div>
+                      <span className="text-[10px] text-zinc-500 shrink-0 ml-2">
+                        {log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : "Recent"}
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-4 text-xs text-zinc-500 font-mono">
+                    No recent suspicious flags or security audit infractions recorded for this account.
+                  </div>
+                )}
               </div>
             </div>
           </div>
