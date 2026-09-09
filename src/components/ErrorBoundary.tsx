@@ -30,24 +30,17 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
   private handleResetCache = () => {
     try {
-      // Clear potentially corrupted caches
-      const keysToRemove = [
-        "pumpforge_cached_coins",
-        "cached_appwrite_stats",
-        "pumpforge_holdings",
-        "pumpforge_polymarkets",
-        "pumpforge_user_bets",
-        "memex_simulated_players",
-      ];
-      keysToRemove.forEach((k) => localStorage.removeItem(k));
+      localStorage.clear();
       sessionStorage.clear();
     } catch (e) {
       console.warn("Error clearing cache:", e);
     }
+    this.setState({ hasError: false, error: null, errorInfo: null });
     window.location.href = "/";
   };
 
   private handleReload = () => {
+    this.setState({ hasError: false, error: null, errorInfo: null });
     window.location.reload();
   };
 
