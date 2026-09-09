@@ -10,14 +10,19 @@ import {
   Sparkles,
   CheckCircle,
   Flame,
+  Crown,
+  Palette,
+  Check,
 } from "lucide-react";
 import { UserStats, PortfolioHolding, MemeCoin } from "../types";
+import { useAppContext } from "../context/AppContext";
 
 interface ProfileProps {
   userStats: UserStats;
   holdings: PortfolioHolding[];
   coins: MemeCoin[];
   liveTrades: any[];
+  onUpdateStats?: (updater: (stats: UserStats) => void) => void;
 }
 
 export default function ProfileTab({
@@ -25,10 +30,28 @@ export default function ProfileTab({
   holdings,
   coins,
   liveTrades,
+  onUpdateStats,
 }: ProfileProps) {
+  const { adminSettings } = useAppContext();
   const [loading, setLoading] = useState(true);
   const [wins, setWins] = useState(72.14);
   const [losses, setLosses] = useState(40.0);
+
+  const availableCosmetics = [
+    { id: "default", name: "Default White", colorClass: "text-white font-bold" },
+    { id: "green_candle", name: "Green Candle", colorClass: "text-emerald-400 font-extrabold" },
+    { id: "blue_chip", name: "Blue Chip", colorClass: "text-blue-400 font-medium" },
+    { id: "orange_peel", name: "Orange Peel", colorClass: "text-orange-400 font-black" },
+    { id: "purple_haze", name: "Purple Haze", colorClass: "text-purple-400 font-bold" },
+    { id: "red_alert", name: "Red Alert", colorClass: "text-rose-500 font-black tracking-wide" },
+    { id: "gold_rush", name: "Gold Rush", colorClass: "text-yellow-400 font-black text-glow animate-pulse" },
+    { id: "degen_fire", name: "Degen Fire", colorClass: "text-transparent bg-clip-text bg-gradient-to-r from-red-500 via-orange-500 to-yellow-500 font-black text-glow" },
+    { id: "auraful", name: "Auraful Mystic", colorClass: "text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-purple-500 to-rose-400 font-black text-glow" },
+    { id: "black_swan", name: "Black Swan Sovereign", colorClass: "text-transparent bg-clip-text bg-gradient-to-r from-zinc-100 via-rose-400 to-zinc-200 font-black tracking-wider drop-shadow-[0_0_8px_rgba(244,63,94,0.6)] animate-pulse" },
+  ];
+
+  const unlockedList = userStats.unlockedColors || (adminSettings.rainbowCosmetics || userStats.rainbowCosmetics ? availableCosmetics.map(c => c.id) : ["default"]);
+  const hasBlackSwan = !!userStats.blackSwanCosmetic || userStats.title?.includes("Black Swan") || unlockedList.includes("black_swan");
 
   useEffect(() => {
     // Simulator skeleton loading to match the video
@@ -128,23 +151,45 @@ export default function ProfileTab({
       </div>
 
       {/* Main Header card widget */}
-      <div className="glass-panel border border-white/10 p-6 rounded-3xl flex flex-col sm:flex-row items-center gap-5 shadow-2xl relative overflow-hidden group">
+      <div className={`glass-panel border p-6 rounded-3xl flex flex-col sm:flex-row items-center gap-5 shadow-2xl relative overflow-hidden group ${
+        hasBlackSwan
+          ? "border-rose-500/40 bg-gradient-to-r from-zinc-950 via-rose-950/20 to-purple-950/30 shadow-[0_0_30px_rgba(244,63,94,0.2)]"
+          : "border-white/10"
+      }`}>
         <div className="absolute top-0 right-0 p-8 opacity-5">
           <Flame className="w-48 h-48 text-orange-500 animate-pulse" />
         </div>
 
-        <div className="w-16 h-16 rounded-2xl bg-orange-500/10 border border-orange-500/30 flex items-center justify-center text-3xl select-none shrink-0 font-extrabold text-orange-400 shadow-lg">
-          Z
+        <div className={`w-16 h-16 rounded-2xl border flex items-center justify-center text-3xl select-none shrink-0 font-extrabold shadow-lg ${
+          hasBlackSwan
+            ? "bg-gradient-to-br from-zinc-900 to-rose-950 border-rose-500/60 text-rose-300 shadow-[0_0_15px_rgba(244,63,94,0.4)]"
+            : "bg-orange-500/10 border-orange-500/30 text-orange-400"
+        }`}>
+          {userStats.username ? userStats.username.trim().charAt(0).toUpperCase() : "Z"}
         </div>
 
         <div className="flex-1 text-center sm:text-left">
-          <div className="flex items-center justify-center sm:justify-start gap-2">
-            <h3 className="text-xl font-black text-white">
+          <div className="flex items-center justify-center sm:justify-start gap-2 flex-wrap">
+            <h3 className={`text-xl font-black ${
+              adminSettings.rainbowCosmetics || userStats.rainbowCosmetics
+                ? "text-transparent bg-clip-text bg-gradient-to-r from-rose-500 via-amber-400 via-cyan-400 to-pink-500 animate-pulse"
+                : userStats.nameColor || "text-white"
+            }`}>
               {userStats.username}
             </h3>
             <span className="text-emerald-400 font-black text-xs border border-emerald-500/30 bg-emerald-500/15 px-2 py-0.5 rounded-full flex items-center gap-1">
               <CheckCircle className="w-3 h-3" /> VERIFIED
             </span>
+            {hasBlackSwan && (
+              <span className="text-xs bg-rose-500/20 border border-rose-500/50 text-rose-300 font-black px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-[0_0_10px_rgba(244,63,94,0.4)] animate-pulse">
+                <Crown className="w-3.5 h-3.5 text-rose-400" /> BLACK SWAN SOVEREIGN
+              </span>
+            )}
+            {(adminSettings.rainbowCosmetics || userStats.rainbowCosmetics) && (
+              <span className="text-xs bg-gradient-to-r from-rose-500/20 to-purple-500/20 border border-purple-500/40 text-purple-300 font-black px-2 py-0.5 rounded-full flex items-center gap-1">
+                <Sparkles className="w-3 h-3 text-cyan-400" /> RAINBOW GLOW
+              </span>
+            )}
             <span className="text-orange-500 text-xs">🔥</span>
           </div>
           <div className="flex items-center justify-center sm:justify-start gap-2 mt-1.5 flex-wrap">
@@ -153,6 +198,9 @@ export default function ProfileTab({
             </span>
             <span className="text-[10px] glass-pill border border-white/10 text-zinc-300 font-mono font-bold uppercase py-0.5 px-2.5 rounded-full leading-none tracking-wider">
               {userStats.title}
+            </span>
+            <span className="text-[10px] text-zinc-400">
+              💎 {userStats.gems.toLocaleString()} Gems
             </span>
           </div>
           <span className="text-[10px] text-zinc-400 block mt-2">
@@ -362,6 +410,82 @@ export default function ProfileTab({
               {netProfit >= 0 ? "+" : ""}${netProfit.toFixed(2)}
             </span>
           </div>
+        </div>
+      </div>
+
+      {/* Cosmetics & Nameplate Styling Wardrobe */}
+      <div className="glass-panel border border-white/10 p-5 rounded-3xl flex flex-col gap-4 shadow-xl">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-indigo-400 font-extrabold text-xs uppercase tracking-wide">
+            <Palette className="w-4 h-4" />
+            <span>🎨 Cosmetics & Nameplate Skin Wardrobe</span>
+          </div>
+          <span className="text-[10px] text-zinc-400 font-mono">
+            {unlockedList.length} Unlocked
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+          {availableCosmetics.map((cosmetic) => {
+            const isUnlocked = unlockedList.includes(cosmetic.id) || cosmetic.id === "default";
+            const isEquipped = userStats.nameColor === cosmetic.colorClass || (!userStats.nameColor && cosmetic.id === "default");
+
+            return (
+              <div
+                key={cosmetic.id}
+                className={`p-3 rounded-2xl border flex items-center justify-between gap-3 transition-all ${
+                  isEquipped
+                    ? "bg-indigo-600/20 border-indigo-500 shadow-md ring-1 ring-indigo-500/50"
+                    : isUnlocked
+                      ? "bg-zinc-950/60 border-zinc-800 hover:border-zinc-700"
+                      : "bg-zinc-950/30 border-zinc-900 opacity-60"
+                }`}
+              >
+                <div className="flex flex-col min-w-0">
+                  <span className={`text-xs ${cosmetic.colorClass} truncate`}>
+                    {userStats.username || "Trader"}
+                  </span>
+                  <span className="text-[10px] text-zinc-400 font-mono">
+                    {cosmetic.name}
+                  </span>
+                </div>
+
+                {isUnlocked ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onUpdateStats) {
+                        onUpdateStats((stats) => {
+                          stats.nameColor = cosmetic.colorClass;
+                          if (cosmetic.id === "black_swan") {
+                            stats.blackSwanCosmetic = true;
+                            stats.title = "🌌 Black Swan Sovereign";
+                          }
+                        });
+                      }
+                    }}
+                    className={`px-3 py-1 text-[10px] font-black rounded-lg border transition-all active:scale-95 flex items-center gap-1 ${
+                      isEquipped
+                        ? "bg-indigo-500 text-white border-indigo-400"
+                        : "bg-zinc-850 hover:bg-zinc-750 text-zinc-300 border-zinc-700"
+                    }`}
+                  >
+                    {isEquipped ? (
+                      <>
+                        <Check className="w-3 h-3" /> Equipped
+                      </>
+                    ) : (
+                      "Equip"
+                    )}
+                  </button>
+                ) : (
+                  <span className="text-[9px] text-zinc-600 font-mono uppercase">
+                    Locked
+                  </span>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

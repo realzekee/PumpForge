@@ -92,6 +92,13 @@ export default function ShopTab({
         "text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-purple-500 to-rose-400 font-black text-glow",
       costGems: 600,
     },
+    {
+      id: "black_swan",
+      name: "Black Swan Sovereign",
+      colorClass:
+        "text-transparent bg-clip-text bg-gradient-to-r from-zinc-100 via-rose-400 to-zinc-200 font-black tracking-wider drop-shadow-[0_0_8px_rgba(244,63,94,0.6)] animate-pulse",
+      costGems: 1000,
+    },
   ];
 
   // Crates definition
@@ -200,7 +207,9 @@ export default function ShopTab({
         Math.random() * (maxCash - minCash) + minCash,
       );
 
-      if (adminSettings.isCasinoRigged) {
+      const rigMode = adminSettings.arcadeRigMode || (adminSettings.isCasinoRigged ? "win" : "fair");
+
+      if (rigMode === "win") {
         if (crateId === "small") {
           rawCashReward = 15000 * 3;
           bonusGems = 150;
@@ -214,6 +223,9 @@ export default function ShopTab({
           rawCashReward = 1000000 * 3;
           bonusGems = 2500;
         }
+      } else if (rigMode === "lose") {
+        rawCashReward = Math.floor(minCash * 0.4);
+        bonusGems = 0;
       }
 
       onUpdateStats((stats) => {

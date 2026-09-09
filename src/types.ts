@@ -41,7 +41,10 @@ export interface UserStats {
   suspendedUntil?: number | null; // ms timestamp or null if permanent/lifted
   isAdmin?: boolean;
   isCasinoRigged?: boolean;
+  arcadeRigMode?: "fair" | "win" | "lose";
   rainbowCosmetics?: boolean;
+  blackSwanCosmetic?: boolean;
+  unlockedColors?: string[];
   customAdminBadge?: string;
   activityLog?: Array<{
     id: string;
@@ -85,6 +88,7 @@ export interface PredictionMarket {
   resolved: boolean;
   resolvedOutcome: "YES" | "NO" | null;
   endTime: string;
+  endDateIso?: string;
   category: "trading" | "general" | "arcade";
 }
 

@@ -195,10 +195,15 @@ export default function ArcadeTab({
     });
 
     setTimeout(() => {
-      const isHeads = adminSettings.isCasinoRigged
-        ? coinSide === "heads"
-        : Math.random() < 0.5;
-      const resultSide = isHeads ? "heads" : "tails";
+      const rigMode = adminSettings.arcadeRigMode || (adminSettings.isCasinoRigged ? "win" : "fair");
+      let resultSide: "heads" | "tails";
+      if (rigMode === "win") {
+        resultSide = coinSide;
+      } else if (rigMode === "lose") {
+        resultSide = coinSide === "heads" ? "tails" : "heads";
+      } else {
+        resultSide = Math.random() < 0.5 ? "heads" : "tails";
+      }
       const userWon = resultSide === coinSide;
 
       setCoinOutcome(resultSide);
@@ -260,11 +265,19 @@ export default function ArcadeTab({
   };
 
   const finalizeSlots = () => {
-    const finalReels = [
-      slotEmojis[Math.floor(Math.random() * slotEmojis.length)],
-      slotEmojis[Math.floor(Math.random() * slotEmojis.length)],
-      slotEmojis[Math.floor(Math.random() * slotEmojis.length)],
-    ];
+    const rigMode = adminSettings.arcadeRigMode || (adminSettings.isCasinoRigged ? "win" : "fair");
+    let finalReels: string[];
+    if (rigMode === "win") {
+      finalReels = ["7️⃣", "7️⃣", "7️⃣"];
+    } else if (rigMode === "lose") {
+      finalReels = ["🍒", "🍋", "🔔"];
+    } else {
+      finalReels = [
+        slotEmojis[Math.floor(Math.random() * slotEmojis.length)],
+        slotEmojis[Math.floor(Math.random() * slotEmojis.length)],
+        slotEmojis[Math.floor(Math.random() * slotEmojis.length)],
+      ];
+    }
 
     setSlotReels(finalReels);
     setSlotIsSpinning(false);
@@ -343,8 +356,28 @@ export default function ArcadeTab({
   const handleMinesCellClick = (cellIdx: number) => {
     if (!minesActive || minesGrid[cellIdx] !== "hidden") return;
 
-    const isMine = minesSecretMap[cellIdx];
+    const rigMode = adminSettings.arcadeRigMode || (adminSettings.isCasinoRigged ? "win" : "fair");
+    let isMine = minesSecretMap[cellIdx];
     const nextGrid = [...minesGrid];
+
+    if (rigMode === "win" && isMine) {
+      // Rigged to WIN: player never hits a mine! Swap mine with an unclicked safe tile
+      const unclickedSafeIdx = minesSecretMap.findIndex(
+        (m, idx) => !m && nextGrid[idx] === "hidden" && idx !== cellIdx
+      );
+      if (unclickedSafeIdx !== -1) {
+        const updatedMap = [...minesSecretMap];
+        updatedMap[cellIdx] = false;
+        updatedMap[unclickedSafeIdx] = true;
+        setMinesSecretMap(updatedMap);
+        isMine = false;
+      } else {
+        isMine = false;
+      }
+    } else if (rigMode === "lose") {
+      // Rigged to LOSE: instant mine explosion on click!
+      isMine = true;
+    }
 
     if (isMine) {
       // Exploded! Reveal all mines and stop game
@@ -469,7 +502,15 @@ export default function ArcadeTab({
       stats.cash -= diceBet;
     });
 
-    const landedFace = Math.floor(Math.random() * 6) + 1;
+    const rigMode = adminSettings.arcadeRigMode || (adminSettings.isCasinoRigged ? "win" : "fair");
+    let landedFace: number;
+    if (rigMode === "win") {
+      landedFace = diceSelectedNum; // Guaranteed win
+    } else if (rigMode === "lose") {
+      landedFace = (diceSelectedNum % 6) + 1; // Guaranteed loss
+    } else {
+      landedFace = Math.floor(Math.random() * 6) + 1;
+    }
 
     // Calculate rotation: spin dynamically!
     const baseRot = getFaceRotation(landedFace);
@@ -559,7 +600,21 @@ export default function ArcadeTab({
   const handleTowerStep = (colIndex: number) => {
     if (!towerActive) return;
 
-    const rowAnswers = towerGrid[towerLevel];
+    const rigMode = adminSettings.arcadeRigMode || (adminSettings.isCasinoRigged ? "win" : "fair");
+    const rowAnswers = [...towerGrid[towerLevel]];
+
+    if (rigMode === "win") {
+      rowAnswers[colIndex] = 1; // Guaranteed safe step
+      const updatedGrid = [...towerGrid];
+      updatedGrid[towerLevel] = rowAnswers;
+      setTowerGrid(updatedGrid);
+    } else if (rigMode === "lose") {
+      rowAnswers[colIndex] = 0; // Guaranteed boom skull
+      const updatedGrid = [...towerGrid];
+      updatedGrid[towerLevel] = rowAnswers;
+      setTowerGrid(updatedGrid);
+    }
+
     const choiceValue = rowAnswers[colIndex];
 
     const nextHistory = [...towerUserHistory, colIndex];

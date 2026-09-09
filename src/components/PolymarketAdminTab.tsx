@@ -1,14 +1,16 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Query } from "appwrite";
 import { databases } from "../appwrite";
 import { toast } from "sonner";
-import { CheckCircle, XCircle, Ban, Activity } from "lucide-react";
+import { CheckCircle, XCircle, Ban, Activity, Clock, Globe } from "lucide-react";
 import { SkeletonLoader } from "./SkeletonLoader";
+import { formatToDeviceTimezone, getDeviceTimezoneInfo } from "../utils/timezone";
 
 export default function PolymarketAdminTab() {
   const [markets, setMarkets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [resolving, setResolving] = useState<string | null>(null);
+  const deviceTz = useMemo(() => getDeviceTimezoneInfo(), []);
 
   useEffect(() => {
     fetchMarkets();
@@ -133,6 +135,12 @@ export default function PolymarketAdminTab() {
             <p className="text-xs md:text-sm text-zinc-400 font-mono max-w-xl leading-relaxed mt-1">
               Resolve active Polymarket predictions. Resolving will automatically distribute simulated payouts to wagerers and close the market in Appwrite.
             </p>
+            <div className="flex items-center gap-2 text-xs font-mono text-zinc-400 mt-2">
+              <Globe className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+              <span>
+                Displaying in your device timezone: <strong className="text-white font-bold">{deviceTz.formattedName}</strong>
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -161,6 +169,10 @@ export default function PolymarketAdminTab() {
                           {qDesc}
                         </div>
                       )}
+                      <div className="text-[11px] text-zinc-400 font-mono flex items-center gap-1.5 mt-2.5">
+                        <Clock className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                        <span>Target: {formatToDeviceTimezone(market.endDate, { includeTime: true, includeTz: true })}</span>
+                      </div>
                     </div>
                   </div>
 

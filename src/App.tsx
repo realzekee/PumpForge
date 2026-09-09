@@ -25,6 +25,7 @@ import { TradesHistoryTab } from "./components/TradesHistoryTab";
 import PolymarketAdminTab from "./components/PolymarketAdminTab";
 import OwnerDashboardTab from "./components/OwnerDashboardTab";
 import BugReportModal from "./components/BugReportModal";
+import PumpForgeLoadingScreen from "./components/PumpForgeLoadingScreen";
 import {
   MemeCoin,
   UserStats,
@@ -310,11 +311,11 @@ function CoinRouteWrapper({
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center min-h-[50vh]">
-        <div className="relative flex items-center justify-center w-16 h-16">
-          <div className="absolute inset-0 border-4 border-orange-500/20 rounded-full"></div>
-          <div className="absolute inset-0 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
-          <div className="absolute w-2 h-2 bg-orange-400 rounded-full animate-ping"></div>
-        </div>
+        <PumpForgeLoadingScreen
+          variant="inline"
+          message="Loading coin metrics & charts..."
+          subMessage="Streaming real-time order books"
+        />
       </div>
     );
   }
@@ -1360,19 +1361,7 @@ export default function App() {
             const total = yesPool + noPool;
             const yesPercentage = total > 0 ? Math.round((yesPool / total) * 100) : 50;
 
-            let endTime = "TBD";
-            if (d.endDate) {
-              try {
-                const dateObj = new Date(d.endDate);
-                if (!isNaN(dateObj.getTime())) {
-                  endTime = dateObj.toLocaleDateString(undefined, {
-                    month: "short",
-                    day: "numeric",
-                    year: "numeric",
-                  });
-                }
-              } catch {}
-            }
+            const endDateIso = d.endDate || undefined;
 
             return {
               id: d.$id,
@@ -1388,7 +1377,8 @@ export default function App() {
                 d.winningOutcome === "YES" || d.winningOutcome === "NO"
                   ? d.winningOutcome
                   : null,
-              endTime,
+              endTime: endDateIso || "TBD",
+              endDateIso,
               category: "general",
             };
           });
@@ -1396,7 +1386,8 @@ export default function App() {
           setMarkets(list);
           safeStorage.setItem("pumpforge_polymarkets", JSON.stringify(list));
         } else {
-          const DEFAULT_MARKETS = [
+          const nowMs = Date.now();
+          const DEFAULT_MARKETS: PredictionMarket[] = [
             {
               id: "m1",
               question: "Will *ROAD hit a $150K valuation by Friday?",
@@ -1404,9 +1395,12 @@ export default function App() {
               yesPool: 4500,
               noPool: 3200,
               yesPercentage: 58,
+              userBetAmount: 0,
+              userBetSide: null,
               resolved: false,
               resolvedOutcome: null,
-              endTime: "Next Friday",
+              endTime: new Date(nowMs + 5 * 86400000).toISOString(),
+              endDateIso: new Date(nowMs + 5 * 86400000).toISOString(),
               category: "trading",
             },
             {
@@ -1416,9 +1410,12 @@ export default function App() {
               yesPool: 150,
               noPool: 6400,
               yesPercentage: 2,
+              userBetAmount: 0,
+              userBetSide: null,
               resolved: false,
               resolvedOutcome: null,
-              endTime: "Within 2 hours",
+              endTime: new Date(nowMs + 2 * 3600000).toISOString(),
+              endDateIso: new Date(nowMs + 2 * 3600000).toISOString(),
               category: "arcade",
             },
             {
@@ -1428,9 +1425,12 @@ export default function App() {
               yesPool: 8500,
               noPool: 1000,
               yesPercentage: 89,
+              userBetAmount: 0,
+              userBetSide: null,
               resolved: true,
               resolvedOutcome: "YES",
-              endTime: "Completed",
+              endTime: new Date(nowMs - 86400000).toISOString(),
+              endDateIso: new Date(nowMs - 86400000).toISOString(),
               category: "general",
             },
           ];
@@ -2520,15 +2520,7 @@ export default function App() {
   };
 
   if (isCheckingRedirect || isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-zinc-950">
-        <div className="relative flex items-center justify-center w-24 h-24">
-          <div className="absolute inset-0 border-4 border-orange-500/20 rounded-full"></div>
-          <div className="absolute inset-0 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
-          <div className="absolute w-3 h-3 bg-orange-400 rounded-full animate-ping"></div>
-        </div>
-      </div>
-    );
+    return <PumpForgeLoadingScreen />;
   }
 
   if (userStats?.isSuspended || userStats?.isBanned) {
@@ -2669,7 +2661,7 @@ export default function App() {
       const { databases } = await import("./appwrite");
       const { ID, Permission, Role } = await import("appwrite");
 
-      const isoDate = parseDateToIso(marketData.endTime);
+      const isoDate = marketData.endDateIso || parseDateToIso(marketData.endTime);
       const combinedQuestion = marketData.description
         ? `${marketData.question} --- ${marketData.description}`
         : marketData.question;
@@ -2703,7 +2695,8 @@ export default function App() {
         userBetSide: null,
         resolved: false,
         resolvedOutcome: null,
-        endTime: marketData.endTime || new Date(isoDate).toLocaleDateString(),
+        endTime: isoDate,
+        endDateIso: isoDate,
         category: "general",
       };
 
@@ -3188,6 +3181,7 @@ export default function App() {
                 holdings={holdings}
                 coins={coins}
                 liveTrades={liveTrades}
+                onUpdateStats={handleUpdateStats}
               />
             }
           />

@@ -2,8 +2,11 @@ import React, { createContext, useContext, useState, useEffect } from "react";
 import { account, databases, client } from "../appwrite";
 import { Permission, Role } from "appwrite";
 
+export type ArcadeRigMode = "fair" | "win" | "lose";
+
 interface AdminSettings {
   isCasinoRigged: boolean;
+  arcadeRigMode: ArcadeRigMode;
   rainbowCosmetics: boolean;
   customAdminBadge: string;
 }
@@ -31,8 +34,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [gems, setGems] = useState(90);
   const [prestigeLevel, setPrestigeLevel] = useState(0);
   const [userId, setUserId] = useState<string | null>(null);
+  const getSavedRigMode = (): ArcadeRigMode => {
+    try {
+      const saved = localStorage.getItem("pf_arcade_rig_mode");
+      if (saved === "win" || saved === "lose" || saved === "fair") return saved;
+    } catch (e) {}
+    return "fair";
+  };
+
   const [adminSettings, setAdminSettings] = useState<AdminSettings>({
     isCasinoRigged: false,
+    arcadeRigMode: getSavedRigMode(),
     rainbowCosmetics: false,
     customAdminBadge: "Operator"
   });
@@ -43,8 +55,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         // Fetch or create admin settings
         try {
           const settingsDoc = await databases.getDocument("pumpforge", "admin_settings", "global");
+          const mode: ArcadeRigMode = settingsDoc.arcadeRigMode || (settingsDoc.isCasinoRigged ? "win" : getSavedRigMode());
           setAdminSettings({
-            isCasinoRigged: settingsDoc.isCasinoRigged ?? false,
+            isCasinoRigged: mode === "win",
+            arcadeRigMode: mode,
             rainbowCosmetics: settingsDoc.rainbowCosmetics ?? false,
             customAdminBadge: settingsDoc.customAdminBadge ?? "Operator"
           });
@@ -53,6 +67,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           try {
             await databases.createDocument("pumpforge", "admin_settings", "global", {
               isCasinoRigged: false,
+              arcadeRigMode: "fair",
               rainbowCosmetics: false,
               customAdminBadge: "Operator"
             }, [
@@ -142,8 +157,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         ) {
           const updatedDoc = response.payload;
           if (updatedDoc.$collectionId === "admin_settings") {
+            const mode: ArcadeRigMode = updatedDoc.arcadeRigMode || (updatedDoc.isCasinoRigged ? "win" : "fair");
             setAdminSettings({
-              isCasinoRigged: updatedDoc.isCasinoRigged ?? false,
+              isCasinoRigged: mode === "win",
+              arcadeRigMode: mode,
               rainbowCosmetics: updatedDoc.rainbowCosmetics ?? false,
               customAdminBadge: updatedDoc.customAdminBadge ?? "Operator"
             });

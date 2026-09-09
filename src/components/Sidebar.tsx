@@ -634,19 +634,31 @@ export default function Sidebar({
                   id="avatar-profile-footer"
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-9 h-9 rounded-xl bg-orange-500/20 border border-orange-500/30 text-orange-400 flex items-center justify-center text-sm font-black shrink-0 uppercase">
+                    <div className={`w-9 h-9 rounded-xl border flex items-center justify-center text-sm font-black shrink-0 uppercase ${
+                      userStats.blackSwanCosmetic
+                        ? "bg-gradient-to-br from-zinc-900 to-rose-950 border-rose-500/60 text-rose-300 shadow-[0_0_12px_rgba(244,63,94,0.4)]"
+                        : "bg-orange-500/20 border-orange-500/30 text-orange-400"
+                    }`}>
                       {userStats.username
                         ? userStats.username.trim().charAt(0)
                         : "?"}
                     </div>
                     <div className="flex flex-col min-w-0">
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1 flex-wrap">
                         <span
-                          className={`text-xs font-extrabold truncate ${adminSettings.rainbowCosmetics ? "text-transparent bg-clip-text bg-gradient-to-r from-rose-500 via-amber-400 via-cyan-400 to-pink-500 animate-pulse font-black" : userStats.nameColor || "text-white"}`}
+                          className={`text-xs font-extrabold truncate ${
+                            adminSettings.rainbowCosmetics || userStats.rainbowCosmetics
+                              ? "text-transparent bg-clip-text bg-gradient-to-r from-rose-500 via-amber-400 via-cyan-400 to-pink-500 animate-pulse font-black"
+                              : userStats.nameColor || "text-white"
+                          }`}
                         >
                           {userStats.username}
                         </span>
-                        {userStats.title.toLowerCase() === "owner" ? (
+                        {userStats.blackSwanCosmetic ? (
+                          <span className="px-1 py-0.2 rounded border border-rose-500/40 text-rose-300 font-mono text-[7px] bg-rose-950/40 uppercase font-black shrink-0 tracking-wider shadow-[0_0_8px_rgba(244,63,94,0.3)] animate-pulse flex items-center gap-0.5">
+                            <Crown className="w-2.5 h-2.5 text-rose-400" /> SWAN
+                          </span>
+                        ) : userStats.title.toLowerCase() === "owner" ? (
                           <Crown className="w-3.5 h-3.5 text-rose-400 animate-pulse text-glow shrink-0" />
                         ) : userStats.title.toLowerCase() === "admin" ? (
                           <Sparkles className="w-3.5 h-3.5 text-cyan-400 animate-pulse text-glow shrink-0" />
