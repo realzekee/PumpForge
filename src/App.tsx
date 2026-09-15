@@ -63,6 +63,7 @@ import { ID, Permission, Role } from "appwrite";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   apiGetCoins,
+  apiGetCoin,
   apiTrade,
   apiClaimDailyReward,
   apiPrestige,
@@ -310,9 +311,11 @@ function CoinRouteWrapper({
         setLoading(false);
       };
 
-      databases.getDocument("pumpforge", "coins", coinId)
-        .then(updateCoinState)
-        .catch(async () => {
+      const fallbackAppwrite = async () => {
+        try {
+          const doc = await databases.getDocument("pumpforge", "coins", coinId);
+          updateCoinState(doc);
+        } catch {
           try {
             const { Query } = await import("appwrite");
             const slugRes = await databases.listDocuments("pumpforge", "coins", [
@@ -335,6 +338,20 @@ function CoinRouteWrapper({
           } catch {
             setLoading(false);
           }
+        }
+      };
+
+      // 1. Try authoritative coinStore via API first
+      apiGetCoin(coinId)
+        .then((res) => {
+          if (res?.coin) {
+            updateCoinState(res.coin);
+          } else {
+            fallbackAppwrite();
+          }
+        })
+        .catch(() => {
+          fallbackAppwrite();
         });
 
       unsub = client.subscribe(`databases.pumpforge.collections.coins.documents.${coinId}`, (response) => {

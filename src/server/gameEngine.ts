@@ -395,10 +395,6 @@ export async function processArcadeWager(
   action: "play" | "start" | "step" | "cashout",
   params: any
 ) {
-  if (user.isGuest) {
-    throw new Error("High-stakes arcade operations require connecting your Google profile.");
-  }
-
   const { allowed, retryAfterMs } = arcadeLimiter.isAllowed(user.userId);
   if (!allowed) {
     throw new Error(`Arcade rate limit exceeded. Please wait ${Math.ceil(retryAfterMs / 1000)}s.`);

@@ -45,6 +45,15 @@ async function startServer() {
   app.use(express.json());
   app.use(authMiddleware);
 
+  // 1. Mandatory JSON Content-Type and Cache-Control headers on all API responses
+  app.use("/api", (_req, res, next) => {
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    next();
+  });
+
   // Sync coins with Appwrite at startup
   coinStore.syncWithDatabase().catch((e) => {
     console.warn("Initial Appwrite coin sync warning:", e);
@@ -77,6 +86,18 @@ async function startServer() {
     try {
       const coins = coinStore.getAllCoins();
       res.json({ coins });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/game/coins/:coinId", (req, res) => {
+    try {
+      const coin = coinStore.getCoin(req.params.coinId);
+      if (!coin) {
+        return res.status(404).json({ error: "Coin not found" });
+      }
+      res.json({ coin });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -418,6 +439,37 @@ async function startServer() {
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
+  });
+
+  // ==========================================
+  // --- STRICT API ERROR & 404 CATCH-ALL ---
+  // Guarantees that ALL /api requests return valid JSON, NEVER HTML error pages or SPA fallback.
+  // ==========================================
+  app.use("/api", (err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    console.error("[API Error]", err);
+    if (res.headersSent) {
+      return;
+    }
+    const status =
+      typeof err.status === "number" && err.status >= 400 && err.status < 600
+        ? err.status
+        : typeof err.statusCode === "number" && err.statusCode >= 400 && err.statusCode < 600
+        ? err.statusCode
+        : 500;
+
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.status(status).json({
+      error: err?.message || "Internal server error occurred.",
+      code: err?.code || "INTERNAL_ERROR",
+    });
+  });
+
+  app.all("/api/*", (req, res) => {
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.status(404).json({
+      error: `API route not found: ${req.method} ${req.originalUrl}`,
+      code: "NOT_FOUND",
+    });
   });
 
   // ==========================================

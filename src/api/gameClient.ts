@@ -35,6 +35,7 @@ export function clearAuthJwt() {
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const jwt = await getAuthJwt();
   const headers: Record<string, string> = {
+    "Accept": "application/json",
     "Content-Type": "application/json",
     ...(options.headers as Record<string, string> || {}),
   };
@@ -43,16 +44,53 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     headers["Authorization"] = `Bearer ${jwt}`;
   }
 
-  const res = await fetch(endpoint, {
-    ...options,
-    headers,
-  });
-
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || "Server request failed.");
+  // Ensure body is valid JSON string for mutations if not provided
+  let body = options.body;
+  const method = (options.method || "GET").toUpperCase();
+  if (["POST", "PUT", "PATCH"].includes(method) && body === undefined) {
+    body = "{}";
   }
-  return data as T;
+
+  let res: Response;
+  try {
+    res = await fetch(endpoint, {
+      ...options,
+      headers,
+      body,
+    });
+  } catch (networkErr: any) {
+    throw new Error(`Network error connecting to ${endpoint}: ${networkErr?.message || "Connection failed"}`);
+  }
+
+  const contentType = res.headers.get("content-type") || "";
+  const rawText = await res.text();
+  let data: any = null;
+
+  if (rawText && rawText.trim().length > 0) {
+    try {
+      data = JSON.parse(rawText);
+    } catch {
+      // Handle non-JSON responses (HTML error pages, proxy 502/503s, Vite SPA fallback)
+      const cleanSnippet = rawText
+        .replace(/<[^>]*>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 150);
+
+      if (!res.ok) {
+        throw new Error(`Server returned HTTP ${res.status}: ${cleanSnippet || res.statusText || "Request failed"}`);
+      } else {
+        throw new Error(`Received unexpected non-JSON response from ${endpoint} (HTTP 200, ${contentType || "unknown"}): ${cleanSnippet.slice(0, 80)}`);
+      }
+    }
+  }
+
+  if (!res.ok) {
+    const errorMsg = data?.error || data?.message || `Server request failed with status ${res.status}`;
+    throw new Error(errorMsg);
+  }
+
+  return (data ?? {}) as T;
 }
 
 // ----------------------------------------------------
@@ -78,6 +116,10 @@ export async function apiUpdateProfile(updates: {
 
 export async function apiGetCoins() {
   return request<{ coins: any[] }>("/api/game/coins");
+}
+
+export async function apiGetCoin(coinId: string) {
+  return request<{ coin: any }>(`/api/game/coins/${coinId}`);
 }
 
 export async function apiGetCoinCandles(coinId: string, interval: number = 1) {

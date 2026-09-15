@@ -72,7 +72,24 @@ export async function authenticateRequest(req: Request): Promise<AuthenticatedUs
       };
     }
 
-    const appwriteAccount = await res.json();
+    const rawText = await res.text();
+    let appwriteAccount: any = null;
+    try {
+      appwriteAccount = rawText ? JSON.parse(rawText) : null;
+    } catch {
+      appwriteAccount = null;
+    }
+
+    if (!appwriteAccount || !appwriteAccount.$id) {
+      return {
+        userId: "guest_player",
+        email: "",
+        name: "Guest Player",
+        isAdmin: false,
+        isGuest: true,
+      };
+    }
+
     const verifiedEmail = (appwriteAccount.email || "").toLowerCase().trim();
     const isAdmin = ADMIN_EMAILS.includes(verifiedEmail);
 
