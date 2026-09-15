@@ -1,0 +1,445 @@
+import express from "express";
+import path from "path";
+import { createServer as createViteServer } from "vite";
+import { authMiddleware, requireAdmin, requireAuth } from "./src/server/auth";
+import {
+  processDailyReward,
+  processTrade,
+  processArcadeWager,
+  processShopBuy,
+  processPrestige,
+  processPromocode,
+  processCreateCoin,
+  processBugReport,
+  processPolymarketWager,
+  processCreatePredictionMarket,
+  processAddComment,
+  processGetComments,
+  processDeleteComment,
+  processReportComment,
+  processUpdateProfile,
+  processGetCoinCandles,
+  processGetLeaderboard,
+} from "./src/server/gameEngine";
+import {
+  resolveMarketAndPayout,
+  adminUpdateCoin,
+  adminPumpCoin,
+  adminDumpCoin,
+  adminDeleteCoin,
+  adminGrantBalance,
+  adminSanctionUser,
+  adminUpdateUserProfile,
+  adminUpdateSettings,
+  adminUpdateBugStatus,
+  adminDeleteBugReport,
+  getAuditLogs,
+} from "./src/server/adminEngine";
+import { coinStore, getAuthoritativeUser, getPublicUserProfile } from "./src/server/db";
+import { auditAppwriteSchema } from "./src/server/schemaAudit";
+
+async function startServer() {
+  const app = express();
+  const PORT = 3000;
+
+  app.use(express.json());
+  app.use(authMiddleware);
+
+  // Sync coins with Appwrite at startup
+  coinStore.syncWithDatabase().catch((e) => {
+    console.warn("Initial Appwrite coin sync warning:", e);
+  });
+
+  // ==========================================
+  // --- HEALTH & AUTH ROUTES ---
+  // ==========================================
+  app.get("/api/health", (_req, res) => {
+    res.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
+  app.get("/api/auth/me", async (req, res) => {
+    try {
+      const user = (req as any).user;
+      let stats = null;
+      if (user && !user.isGuest) {
+        stats = await getAuthoritativeUser(user.userId, user.jwt, user.name);
+      }
+      res.json({ user, stats });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ==========================================
+  // --- AUTHORITATIVE COIN & MARKET ROUTES ---
+  // ==========================================
+  app.get("/api/game/coins", (_req, res) => {
+    try {
+      const coins = coinStore.getAllCoins();
+      res.json({ coins });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/game/coins/:coinId/candles", async (req, res) => {
+    try {
+      const interval = Number(req.query.interval) || 1;
+      const candles = await processGetCoinCandles(req.params.coinId, interval);
+      res.json({ candles });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/game/leaderboard", async (req, res) => {
+    try {
+      const category = (req.query.category as string) || "gains";
+      const limit = Number(req.query.limit) || 50;
+      const leaderboard = await processGetLeaderboard(category, limit);
+      res.json({ leaderboard });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/game/trade", async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const { coinId, type, amountCoins } = req.body;
+      const result = await processTrade(user, coinId, type, Number(amountCoins));
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // ==========================================
+  // --- AUTHORITATIVE ARCADE & GAMING ---
+  // ==========================================
+  app.post("/api/game/arcade/wager", async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const { game, action, ...params } = req.body;
+      const result = await processArcadeWager(user, game, action, params);
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/game/daily-reward", async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const result = await processDailyReward(user);
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/game/shop/buy", async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const { type, ...params } = req.body;
+      const result = await processShopBuy(user, type, params);
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/game/prestige", async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const result = await processPrestige(user);
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/game/promocode", async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const { code } = req.body;
+      const result = await processPromocode(user, code);
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/game/create-coin", async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const result = await processCreateCoin(user, req.body);
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/game/bug-report", async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const { title, description } = req.body;
+      const result = await processBugReport(user, title, description);
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/game/polymarket/create", async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const result = await processCreatePredictionMarket(user, req.body);
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/game/polymarket/wager", async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const { marketId, choice, amount } = req.body;
+      const result = await processPolymarketWager(user, marketId, choice, Number(amount));
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // ==========================================
+  // --- COMMENTS & COMMUNITY ROUTES ---
+  // ==========================================
+  app.get("/api/game/comments/:targetId", async (req, res) => {
+    try {
+      const comments = await processGetComments(req.params.targetId);
+      res.json({ comments });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/game/comments", async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const { targetId, text } = req.body;
+      const comment = await processAddComment(user, targetId, text);
+      res.json({ success: true, comment });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/game/comments/:commentId", async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const ok = await processDeleteComment(user, req.params.commentId);
+      res.json({ success: ok });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/game/comments/:commentId/report", async (req, res) => {
+    try {
+      const ok = await processReportComment(req.params.commentId);
+      res.json({ success: ok });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/game/profile/update", async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const result = await processUpdateProfile(user, req.body);
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // ==========================================
+  // --- PUBLIC USER PROFILES (SAFE & SANITIZED) ---
+  // ==========================================
+  app.get("/api/user/:identifier", async (req, res) => {
+    try {
+      const profile = await getPublicUserProfile(req.params.identifier);
+      if (!profile) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      res.json(profile);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ==========================================
+  // --- SERVER-AUTHORITATIVE ADMIN ROUTES ---
+  // ==========================================
+  app.post("/api/admin/polymarket/resolve", requireAdmin, async (req, res) => {
+    try {
+      const admin = (req as any).user;
+      const { marketId, winningChoice } = req.body;
+      const result = await resolveMarketAndPayout(admin, marketId, winningChoice);
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/admin/coins/update", requireAdmin, async (req, res) => {
+    try {
+      const admin = (req as any).user;
+      const { coinId, updates } = req.body;
+      const result = await adminUpdateCoin(admin, coinId, updates);
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/admin/coins/pump", requireAdmin, async (req, res) => {
+    try {
+      const admin = (req as any).user;
+      const { coinId, multiplier } = req.body;
+      const result = await adminPumpCoin(admin, coinId, Number(multiplier) || 2.0);
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/admin/coins/dump", requireAdmin, async (req, res) => {
+    try {
+      const admin = (req as any).user;
+      const { coinId, dropRatio } = req.body;
+      const result = await adminDumpCoin(admin, coinId, Number(dropRatio) || 0.5);
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/admin/coins/delete", requireAdmin, async (req, res) => {
+    try {
+      const admin = (req as any).user;
+      const { coinId } = req.body;
+      const result = await adminDeleteCoin(admin, coinId);
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/admin/users/grant-balance", requireAdmin, async (req, res) => {
+    try {
+      const admin = (req as any).user;
+      const { targetUserId, mode, currency, amount } = req.body;
+      const result = await adminGrantBalance(admin, targetUserId, mode, currency, Number(amount));
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/admin/users/sanction", requireAdmin, async (req, res) => {
+    try {
+      const admin = (req as any).user;
+      const { targetUserId, sanction, durationMinutes } = req.body;
+      const result = await adminSanctionUser(admin, targetUserId, sanction, durationMinutes);
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/admin/users/update-profile", requireAdmin, async (req, res) => {
+    try {
+      const admin = (req as any).user;
+      const { targetUserId, updates } = req.body;
+      const result = await adminUpdateUserProfile(admin, targetUserId, updates);
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/admin/settings", requireAdmin, async (req, res) => {
+    try {
+      const admin = (req as any).user;
+      const result = await adminUpdateSettings(admin, req.body);
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/admin/bugs/update-status", requireAdmin, async (req, res) => {
+    try {
+      const admin = (req as any).user;
+      const { bugId, status } = req.body;
+      const result = await adminUpdateBugStatus(admin, bugId, status);
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/admin/bugs/delete", requireAdmin, async (req, res) => {
+    try {
+      const admin = (req as any).user;
+      const { bugId } = req.body;
+      const result = await adminDeleteBugReport(admin, bugId);
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/admin/audit-logs", requireAdmin, (_req, res) => {
+    try {
+      res.json({ logs: getAuditLogs() });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/admin/schema-audit", requireAdmin, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const result = await auditAppwriteSchema(user?.jwt);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ==========================================
+  // --- VITE MIDDLEWARE / STATIC ASSETS ---
+  // ==========================================
+  if (process.env.NODE_ENV !== "production") {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), "dist");
+    app.use(express.static(distPath));
+    app.get("*", (_req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
+  }
+
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`PumpForge authoritative game server running on http://localhost:${PORT}`);
+  });
+}
+
+startServer();

@@ -21,6 +21,7 @@ import NotificationsTab from "./components/NotificationsTab";
 import SettingsTab from "./components/SettingsTab";
 import AboutTab from "./components/AboutTab";
 import ProfileTab from "./components/ProfileTab";
+import PublicProfileTab from "./components/PublicProfileTab";
 import { TradesHistoryTab } from "./components/TradesHistoryTab";
 import PolymarketAdminTab from "./components/PolymarketAdminTab";
 import OwnerDashboardTab from "./components/OwnerDashboardTab";
@@ -60,6 +61,19 @@ import {
 import { account, databases, client } from "./appwrite";
 import { ID, Permission, Role } from "appwrite";
 import { useQueryClient } from "@tanstack/react-query";
+import {
+  apiGetCoins,
+  apiTrade,
+  apiClaimDailyReward,
+  apiPrestige,
+  apiPolymarketBet,
+  apiAdminUpdateCoin,
+  apiCreatePredictionMarket,
+  apiAdminDeleteCoin,
+  apiBugReport,
+  apiGetMe,
+  apiUpdateProfile,
+} from "./api/gameClient";
 
 const syncCoinToAppwrite = async (coinId: string, updatedCoin: MemeCoin) => {
   try {
@@ -119,14 +133,10 @@ const syncCoinToAppwrite = async (coinId: string, updatedCoin: MemeCoin) => {
     try {
       await databases.createDocument("pumpforge", "coins", coinId, createPayload, [
         Permission.read(Role.any()),
-        Permission.update(Role.any()),
-        Permission.delete(Role.any()),
       ]);
     } catch (err3) {
       await databases.createDocument("pumpforge", "coins", ID.unique(), createPayload, [
         Permission.read(Role.any()),
-        Permission.update(Role.any()),
-        Permission.delete(Role.any()),
       ]);
     }
   } catch (outerErr) {
@@ -236,11 +246,18 @@ function CoinRouteWrapper({
 }) {
   const { coinId } = useParams();
   const navigate = useNavigate();
-  const [localCoin, setLocalCoin] = useState<MemeCoin | null>(coins.find((c) => c.id === coinId) || null);
+  const matchCoin = (list: MemeCoin[]) =>
+    list.find(
+      (c) =>
+        c.id === coinId ||
+        c.symbol?.toLowerCase() === coinId?.toLowerCase() ||
+        (c as any).slug?.toLowerCase() === coinId?.toLowerCase()
+    );
+  const [localCoin, setLocalCoin] = useState<MemeCoin | null>(matchCoin(coins) || null);
   const [loading, setLoading] = useState(!localCoin);
 
   useEffect(() => {
-    const c = coins.find((c) => c.id === coinId);
+    const c = matchCoin(coins);
     if (c) {
       setLocalCoin((prev) => {
         if (!prev) return c;
@@ -295,8 +312,29 @@ function CoinRouteWrapper({
 
       databases.getDocument("pumpforge", "coins", coinId)
         .then(updateCoinState)
-        .catch(() => {
-          setLoading(false);
+        .catch(async () => {
+          try {
+            const { Query } = await import("appwrite");
+            const slugRes = await databases.listDocuments("pumpforge", "coins", [
+              Query.equal("slug", coinId.toLowerCase()),
+              Query.limit(1),
+            ]);
+            if (slugRes.documents.length > 0) {
+              updateCoinState(slugRes.documents[0]);
+            } else {
+              const symRes = await databases.listDocuments("pumpforge", "coins", [
+                Query.equal("symbol", coinId.toUpperCase()),
+                Query.limit(1),
+              ]);
+              if (symRes.documents.length > 0) {
+                updateCoinState(symRes.documents[0]);
+              } else {
+                setLoading(false);
+              }
+            }
+          } catch {
+            setLoading(false);
+          }
         });
 
       unsub = client.subscribe(`databases.pumpforge.collections.coins.documents.${coinId}`, (response) => {
@@ -879,45 +917,33 @@ export default function App() {
           const finalHandle =
             "@" + finalUsername.toLowerCase().replace(/[^a-z0-9]/g, "");
 
-          // Immediately fetch game data from Appwrite databases if exists or create document
-          let profileDoc: any;
+          // Bootstrap or fetch authoritative user state via secure server endpoint
+          let profileDoc: any = null;
           try {
-            profileDoc = await databases.getDocument(
-              "pumpforge",
-              "users",
-              user.$id,
-            );
-          } catch (err: any) {
-            const isNotFound =
-              err?.code === 404 ||
-              String(err).includes("404") ||
-              err?.message?.includes("not found");
-            if (isNotFound) {
-              console.log(
-                "Creating brand new Appwrite database profile for user:",
-                user.$id,
-              );
-              profileDoc = await databases.createDocument(
+            const meRes = await apiGetMe();
+            if (meRes?.stats) {
+              profileDoc = meRes.stats;
+            }
+          } catch (meErr) {
+            console.warn("apiGetMe initialization notice:", meErr);
+          }
+
+          if (!profileDoc) {
+            try {
+              profileDoc = await databases.getDocument(
                 "pumpforge",
                 "users",
                 user.$id,
-                {
-                  userId: user.$id,
-                  username: finalUsername,
-                  cash: 5000.0, // Initialize new users with the standard 5000 cash balance
-                  coins: 0.0,
-                  gems: 90,
-                  prestigeLevel: 0,
-                  lastDailyRewardClaim: "",
-                },
-                [
-                  Permission.read(Role.any()),
-                  Permission.update(Role.user(user.$id)),
-                  Permission.delete(Role.user(user.$id))
-                ]
               );
-            } else {
-              throw err;
+            } catch (err: any) {
+              profileDoc = {
+                cash: 5000.0,
+                gems: 90,
+                prestigeLevel: 0,
+                totalProfit: 0.0,
+                tradesCount: 0,
+                coinsCreatedCount: 0,
+              };
             }
           }
 
@@ -1076,43 +1102,12 @@ export default function App() {
     };
   }, []);
 
-  // Sync state changes back to Appwrite Database if user stats are fully loaded
+  // Keep stats storage cache up-to-date with current state modifications
   useEffect(() => {
     if (!currentUser || !isStatsLoaded) return;
-
-    const syncToAppwrite = async () => {
-      try {
-        const totalCoinsOwned = holdings.reduce((sum, h) => sum + h.amount, 0);
-        await databases.updateDocument(
-          "pumpforge",
-          "users",
-          currentUser.uid || currentUser.$id,
-          {
-            userId: currentUser.uid || currentUser.$id,
-            username: userStats.username,
-            cash: Number(userStats.cash || 0.0),
-            coins: Number(totalCoinsOwned || 0.0),
-            gems: parseInt(String(userStats.gems || 0), 10),
-            prestigeLevel: parseInt(String(userStats.prestigeLevel || 0), 10),
-            lastDailyRewardClaim: userStats.lastDailyRewardClaim || "",
-          },
-        );
-
-        // Also keep stats storage cache up-to-date with current state modifications
-        safeStorage.setItem("cached_appwrite_stats", JSON.stringify(userStats));
-      } catch (e) {
-        console.error("Failed to sync state to Appwrite databases:", e);
-      }
-    };
-
-    const handler = setTimeout(syncToAppwrite, 1500);
-    return () => clearTimeout(handler);
+    safeStorage.setItem("cached_appwrite_stats", JSON.stringify(userStats));
   }, [
-    userStats.cash,
-    userStats.gems,
-    userStats.prestigeLevel,
-    userStats.lastDailyRewardClaim,
-    holdings,
+    userStats,
     currentUser,
     isStatsLoaded,
   ]);
@@ -1224,39 +1219,50 @@ export default function App() {
 
         let appwriteCoins: MemeCoin[] = [];
         try {
-          const res = await databases.listDocuments("pumpforge", "coins", [
-            Query.limit(100),
-          ]);
-          appwriteCoins = res.documents
-            .filter((d) => !deletedIds.includes(d.$id) && !deletedIds.includes(d.coinId))
-            .map((d) => {
-              const c = { ...d } as any;
-              delete c.$databaseId;
-              delete c.$collectionId;
-              delete c.$permissions;
-              delete c.$updatedAt;
-              if (c.creator === "@zeke" || c.creator === "zeke") {
-                c.creator = "@system";
-              }
-              c.id = d.$id;
-              c.createdAt = d.$createdAt;
+          const srvCoins = await apiGetCoins();
+          if (Array.isArray(srvCoins) && srvCoins.length > 0) {
+            appwriteCoins = srvCoins.filter((d: any) => !deletedIds.includes(d.id) && !deletedIds.includes(d.coinId));
+          }
+        } catch (srvErr) {
+          console.warn("apiGetCoins notice, falling back to direct query:", srvErr);
+        }
 
-              c.supply = c.supply || 1000000;
-              c.marketCap = c.marketCap || Math.floor((c.price || 0.01) * c.supply);
-              c.totalLiquidity = d.total_value || c.totalLiquidity || c.marketCap || 1000;
-              c.volume24h = c.volume24h || 0;
-              c.change24h = c.change24h || 0;
-              c.history =
-                c.history && Array.isArray(c.history) && c.history.length > 0
-                  ? c.history
-                  : [c.price || 0.01];
-              c.avatarEmoji = c.avatarEmoji || "🪙";
-              c.avatarBg = c.avatarBg || "bg-zinc-900 border-zinc-800";
+        if (appwriteCoins.length === 0) {
+          try {
+            const res = await databases.listDocuments("pumpforge", "coins", [
+              Query.limit(100),
+            ]);
+            appwriteCoins = res.documents
+              .filter((d) => !deletedIds.includes(d.$id) && !deletedIds.includes(d.coinId))
+              .map((d) => {
+                const c = { ...d } as any;
+                delete c.$databaseId;
+                delete c.$collectionId;
+                delete c.$permissions;
+                delete c.$updatedAt;
+                if (c.creator === "@zeke" || c.creator === "zeke") {
+                  c.creator = "@system";
+                }
+                c.id = d.$id;
+                c.createdAt = d.$createdAt;
 
-              return c as MemeCoin;
-            });
-        } catch (dbErr) {
-          console.warn("Appwrite coins list failed, using cached/overrides fallback:", dbErr);
+                c.supply = c.supply || 1000000;
+                c.marketCap = c.marketCap || Math.floor((c.price || 0.01) * c.supply);
+                c.totalLiquidity = d.total_value || c.totalLiquidity || c.marketCap || 1000;
+                c.volume24h = c.volume24h || 0;
+                c.change24h = c.change24h || 0;
+                c.history =
+                  c.history && Array.isArray(c.history) && c.history.length > 0
+                    ? c.history
+                    : [c.price || 0.01];
+                c.avatarEmoji = c.avatarEmoji || "🪙";
+                c.avatarBg = c.avatarBg || "bg-zinc-900 border-zinc-800";
+
+                return c as MemeCoin;
+              });
+          } catch (dbErr) {
+            console.warn("Appwrite coins list failed, using cached/overrides fallback:", dbErr);
+          }
         }
 
         setCoins((prev) => {
@@ -1739,63 +1745,34 @@ export default function App() {
   }
 
   const handleClaimDailyReward = async () => {
-    // Daily claim yields $1500 + 25% for each prestige level
-    const mult = 1 + (userStats.prestigeLevel || 0) * 0.25;
-    const cashYield = Math.floor(1500 * mult);
-
     if (!currentUser) {
-      setSignInReason(
-        `claim your $${cashYield.toLocaleString()} daily allowance`,
-      );
+      setSignInReason("claim your daily allowance");
       setShowSignInModal(true);
       return;
     }
 
-    const cachedLastClaimed = localStorage.getItem("pf_last_claimed");
-    let lastClaim = userStats.lastClaimed || cachedLastClaimed;
-    if (!lastClaim && userStats.lastDailyRewardClaim) {
-      lastClaim = userStats.lastDailyRewardClaim;
-    }
-
-    if (lastClaim) {
-      const claimTime = new Date(lastClaim).getTime();
-      const now = new Date().getTime();
-      const dif = 24 * 60 * 60 * 1000 - (now - claimTime);
-      if (dif > 0) {
-        toast.error("Daily reward is not available yet. Please wait.");
-        return;
-      }
-    }
-
-    const nextClaimTime = new Date().toISOString();
-    const nextCash = (userStats.cash || 5000) + cashYield;
-
-    // Cache immediately in local storage for instant sync across refreshes
-    localStorage.setItem("pf_last_claimed", nextClaimTime);
-
     try {
-      if (currentUser.$id) {
-        await databases.updateDocument("pumpforge", "users", currentUser.$id, {
-          cash: Number(nextCash.toFixed(2)),
-          lastClaimed: nextClaimTime,
-        });
+      const res = await apiClaimDailyReward();
+      if (res.userStats) {
+        setUserStats((prev) => ({
+          ...prev,
+          cash: res.userStats.cash,
+          lastClaimed: res.userStats.lastClaimed,
+          prestigeLevel: res.userStats.prestigeLevel,
+        }));
       }
 
-      setUserStats((prev) => ({
-        ...prev,
-        cash: nextCash,
-        lastClaimed: nextClaimTime,
-      }));
+      const nextClaim = res.userStats?.lastClaimed || new Date().toISOString();
+      localStorage.setItem("pf_last_claimed", nextClaim);
 
-      toast.success(`Claimed $${cashYield.toLocaleString()} daily reward!`);
+      toast.success(`Claimed $${(res.rewardCash || 1500).toLocaleString()} daily reward!`);
       onAddNotification(
         "Daily claimed",
-        `Gained $${cashYield.toLocaleString()} cash reward (Includes prestige mult)!`,
+        `Gained $${(res.rewardCash || 1500).toLocaleString()} cash reward (Includes prestige mult)!`,
         "info",
       );
     } catch (e: any) {
-      console.error("Daily claim Appwrite error:", e);
-      toast.error(`Error claiming reward: ${e.message}`);
+      toast.error(e.message || "Daily reward is not available yet.");
     }
   };
 
@@ -1807,24 +1784,24 @@ export default function App() {
     const coin = coins.find((c) => c.id === coinId);
     if (!coin) return;
 
+    if (!currentUser) {
+      setSignInReason(`${type.toLowerCase()} meme-coin assets`);
+      setShowSignInModal(true);
+      return;
+    }
+
     const totalUsdVal = amountCoins * coin.price;
 
-    if (type === "BUY") {
-      if (!currentUser) {
-        setSignInReason("buy meme-coin assets");
-        setShowSignInModal(true);
-        return;
-      }
+    if (type === "BUY" && userStats.cash < totalUsdVal) {
+      triggerToast(
+        "Transaction Failed",
+        "Insufficient cash balance to purchase this asset!",
+        true,
+      );
+      return;
+    }
 
-      if (userStats.cash < totalUsdVal) {
-        triggerToast(
-          "Transaction Failed",
-          "Insufficient cash balance to purchase this asset!",
-          true,
-        );
-        return;
-      }
-    } else {
+    if (type === "SELL") {
       const existingHolding = holdings.find((h) => h.coinId === coinId);
       if (!existingHolding || existingHolding.amount < amountCoins) {
         triggerToast(
@@ -1836,317 +1813,52 @@ export default function App() {
       }
     }
 
-    // Dynamic bonding curve price impact calculation with high surge capacity for meme coin buys
-    const poolLiquidity = Math.max(100, coin.totalLiquidity || 250);
-    const tradeRatio = totalUsdVal / poolLiquidity;
-
-    let finalPrice: number;
-    let newLiquidity: number;
-
-    if (type === "BUY") {
-      // 1. Exponential percentage multiplier for high raise
-      const baseMultiplier = Math.pow(1 + tradeRatio * 1.5, 2.0);
-      
-      // 2. Direct dollar boost so buys easily push prices above $1.00+
-      const dollarLift = (totalUsdVal / 100) * 0.75;
-      
-      const calculatedPrice = coin.price * baseMultiplier + dollarLift;
-      finalPrice = Number(calculatedPrice.toFixed(4));
-      newLiquidity = (coin.totalLiquidity || poolLiquidity) + totalUsdVal;
-    } else {
-      const sellImpact = Math.min(0.85, (totalUsdVal / (poolLiquidity + totalUsdVal)) * 1.2);
-      const dollarDrop = (totalUsdVal / 100) * 0.35;
-      const calculatedPrice = Math.max(0.000001, coin.price * (1 - sellImpact) - dollarDrop);
-      finalPrice = Number(calculatedPrice.toFixed(4));
-      newLiquidity = Math.max(50, (coin.totalLiquidity || poolLiquidity) - totalUsdVal);
-    }
-
-    const newMarketCap = Math.floor((coin.supply || 1000000) * finalPrice);
-    const newVolume24h = (coin.volume24h || 0) + totalUsdVal;
-    const historyArr = Array.isArray(coin.history) && coin.history.length > 0 ? coin.history : [coin.price];
-    const nextHistory = [...historyArr.slice(-14), finalPrice];
-    const firstHistPrice = nextHistory[0] || finalPrice;
-    const newChange24h = Number((((finalPrice - firstHistPrice) / firstHistPrice) * 100).toFixed(2));
-
-    const updatedCoin: MemeCoin = {
-      ...coin,
-      price: finalPrice,
-      marketCap: newMarketCap,
-      totalLiquidity: newLiquidity,
-      volume24h: newVolume24h,
-      change24h: newChange24h,
-      history: nextHistory,
-    };
-
-    // ALWAYS update local coins state immediately and cache
-    setCoins((prev) => {
-      const next = prev.map((c) => (c.id === coinId ? updatedCoin : c));
-      safeStorage.setItem("pumpforge_cached_coins", JSON.stringify(next));
-      return next;
-    });
-
-    // ALWAYS sync updated coin state to Appwrite database
-    syncCoinToAppwrite(coinId, updatedCoin);
-
-    if (type === "BUY") {
-      const existingHolding = holdings.find((h) => h.coinId === coinId);
-      let nextAmount = amountCoins;
-      let nextAvgBuyPrice = coin.price;
-
-      if (existingHolding) {
-        nextAmount = existingHolding.amount + amountCoins;
-        nextAvgBuyPrice =
-          (existingHolding.amount * existingHolding.avgBuyPrice + totalUsdVal) /
-          nextAmount;
+    try {
+      const res = await apiTrade(coinId, type, amountCoins);
+      if (res.userStats) {
+        setUserStats((prev) => ({
+          ...prev,
+          cash: res.userStats.cash,
+          totalProfit: res.userStats.totalProfit,
+          tradesCount: res.userStats.tradesCount,
+        }));
       }
-
-      const nextCash = userStats.cash - totalUsdVal;
-      const nextTradesCount = userStats.tradesCount + 1;
-
-      setHoldings((prev) => {
-        if (existingHolding) {
-          return prev.map((h) =>
-            h.coinId === coinId
-              ? { ...h, amount: nextAmount, avgBuyPrice: nextAvgBuyPrice }
-              : h,
-          );
-        } else {
-          return [
-            ...prev,
-            { coinId, amount: amountCoins, avgBuyPrice: coin.price },
-          ];
-        }
-      });
-
-      setUserStats((prev) => ({
-        ...prev,
-        cash: nextCash,
-        tradesCount: nextTradesCount,
-      }));
-
-      if (currentUser) {
-        try {
-          const uid = currentUser.uid || currentUser.$id;
-
-          await databases.updateDocument("pumpforge", "users", uid, {
-            cash: Number(nextCash.toFixed(2)),
-            tradesCount: nextTradesCount,
-          });
-
-          // Sync holdings in Appwrite
-          try {
-            const { Query } = await import("appwrite");
-            const holdingDocs = await databases.listDocuments("pumpforge", "holdings", [
-              Query.equal("userId", uid),
-              Query.equal("coinId", coinId)
-            ]);
-
-            if (holdingDocs.documents.length > 0) {
-              await databases.updateDocument("pumpforge", "holdings", holdingDocs.documents[0].$id, {
-                tokenAmount: nextAmount
-              });
-            } else {
-              await databases.createDocument("pumpforge", "holdings", ID.unique(), {
-                userId: uid,
-                coinId: coinId,
-                tokenAmount: nextAmount
-              }, [
-                 Permission.read(Role.any()), Permission.update(Role.any()), Permission.delete(Role.any())
-              ]);
-            }
-          } catch (appwriteHoldingsErr) {
-             console.warn("Appwrite holdings update skipped/failed:", appwriteHoldingsErr);
+      if (type === "BUY") {
+        setHoldings((prev) => {
+          const exists = prev.find((h) => h.coinId === coinId);
+          if (exists) {
+            const nextAmt = exists.amount + amountCoins;
+            const nextAvg = (exists.amount * exists.avgBuyPrice + (res.totalCost || totalUsdVal)) / nextAmt;
+            return prev.map((h) => (h.coinId === coinId ? { ...h, amount: nextAmt, avgBuyPrice: nextAvg } : h));
           }
-
-          // Sync coin price update in Appwrite
-          if (coinId) {
-            try {
-              await databases.updateDocument("pumpforge", "coins", coinId, {
-                price: finalPrice,
-                marketCap: newMarketCap,
-                totalLiquidity: newLiquidity,
-                total_value: newLiquidity,
-                volume24h: newVolume24h,
-                change24h: newChange24h,
-                history: nextHistory,
-              });
-            } catch (updateErr) {
-              try {
-                await databases.createDocument("pumpforge", "coins", coinId, {
-                  coinId: coinId,
-                  creator: coin.creator || "@system",
-                  name: coin.name,
-                  symbol: coin.symbol,
-                  description: coin.description || "",
-                  price: finalPrice,
-                  marketCap: newMarketCap,
-                  totalLiquidity: newLiquidity,
-                  total_value: newLiquidity,
-                  volume24h: newVolume24h,
-                  change24h: newChange24h,
-                  history: nextHistory,
-                  avatarEmoji: coin.avatarEmoji || "🪙",
-                  avatarBg: coin.avatarBg || "bg-zinc-900 border-zinc-800",
-                  supply: coin.supply || 1000000,
-                }, [
-                  Permission.read(Role.any()), Permission.update(Role.any()), Permission.delete(Role.any())
-                ]);
-              } catch (createErr) {
-                console.warn("Failed to create missing coin in Appwrite on buy:", createErr);
-              }
-            }
-          }
-
-          // Log trade in Appwrite
-          try {
-            await databases.createDocument("pumpforge", "trades", ID.unique(), {
-              coinId: coinId,
-              userId: uid,
-              userName: userStats.username || "Unknown",
-              coinTicker: coin.symbol || "UNKNOWN",
-              type: "BUY",
-              amount: totalUsdVal,
-              isSimulated: false
-            }, [
-              Permission.read(Role.any()), Permission.update(Role.any()), Permission.delete(Role.any())
-            ]);
-          } catch (tradeErr) {
-            console.warn("Appwrite trade log skipped:", tradeErr);
-          }
-        } catch (e: any) {
-          console.error("Appwrite trade buy error:", e);
-        }
+          return [...prev, { coinId, amount: amountCoins, avgBuyPrice: coin.price }];
+        });
+      } else {
+        setHoldings((prev) => {
+          return prev
+            .map((h) => (h.coinId === coinId ? { ...h, amount: h.amount - amountCoins } : h))
+            .filter((h) => h.amount > 0.000001);
+        });
+      }
+      if (res.coin) {
+        setCoins((prev) =>
+          prev.map((c) => (c.id === coinId ? res.coin : c))
+        );
+        safeStorage.setItem(
+          "pumpforge_cached_coins",
+          JSON.stringify(coins.map((c) => (c.id === coinId ? res.coin : c)))
+        );
       }
 
       onAddNotification(
-        "Buy Order filled",
-        `Successfully bought ${amountCoins.toLocaleString()} *${coin.symbol} for $${totalUsdVal.toFixed(2)}`,
+        type === "BUY" ? "Buy Order filled" : "Sell order filled",
+        type === "BUY"
+          ? `Successfully bought ${amountCoins.toLocaleString()} *${coin.symbol} for $${(res.totalCost || totalUsdVal).toFixed(2)}`
+          : `Sold ${amountCoins.toLocaleString()} *${coin.symbol} for $${(res.netPayout || totalUsdVal).toFixed(2)}`,
         "trade",
       );
-    } else {
-      // SELL
-      const existingHolding = holdings.find((h) => h.coinId === coinId)!;
-      const nextAmount = existingHolding.amount - amountCoins;
-      const profitDelta = amountCoins * (coin.price - existingHolding.avgBuyPrice);
-      const nextCash = userStats.cash + totalUsdVal;
-      const nextProfit = userStats.totalProfit + profitDelta;
-      const nextTradesCount = userStats.tradesCount + 1;
-
-      setHoldings((prev) => {
-        return prev
-          .map((h) => {
-            if (h.coinId === coinId) {
-              return { ...h, amount: h.amount - amountCoins };
-            }
-            return h;
-          })
-          .filter((h) => h.amount > 0);
-      });
-
-      setUserStats((prev) => ({
-        ...prev,
-        cash: nextCash,
-        totalProfit: nextProfit,
-        tradesCount: nextTradesCount,
-      }));
-
-      if (currentUser) {
-        try {
-          const uid = currentUser.uid || currentUser.$id;
-
-          await databases.updateDocument("pumpforge", "users", uid, {
-            cash: Number(nextCash.toFixed(2)),
-            totalProfit: Number(nextProfit.toFixed(4)),
-            tradesCount: nextTradesCount,
-          });
-
-          // Sync holdings in Appwrite
-          try {
-            const { Query } = await import("appwrite");
-            const holdingDocs = await databases.listDocuments("pumpforge", "holdings", [
-              Query.equal("userId", uid),
-              Query.equal("coinId", coinId)
-            ]);
-
-            if (holdingDocs.documents.length > 0) {
-              const holdingId = holdingDocs.documents[0].$id;
-              if (nextAmount <= 0) {
-                await databases.deleteDocument("pumpforge", "holdings", holdingId);
-              } else {
-                await databases.updateDocument("pumpforge", "holdings", holdingId, {
-                  tokenAmount: nextAmount
-                });
-              }
-            }
-          } catch (sellHoldErr) {
-             console.warn("Appwrite sell holdings sync skipped:", sellHoldErr);
-          }
-
-          // Sync coin price update in Appwrite
-          if (coinId) {
-            try {
-              await databases.updateDocument("pumpforge", "coins", coinId, {
-                price: finalPrice,
-                marketCap: newMarketCap,
-                totalLiquidity: newLiquidity,
-                total_value: newLiquidity,
-                volume24h: newVolume24h,
-                change24h: newChange24h,
-                history: nextHistory,
-              });
-            } catch (updateErr) {
-              try {
-                await databases.createDocument("pumpforge", "coins", coinId, {
-                  coinId: coinId,
-                  creator: coin.creator || "@system",
-                  name: coin.name,
-                  symbol: coin.symbol,
-                  description: coin.description || "",
-                  price: finalPrice,
-                  marketCap: newMarketCap,
-                  totalLiquidity: newLiquidity,
-                  total_value: newLiquidity,
-                  volume24h: newVolume24h,
-                  change24h: newChange24h,
-                  history: nextHistory,
-                  avatarEmoji: coin.avatarEmoji || "🪙",
-                  avatarBg: coin.avatarBg || "bg-zinc-900 border-zinc-800",
-                  supply: coin.supply || 1000000,
-                }, [
-                  Permission.read(Role.any()), Permission.update(Role.any()), Permission.delete(Role.any())
-                ]);
-              } catch (createErr) {
-                console.warn("Failed to create missing coin in Appwrite on sell:", createErr);
-              }
-            }
-          }
-
-          // Log trade
-          try {
-            await databases.createDocument("pumpforge", "trades", ID.unique(), {
-              coinId: coinId,
-              userId: uid,
-              userName: userStats.username || "Unknown",
-              coinTicker: coin.symbol || "UNKNOWN",
-              type: "SELL",
-              amount: totalUsdVal,
-              isSimulated: false
-            }, [
-              Permission.read(Role.any()), Permission.update(Role.any()), Permission.delete(Role.any())
-            ]);
-          } catch (tradeErr) {
-            console.warn("Appwrite sell trade log skipped:", tradeErr);
-          }
-        } catch (e: any) {
-          console.error("Appwrite trade sell error:", e);
-        }
-      }
-
-      onAddNotification(
-        "Sell order filled",
-        `Sold ${amountCoins.toLocaleString()} *${coin.symbol} for $${totalUsdVal.toFixed(2)}`,
-        "trade",
-      );
+    } catch (err: any) {
+      triggerToast("Transaction Failed", err.message || "Trade execution failed.", true);
     }
   };
 
@@ -2223,8 +1935,6 @@ export default function App() {
             change24h: 0,
           }, [
             Permission.read(Role.any()),
-            Permission.update(Role.any()),
-            Permission.delete(Role.any())
           ]);
           console.log("Appwrite: Successfully cached coin document.");
         } catch (appwriteCoinErr) {
@@ -2280,18 +1990,10 @@ export default function App() {
 
     if (currentUser) {
       try {
-        // Delete document from Appwrite databases coins collection as requested
-        try {
-          await databases.deleteDocument("pumpforge", "coins", coinId);
-          console.log(`Success deleting coin ${coinId} from Appwrite.`);
-        } catch (appwriteDelErr) {
-          console.warn(
-            `Could not delete coin from Appwrite databases:`,
-            appwriteDelErr,
-          );
-        }
-
-        } catch (e) {}
+        await apiAdminDeleteCoin(coinId);
+      } catch (appwriteDelErr) {
+        console.warn(`apiAdminDeleteCoin notice:`, appwriteDelErr);
+      }
     }
 
     // Immediately filter the local React state array to remove the item from the marketplace list dynamically
@@ -2335,84 +2037,38 @@ export default function App() {
       return;
     }
 
-    const uid = currentUser.$id || currentUser.uid;
-    const nextCash = userStats.cash - amount;
-
-    // 1. Optimistic updates
-    setUserStats((prev) => ({
-      ...prev,
-      cash: nextCash,
-    }));
-
-    const newYesPool = side === "YES" ? (market.yesPool || 0) + amount : (market.yesPool || 0);
-    const newNoPool = side === "NO" ? (market.noPool || 0) + amount : (market.noPool || 0);
-    const totalPool = newYesPool + newNoPool;
-    const newYesPct = totalPool > 0 ? Math.round((newYesPool / totalPool) * 100) : 50;
-
-    setMarkets((prev) =>
-      prev.map((m) =>
-        m.id === marketId
-          ? {
-              ...m,
-              yesPool: newYesPool,
-              noPool: newNoPool,
-              yesPercentage: newYesPct,
-            }
-          : m
-      )
-    );
-
-    setUserBets((prev) => {
-      const updated = {
-        ...prev,
-        [marketId]: { side, amount },
-      };
-      safeStorage.setItem("pumpforge_user_bets", JSON.stringify(updated));
-      return updated;
-    });
-
-    toast.success(`Position confirmed: $${amount.toLocaleString()} on ${side}!`);
-    onAddNotification(
-      "BET PLACED",
-      `Wagered $${amount.toLocaleString()} on ${side} for "${market.question.slice(0, 32)}..."`,
-      "trade"
-    );
-
-    // 2. Persist to Appwrite
     try {
-      const { databases } = await import("./appwrite");
-      const { ID, Permission, Role } = await import("appwrite");
+      const res = await apiPolymarketBet(marketId, side, amount);
+      if (res.userStats) {
+        setUserStats((prev) => ({
+          ...prev,
+          cash: res.userStats.cash,
+        }));
+      }
 
-      // Update user cash
-      await databases.updateDocument("pumpforge", "users", uid, {
-        cash: nextCash,
+      if (res.market) {
+        setMarkets((prev) =>
+          prev.map((m) => (m.id === marketId ? res.market : m))
+        );
+      }
+
+      setUserBets((prev) => {
+        const updated = {
+          ...prev,
+          [marketId]: { side, amount },
+        };
+        safeStorage.setItem("pumpforge_user_bets", JSON.stringify(updated));
+        return updated;
       });
 
-      // Create wager document
-      await databases.createDocument(
-        "pumpforge",
-        "wagers",
-        ID.unique(),
-        {
-          userId: uid,
-          polymarketId: marketId,
-          amount: Number(amount),
-          choice: side,
-          isPaid: false,
-        },
-        [
-          Permission.read(Role.any()),
-          Permission.update(Role.any()),
-        ]
+      toast.success(`Position confirmed: $${amount.toLocaleString()} on ${side}!`);
+      onAddNotification(
+        "BET PLACED",
+        `Wagered $${amount.toLocaleString()} on ${side} for "${market.question.slice(0, 32)}..."`,
+        "trade"
       );
-
-      // Update market pool numbers
-      await databases.updateDocument("pumpforge", "polymarkets", marketId, {
-        poolYes: newYesPool,
-        poolNo: newNoPool,
-      });
-    } catch (e: any) {
-      console.error("Polymarket wager sync error:", e);
+    } catch (err: any) {
+      toast.error(err.message || "Polymarket bet failed.");
     }
   };
 
@@ -2424,63 +2080,24 @@ export default function App() {
     }
 
     try {
-      const uid = currentUser.uid || currentUser.$id;
-      // Fetch latest document state from Appwrite
-      let latestUserDoc;
-      try {
-        latestUserDoc = await databases.getDocument("pumpforge", "users", uid);
-      } catch (err) {
-        console.error(
-          "Appwrite: Could not fetch latest user state for prestige lookup.",
-          err,
-        );
+      const res = await apiPrestige();
+      if (res.userStats) {
+        setUserStats((prev) => ({
+          ...prev,
+          cash: res.userStats.cash,
+          gems: res.userStats.gems,
+          prestigeLevel: res.userStats.prestigeLevel,
+          title: res.userStats.title,
+          totalProfit: res.userStats.totalProfit || 0,
+          tradesCount: res.userStats.tradesCount || 0,
+          coinsCreatedCount: res.userStats.coinsCreatedCount || 0,
+        }));
       }
 
-      const trueCashLevel = latestUserDoc?.cash ?? userStats.cash;
-      const trueGemsLevel = latestUserDoc?.gems ?? userStats.gems;
-      const truePrestigeLevel =
-        latestUserDoc?.prestigeLevel ?? userStats.prestigeLevel;
-
-      if (trueCashLevel < 100000.0) {
-        triggerToast(
-          "Requirement Not Met",
-          `You must accumulate at least $100.00K in Cash Reserves. (Current: $${trueCashLevel.toLocaleString()})`,
-          true,
-        );
-        return;
-      }
-
-      const nextLvl = truePrestigeLevel + 1;
-      const title = PRESTIGE_NAMES[nextLvl - 1] || "Galactic Legend";
-
-      try {
-        await databases.updateDocument("pumpforge", "users", uid, {
-          prestigeLevel: nextLvl,
-          cash: 5000.0,
-          gems: trueGemsLevel + 500,
-          coins: 0.0,
-        });
-        console.log("Appwrite: Prestige Reset saved successfully.");
-      } catch (appwritePrestigeErr) {
-        console.error(
-          "Appwrite: Could not write prestige progress update:",
-          appwritePrestigeErr,
-        );
-      }
-
-      // Reset local holdings cleanly
       setHoldings([]);
 
-      setUserStats((prev) => ({
-        ...prev,
-        cash: 5000.0,
-        gems: trueGemsLevel + 500,
-        prestigeLevel: nextLvl,
-        title,
-        totalProfit: 0,
-        tradesCount: 0,
-        coinsCreatedCount: 0,
-      }));
+      const nextLvl = res.prestigeLevel || 1;
+      const title = res.title || PRESTIGE_NAMES[nextLvl - 1] || "Galactic Legend";
 
       onAddNotification(
         "PRESTIGE ACQUIRED",
@@ -2491,15 +2108,14 @@ export default function App() {
         "Prestige Completed!",
         `Leveled up to Prestige Level ${nextLvl}! Your cash and holdings have reset with bonuses.`,
       );
-    } catch (e) {
+    } catch (e: any) {
       console.error("Critical Prestige system execution error:", e);
       triggerToast(
         "Prestige Error",
-        "Failed to complete prestige pipeline successfully.",
+        e.message || "Failed to complete prestige pipeline successfully.",
         true,
       );
     } finally {
-      // Completely close the prestige modal context cleanly without freezing the screen layout
       setShowPrestigeModal(false);
     }
   };
@@ -2532,28 +2148,12 @@ export default function App() {
       }
     }
 
-    const bugId = `bug-${Date.now()}`;
-    const newBug = {
-      id: bugId,
-      title,
-      description,
-      category,
-      userId: currentUser.uid || currentUser.$id,
-      userHandle: userStats.handle,
-      userName:
-        currentUser.displayName || userStats.username || "Appwrite Player",
-      userEmail: currentUser.email || "",
-      reportedBy: `${currentUser.displayName || userStats.username || "Appwrite Player"} (${currentUser.email || "No Email"}) [${userStats.handle || "@guest"}]`,
-      timestamp: new Date().toISOString(),
-      status: "open",
-    };
-
     try {
-      const { databases } = await import("./appwrite");
-      const { ID } = await import("appwrite");
-      await databases.createDocument("pumpforge", "bugs", ID.unique(), newBug);
-    } catch (e) {
-      console.error("Appwrite bug report failed", e);
+      await apiBugReport(title, description);
+    } catch (e: any) {
+      console.error("Bug report submission error:", e);
+      triggerToast("Error", e?.message || "Failed to submit bug report.", true);
+      return false;
     }
     
     safeStorage.setItem(rateLimitKey, Date.now().toString());
@@ -2570,21 +2170,16 @@ export default function App() {
       const clone = { ...prev };
       updater(clone);
 
-      if (currentUser) {
-         import("./appwrite").then(({ databases }) => {
-            databases.updateDocument("pumpforge", "users", currentUser.uid || currentUser.$id, {
-               cash: Number(clone.cash.toFixed(2)),
-               gems: clone.gems,
-               totalProfit: clone.totalProfit,
-               tradesCount: clone.tradesCount,
-               prestigeLevel: clone.prestigeLevel,
-               title: clone.title,
-               username: clone.username,
-               handle: clone.handle,
-               nameColor: clone.nameColor,
-               isPremium: clone.isPremium,
-            }).catch(e => console.error("Appwrite stats auto-save err:", e));
-         });
+      safeStorage.setItem("cached_appwrite_stats", JSON.stringify(clone));
+
+      if (currentUser && !currentUser.isGuest) {
+        apiUpdateProfile({
+          title: clone.title,
+          username: clone.username,
+          handle: clone.handle,
+          nameColor: clone.nameColor,
+          isPremium: clone.isPremium,
+        }).catch(e => console.warn("Backend cosmetic profile sync notice:", e));
       }
 
       return clone;
@@ -2730,34 +2325,23 @@ export default function App() {
 
   const handleCreatePredictionLocal = async (marketData: any) => {
     try {
-      const { databases } = await import("./appwrite");
-      const { ID, Permission, Role } = await import("appwrite");
-
       const isoDate = marketData.endDateIso || parseDateToIso(marketData.endTime);
-      const combinedQuestion = marketData.description
-        ? `${marketData.question} --- ${marketData.description}`
-        : marketData.question;
+      const res = await apiCreatePredictionMarket({
+        question: marketData.question,
+        description: marketData.description,
+        endDate: isoDate,
+      });
 
-      const doc = await databases.createDocument(
-        "pumpforge",
-        "polymarkets",
-        ID.unique(),
-        {
-          question: combinedQuestion,
-          endDate: isoDate,
-          status: "active",
-          poolYes: 0,
-          poolNo: 0,
-          winningOutcome: null,
-        },
-        [
-          Permission.read(Role.any()),
-          Permission.update(Role.any()),
-        ]
-      );
+      if (res && res.userStats && res.userStats.cash !== undefined) {
+        setUserStats((prev) => ({
+          ...prev,
+          cash: res.userStats.cash,
+        }));
+      }
 
+      const marketDoc = res.market;
       const newMarket: PredictionMarket = {
-        id: doc.$id,
+        id: marketDoc.id,
         question: marketData.question,
         description: marketData.description || "",
         yesPool: 0,
@@ -2767,8 +2351,8 @@ export default function App() {
         userBetSide: null,
         resolved: false,
         resolvedOutcome: null,
-        endTime: isoDate,
-        endDateIso: isoDate,
+        endTime: marketDoc.endDate,
+        endDateIso: marketDoc.endDate,
         category: "general",
       };
 
@@ -2781,24 +2365,8 @@ export default function App() {
         "info"
       );
     } catch (err: any) {
-      console.error("Error creating polymarket in Appwrite:", err);
-      const localId = "m_" + Date.now();
-      const fallbackMarket: PredictionMarket = {
-        id: localId,
-        question: marketData.question,
-        description: marketData.description || "",
-        yesPool: 0,
-        noPool: 0,
-        yesPercentage: 50,
-        userBetAmount: 0,
-        userBetSide: null,
-        resolved: false,
-        resolvedOutcome: null,
-        endTime: marketData.endTime || "TBD",
-        category: "general",
-      };
-      setMarkets((prev) => [fallbackMarket, ...prev]);
-      toast.success("Prediction market created locally.");
+      console.error("Error creating polymarket:", err);
+      toast.error(err.message || "Failed to create prediction market.");
     }
   };
 
@@ -2863,6 +2431,7 @@ export default function App() {
         coins={coins}
         holdings={holdings}
         onOpenBugReportModal={() => setShowBugReportModal(true)}
+        onUpdateStats={handleUpdateStats}
       />
 
       <main className="flex-1 min-w-0 p-5 md:p-8 max-w-7xl mx-auto flex flex-col gap-6 overflow-x-hidden relative z-10">
@@ -3256,6 +2825,19 @@ export default function App() {
                 liveTrades={liveTrades}
                 onUpdateStats={handleUpdateStats}
                 onOpenPrestigeModal={() => setShowPrestigeModal(true)}
+              />
+            }
+          />
+          <Route path="/user/:identifier" element={<PublicProfileTab />} />
+          <Route
+            path="/:coinId"
+            element={
+              <CoinRouteWrapper
+                coins={coins}
+                userStats={userStats}
+                currentUser={currentUser}
+                holdings={holdings}
+                onTradeAction={tradeAction}
               />
             }
           />

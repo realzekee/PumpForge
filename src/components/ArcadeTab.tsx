@@ -33,6 +33,7 @@ interface ArcadeTabProps {
 type MenuGameType = "coinflip" | "slots" | "mines" | "dice" | "tower";
 
 import { useAppContext } from "../context/AppContext";
+import { apiArcadeWager } from "../api/gameClient";
 
 export default function ArcadeTab({
   userStats,
@@ -176,7 +177,7 @@ export default function ArcadeTab({
   // --- Game Executions ---
 
   // 1. Coinflip
-  const playCoinflip = () => {
+  const playCoinflip = async () => {
     if (userStats.cash < coinBet) {
       triggerLocalNotice(
         "Insufficient Funds",
@@ -190,49 +191,46 @@ export default function ArcadeTab({
     setCoinOutcome(null);
     setCoinResultMsg("");
 
-    onUpdateStats((stats) => {
-      stats.cash -= coinBet;
-    });
+    try {
+      const res = await apiArcadeWager("coinflip", "play", {
+        bet: coinBet,
+        side: coinSide,
+      });
 
-    setTimeout(() => {
-      const rigMode = adminSettings.arcadeRigMode || (adminSettings.isCasinoRigged ? "win" : "fair");
-      let resultSide: "heads" | "tails";
-      if (rigMode === "win") {
-        resultSide = coinSide;
-      } else if (rigMode === "lose") {
-        resultSide = coinSide === "heads" ? "tails" : "heads";
-      } else {
-        resultSide = Math.random() < 0.5 ? "heads" : "tails";
-      }
-      const userWon = resultSide === coinSide;
+      setTimeout(() => {
+        setCoinOutcome(res.outcome);
+        setCoinIsFlapping(false);
 
-      setCoinOutcome(resultSide);
+        if (res.userStats) {
+          onUpdateStats((stats) => {
+            stats.cash = res.userStats.cash;
+            stats.totalProfit = res.userStats.totalProfit;
+          });
+        }
+
+        if (res.won) {
+          setCoinResultMsg(
+            `🎉 YOU WON! Received $${res.payout.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}!`,
+          );
+          onAddNotification(
+            "Winner Coinflip",
+            `Won $${res.payout.toLocaleString("en-US")} on ${coinSide.toUpperCase()}!`,
+            "info",
+          );
+        } else {
+          setCoinResultMsg(
+            `😓 Unfortunate, it land on ${res.outcome.toUpperCase()}. You lost your bet.`,
+          );
+        }
+      }, 1200);
+    } catch (err: any) {
       setCoinIsFlapping(false);
-
-      if (userWon) {
-        const reward = Math.floor(coinBet * 1.9);
-        onUpdateStats((stats) => {
-          stats.cash += reward;
-          stats.totalProfit += reward - coinBet;
-        });
-        setCoinResultMsg(
-          `🎉 YOU WON! Received $${reward.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}!`,
-        );
-        onAddNotification(
-          "Winner Coinflip",
-          `Won $${reward.toLocaleString("en-US")} on ${coinSide.toUpperCase()}!`,
-          "info",
-        );
-      } else {
-        setCoinResultMsg(
-          `😓 Unfortunate, it land on ${resultSide.toUpperCase()}. You lost your bet.`,
-        );
-      }
-    }, 1200);
+      triggerLocalNotice("Coinflip Error", err.message || "Failed to place bet.", true);
+    }
   };
 
   // 2. Slots
-  const playSlots = () => {
+  const playSlots = async () => {
     if (userStats.cash < slotBet) {
       triggerLocalNotice(
         "Insufficient Funds",
@@ -245,83 +243,57 @@ export default function ArcadeTab({
     setSlotIsSpinning(true);
     setSlotResultMsg("");
 
-    onUpdateStats((stats) => {
-      stats.cash -= slotBet;
-    });
+    try {
+      const res = await apiArcadeWager("slots", "play", { bet: slotBet });
 
-    let spinCounter = 0;
-    const interval = setInterval(() => {
-      setSlotReels([
-        slotEmojis[Math.floor(Math.random() * slotEmojis.length)],
-        slotEmojis[Math.floor(Math.random() * slotEmojis.length)],
-        slotEmojis[Math.floor(Math.random() * slotEmojis.length)],
-      ]);
-      spinCounter++;
-      if (spinCounter >= 8) {
-        clearInterval(interval);
-        finalizeSlots();
-      }
-    }, 100);
-  };
+      let spinCounter = 0;
+      const interval = setInterval(() => {
+        setSlotReels([
+          slotEmojis[Math.floor(Math.random() * slotEmojis.length)],
+          slotEmojis[Math.floor(Math.random() * slotEmojis.length)],
+          slotEmojis[Math.floor(Math.random() * slotEmojis.length)],
+        ]);
+        spinCounter++;
+        if (spinCounter >= 8) {
+          clearInterval(interval);
+          setSlotReels(res.reels);
+          setSlotIsSpinning(false);
 
-  const finalizeSlots = () => {
-    const rigMode = adminSettings.arcadeRigMode || (adminSettings.isCasinoRigged ? "win" : "fair");
-    let finalReels: string[];
-    if (rigMode === "win") {
-      finalReels = ["7️⃣", "7️⃣", "7️⃣"];
-    } else if (rigMode === "lose") {
-      finalReels = ["🍒", "🍋", "🔔"];
-    } else {
-      finalReels = [
-        slotEmojis[Math.floor(Math.random() * slotEmojis.length)],
-        slotEmojis[Math.floor(Math.random() * slotEmojis.length)],
-        slotEmojis[Math.floor(Math.random() * slotEmojis.length)],
-      ];
-    }
+          if (res.userStats) {
+            onUpdateStats((stats) => {
+              stats.cash = res.userStats.cash;
+              stats.totalProfit = res.userStats.totalProfit;
+            });
+          }
 
-    setSlotReels(finalReels);
-    setSlotIsSpinning(false);
-
-    const matchCount = new Set(finalReels).size;
-
-    if (matchCount === 1) {
-      // 3 of same
-      let multiplier = 3;
-      if (finalReels[0] === "7️⃣") multiplier = 6;
-      else if (finalReels[0] === "💎") multiplier = 4;
-
-      const payout = slotBet * multiplier;
-      onUpdateStats((stats) => {
-        stats.cash += payout;
-        stats.totalProfit += payout - slotBet;
-      });
-      setSlotResultMsg(
-        `🎰 TRIPLE MATCH jackpot! You got three ${finalReels[0]}! Payout: $${payout.toLocaleString()}`,
-      );
-      onAddNotification(
-        "JACKPOT SLOT",
-        `Hit triple ${finalReels[0]} for $${payout} return!`,
-        "info",
-      );
-    } else if (matchCount === 2) {
-      // 2 of same (reduction to 0.95x to ensure consistent house edge while rewarding small wins)
-      const payout = Math.floor(slotBet * 0.95);
-      onUpdateStats((stats) => {
-        stats.cash += payout;
-        stats.totalProfit += payout - slotBet;
-      });
-      setSlotResultMsg(
-        `✨ Double Match! Two of the same emojis matched. Payout: $${payout.toLocaleString()}`,
-      );
-    } else {
-      setSlotResultMsg(
-        "❌ No matches this spin. Try again, the jackpot is close!",
-      );
+          if (res.matchCount === 1) {
+            setSlotResultMsg(
+              `🎰 TRIPLE MATCH jackpot! You got three ${res.reels[0]}! Payout: $${res.payout.toLocaleString()}`,
+            );
+            onAddNotification(
+              "JACKPOT SLOT",
+              `Hit triple ${res.reels[0]} for $${res.payout} return!`,
+              "info",
+            );
+          } else if (res.matchCount === 2) {
+            setSlotResultMsg(
+              `✨ Double Match! Two of the same emojis matched. Payout: $${res.payout.toLocaleString()}`,
+            );
+          } else {
+            setSlotResultMsg(
+              "❌ No matches this spin. Try again, the jackpot is close!",
+            );
+          }
+        }
+      }, 100);
+    } catch (err: any) {
+      setSlotIsSpinning(false);
+      triggerLocalNotice("Slots Error", err.message || "Failed to spin slots.", true);
     }
   };
 
-  // 3. Mines
-  const startMinesGame = () => {
+  // 3. Mines (Server-Side Secrets)
+  const startMinesGame = async () => {
     if (userStats.cash < minesBet) {
       triggerLocalNotice(
         "Insufficient Funds",
@@ -331,107 +303,105 @@ export default function ArcadeTab({
       return;
     }
 
-    onUpdateStats((stats) => {
-      stats.cash -= minesBet;
-    });
+    try {
+      const res = await apiArcadeWager("mines", "start", {
+        bet: minesBet,
+        minesCount,
+      });
 
-    // Populate random mines secret mapping
-    const map = Array(25).fill(false);
-    let count = 0;
-    while (count < minesCount) {
-      const idx = Math.floor(Math.random() * 25);
-      if (!map[idx]) {
-        map[idx] = true;
-        count++;
+      if (res.userStats) {
+        onUpdateStats((stats) => {
+          stats.cash = res.userStats.cash;
+        });
       }
-    }
 
-    setMinesSecretMap(map);
-    setMinesGrid(Array(25).fill("hidden"));
-    setMinesActive(true);
-    setMinesSafeSelections(0);
-    setMinesMultiplier(1);
+      setMinesGrid(Array(25).fill("hidden"));
+      setMinesActive(true);
+      setMinesSafeSelections(0);
+      setMinesMultiplier(1);
+    } catch (err: any) {
+      triggerLocalNotice("Mines Error", err.message || "Could not start Mines game.", true);
+    }
   };
 
-  const handleMinesCellClick = (cellIdx: number) => {
+  const handleMinesCellClick = async (cellIdx: number) => {
     if (!minesActive || minesGrid[cellIdx] !== "hidden") return;
 
-    const rigMode = adminSettings.arcadeRigMode || (adminSettings.isCasinoRigged ? "win" : "fair");
-    let isMine = minesSecretMap[cellIdx];
-    const nextGrid = [...minesGrid];
+    try {
+      const res = await apiArcadeWager("mines", "step", { cellIndex: cellIdx });
+      const nextGrid = [...minesGrid];
 
-    if (rigMode === "win" && isMine) {
-      // Rigged to WIN: player never hits a mine! Swap mine with an unclicked safe tile
-      const unclickedSafeIdx = minesSecretMap.findIndex(
-        (m, idx) => !m && nextGrid[idx] === "hidden" && idx !== cellIdx
-      );
-      if (unclickedSafeIdx !== -1) {
-        const updatedMap = [...minesSecretMap];
-        updatedMap[cellIdx] = false;
-        updatedMap[unclickedSafeIdx] = true;
-        setMinesSecretMap(updatedMap);
-        isMine = false;
+      if (res.hitMine) {
+        nextGrid[cellIdx] = "mine";
+        if (res.secretMinesMap && Array.isArray(res.secretMinesMap)) {
+          res.secretMinesMap.forEach((mine: boolean, idx: number) => {
+            if (mine) nextGrid[idx] = "mine";
+          });
+        }
+        setMinesGrid(nextGrid);
+        setMinesActive(false);
+        triggerLocalNotice(
+          "KABOOM! Mine Hit!",
+          "You clicked on a direct crash mine! Bet lost.",
+          true,
+        );
       } else {
-        isMine = false;
-      }
-    } else if (rigMode === "lose") {
-      // Rigged to LOSE: instant mine explosion on click!
-      isMine = true;
-    }
+        nextGrid[cellIdx] = "revealed-gem";
+        setMinesSafeSelections(res.safeSelections);
+        setMinesGrid(nextGrid);
+        setMinesMultiplier(res.multiplier);
 
-    if (isMine) {
-      // Exploded! Reveal all mines and stop game
-      nextGrid[cellIdx] = "mine";
-      minesSecretMap.forEach((mine, idx) => {
-        if (mine) nextGrid[idx] = "mine";
+        if (res.clearedAll) {
+          if (res.userStats) {
+            onUpdateStats((stats) => {
+              stats.cash = res.userStats.cash;
+              stats.totalProfit = res.userStats.totalProfit;
+            });
+          }
+          if (res.secretMinesMap) {
+            const revealed = nextGrid.map((cell, idx) =>
+              res.secretMinesMap[idx] ? "mine" : "revealed-gem"
+            );
+            setMinesGrid(revealed);
+          }
+          setMinesActive(false);
+          triggerLocalNotice(
+            "Mines Completely Cleared!",
+            `You cleared all safe tiles! Cashed out $${res.winnings.toLocaleString()} at ${res.multiplier}x!`,
+          );
+        }
+      }
+    } catch (err: any) {
+      triggerLocalNotice("Mines Error", err.message || "Failed tile step.", true);
+    }
+  };
+
+  const minesCashout = async (overrideMult?: number) => {
+    if (!minesActive) return;
+
+    try {
+      const res = await apiArcadeWager("mines", "cashout", {});
+      if (res.userStats) {
+        onUpdateStats((stats) => {
+          stats.cash = res.userStats.cash;
+          stats.totalProfit = res.userStats.totalProfit;
+        });
+      }
+
+      const nextGrid = minesGrid.map((cell, idx) => {
+        if (res.secretMinesMap && res.secretMinesMap[idx]) return "mine";
+        return cell === "revealed-gem" ? "revealed-gem" : "gem";
       });
       setMinesGrid(nextGrid);
       setMinesActive(false);
+
       triggerLocalNotice(
-        "KABOOM! Mine Hit!",
-        "You clicked on a direct crash mine! Bet lost.",
-        true,
+        "Mines Cashout!",
+        `You successfully cashed out $${res.winnings.toLocaleString()} at ${res.multiplier}x multiplier!`,
       );
-    } else {
-      // Safe selection
-      nextGrid[cellIdx] = "revealed-gem";
-      const nextSafeCount = minesSafeSelections + 1;
-      setMinesSafeSelections(nextSafeCount);
-      setMinesGrid(nextGrid);
-
-      const nextMult = getMinesMultiplier(minesCount, nextSafeCount);
-      setMinesMultiplier(nextMult);
-
-      if (nextSafeCount === 25 - minesCount) {
-        // Safe cleared completely! Auto Cashout
-        minesCashout(nextMult);
-      }
+    } catch (err: any) {
+      triggerLocalNotice("Mines Error", err.message || "Could not cash out.", true);
     }
-  };
-
-  const minesCashout = (overrideMult?: number) => {
-    if (!minesActive) return;
-
-    const currentMult = overrideMult || minesMultiplier;
-    const winnings = Math.floor(minesBet * currentMult);
-
-    onUpdateStats((stats) => {
-      stats.cash += winnings;
-      stats.totalProfit += winnings - minesBet;
-    });
-
-    // Reveal secret board as helpful feedback
-    const nextGrid = minesGrid.map((cell, idx) => {
-      if (minesSecretMap[idx]) return "mine";
-      return cell === "revealed-gem" ? "revealed-gem" : "gem";
-    });
-    setMinesGrid(nextGrid);
-    setMinesActive(false);
-
-    triggerLocalNotice(
-      "Mines Cashout!",
-      `You successfully cashed out $${winnings.toLocaleString()} at ${currentMult}x multiplier!`,
-    );
   };
 
   // 4. Dice Betting (1-6 choice with amazing 3D animation rollout!)
@@ -483,7 +453,8 @@ export default function ArcadeTab({
     );
   };
 
-  const playDiceRoll = () => {
+  // 4. Dice Betting (Server-Authoritative Roll)
+  const playDiceRoll = async () => {
     if (userStats.cash < diceBet) {
       triggerLocalNotice(
         "Insufficient Funds",
@@ -498,61 +469,56 @@ export default function ArcadeTab({
     setDiceResultVal(null);
     setDiceResultMsg("");
 
-    onUpdateStats((stats) => {
-      stats.cash -= diceBet;
-    });
+    try {
+      const res = await apiArcadeWager("dice", "play", {
+        bet: diceBet,
+        selectedNum: diceSelectedNum,
+      });
 
-    const rigMode = adminSettings.arcadeRigMode || (adminSettings.isCasinoRigged ? "win" : "fair");
-    let landedFace: number;
-    if (rigMode === "win") {
-      landedFace = diceSelectedNum; // Guaranteed win
-    } else if (rigMode === "lose") {
-      landedFace = (diceSelectedNum % 6) + 1; // Guaranteed loss
-    } else {
-      landedFace = Math.floor(Math.random() * 6) + 1;
-    }
+      const landedFace = res.landedFace;
+      const baseRot = getFaceRotation(landedFace);
+      const spinsX = (Math.floor(Math.random() * 2) + 3) * 360;
+      const spinsY = (Math.floor(Math.random() * 2) + 3) * 360;
+      const nextRotX = diceRotX + spinsX + baseRot.x;
+      const nextRotY = diceRotY + spinsY + baseRot.y;
 
-    // Calculate rotation: spin dynamically!
-    const baseRot = getFaceRotation(landedFace);
-    const spinsX = (Math.floor(Math.random() * 2) + 3) * 360; // 1080 or 1440
-    const spinsY = (Math.floor(Math.random() * 2) + 3) * 360;
+      setDiceRotX(nextRotX);
+      setDiceRotY(nextRotY);
 
-    // Accumulate so it rotates in one fluid forward direction
-    const nextRotX = diceRotX + spinsX + baseRot.x;
-    const nextRotY = diceRotY + spinsY + baseRot.y;
+      setTimeout(() => {
+        setDiceIsRollingState(false);
+        setDiceResultVal(landedFace);
 
-    setDiceRotX(nextRotX);
-    setDiceRotY(nextRotY);
+        if (res.userStats) {
+          onUpdateStats((stats) => {
+            stats.cash = res.userStats.cash;
+            stats.totalProfit = res.userStats.totalProfit;
+          });
+        }
 
-    setTimeout(() => {
+        if (res.won) {
+          setDiceResultMsg(
+            `Won $${(res.payout - diceBet).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} on ${landedFace}`,
+          );
+          onAddNotification(
+            "Winner Dice Roll",
+            `Hit ${landedFace} on Dice Roll for 3x!`,
+            "info",
+          );
+        } else {
+          setDiceResultMsg(
+            `Lost $${diceBet.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} on ${landedFace}`,
+          );
+        }
+      }, 1200);
+    } catch (err: any) {
       setDiceIsRollingState(false);
-      setDiceResultVal(landedFace);
-
-      const won = landedFace === diceSelectedNum;
-      if (won) {
-        const payout = Math.floor(diceBet * 3);
-        onUpdateStats((stats) => {
-          stats.cash += payout;
-          stats.totalProfit += payout - diceBet;
-        });
-        setDiceResultMsg(
-          `Won $${(payout - diceBet).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} on ${landedFace}`,
-        );
-        onAddNotification(
-          "Winner Dice Roll",
-          `Hit ${landedFace} on Dice Roll for 3x!`,
-          "info",
-        );
-      } else {
-        setDiceResultMsg(
-          `Lost $${diceBet.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} on ${landedFace}`,
-        );
-      }
-    }, 1200);
+      triggerLocalNotice("Dice Error", err.message || "Failed dice roll.", true);
+    }
   };
 
-  // 5. Tower Climb
-  const startTowerGame = () => {
+  // 5. Tower Climb (Server-Authoritative Grid)
+  const startTowerGame = async () => {
     if (userStats.cash < towerBet) {
       triggerLocalNotice(
         "Insufficient Funds",
@@ -562,87 +528,75 @@ export default function ArcadeTab({
       return;
     }
 
-    onUpdateStats((stats) => {
-      stats.cash -= towerBet;
-    });
+    try {
+      const res = await apiArcadeWager("tower", "start", {
+        bet: towerBet,
+        difficulty: towerDifficulty,
+      });
 
-    let colsCount = 3;
-    let safeCount = 2;
-    if (towerDifficulty === "medium") {
-      colsCount = 2;
-      safeCount = 1;
-    } else if (towerDifficulty === "hard") {
-      colsCount = 3;
-      safeCount = 1;
-    }
-
-    const nextGrid: number[][] = [];
-    for (let l = 0; l < 10; l++) {
-      const arr = Array(colsCount).fill(0); // initialize all with 0 (mine)
-      const safeIndices: number[] = [];
-      while (safeIndices.length < safeCount) {
-        const randIdx = Math.floor(Math.random() * colsCount);
-        if (!safeIndices.includes(randIdx)) {
-          safeIndices.push(randIdx);
-          arr[randIdx] = 1; // Safe block
-        }
+      if (res.userStats) {
+        onUpdateStats((stats) => {
+          stats.cash = res.userStats.cash;
+        });
       }
-      nextGrid.push(arr);
-    }
 
-    setTowerGrid(nextGrid);
-    setTowerUserHistory([]);
-    setTowerLevel(0);
-    setTowerReveal(false);
-    setTowerActive(true);
+      setTowerUserHistory([]);
+      setTowerLevel(0);
+      setTowerReveal(false);
+      setTowerActive(true);
+    } catch (err: any) {
+      triggerLocalNotice("Tower Error", err.message || "Could not start Tower climb.", true);
+    }
   };
 
-  const handleTowerStep = (colIndex: number) => {
+  const handleTowerStep = async (colIndex: number) => {
     if (!towerActive) return;
 
-    const rigMode = adminSettings.arcadeRigMode || (adminSettings.isCasinoRigged ? "win" : "fair");
-    const rowAnswers = [...towerGrid[towerLevel]];
+    try {
+      const res = await apiArcadeWager("tower", "step", { colIndex });
+      const nextHistory = [...towerUserHistory, colIndex];
+      setTowerUserHistory(nextHistory);
 
-    if (rigMode === "win") {
-      rowAnswers[colIndex] = 1; // Guaranteed safe step
-      const updatedGrid = [...towerGrid];
-      updatedGrid[towerLevel] = rowAnswers;
-      setTowerGrid(updatedGrid);
-    } else if (rigMode === "lose") {
-      rowAnswers[colIndex] = 0; // Guaranteed boom skull
-      const updatedGrid = [...towerGrid];
-      updatedGrid[towerLevel] = rowAnswers;
-      setTowerGrid(updatedGrid);
-    }
+      if (res.hitSkull) {
+        setTowerActive(false);
+        setTowerReveal(true);
+        if (res.secretGrid) {
+          setTowerGrid(res.secretGrid);
+        }
+        setShowTowerResultModal({
+          success: false,
+          title: "TOWER OVER!",
+          message: "💀 You hit a trap block. Your climb bet has been lost.",
+        });
+        triggerLocalNotice(
+          "TOWER OVER!",
+          "💀 You hit a trap block. Your climb bet has been lost.",
+          true,
+        );
+      } else {
+        setTowerLevel(res.level);
 
-    const choiceValue = rowAnswers[colIndex];
-
-    const nextHistory = [...towerUserHistory, colIndex];
-    setTowerUserHistory(nextHistory);
-
-    if (choiceValue === 0) {
-      // Boom skull
-      setTowerActive(false);
-      setTowerReveal(true);
-      setShowTowerResultModal({
-        success: false,
-        title: "TOWER OVER!",
-        message: "💀 You hit a trap block. Your climb bet has been lost.",
-      });
-      triggerLocalNotice(
-        "TOWER OVER!",
-        "💀 You hit a trap block. Your climb bet has been lost.",
-        true,
-      );
-    } else {
-      // Safe step upward!
-      const nextLvl = towerLevel + 1;
-      setTowerLevel(nextLvl);
-
-      if (nextLvl === 10) {
-        // Grand tower cleared completely
-        towerCashout(nextLvl);
+        if (res.clearedTop) {
+          if (res.userStats) {
+            onUpdateStats((stats) => {
+              stats.cash = res.userStats.cash;
+              stats.totalProfit = res.userStats.totalProfit;
+            });
+          }
+          if (res.secretGrid) setTowerGrid(res.secretGrid);
+          setTowerActive(false);
+          setTowerReveal(true);
+          setShowTowerResultModal({
+            success: true,
+            title: "CONGRATULATIONS!",
+            message: "🗼 GRAND CLEAR! You conquered the tower and cashed out floor 10 successfully!",
+            payout: res.winnings,
+            multiplier: res.multiplier,
+          });
+        }
       }
+    } catch (err: any) {
+      triggerLocalNotice("Tower Error", err.message || "Tower step error.", true);
     }
   };
 
@@ -667,41 +621,40 @@ export default function ArcadeTab({
     }
   };
 
-  const towerCashout = (overrideLvl?: number) => {
+  const towerCashout = async () => {
     if (!towerActive) return;
 
-    const lvl = overrideLvl !== undefined ? overrideLvl : towerLevel;
-    const mult = getTowerMultiplier(lvl);
-    const payout = Math.floor(towerBet * mult);
+    try {
+      const res = await apiArcadeWager("tower", "cashout", {});
+      if (res.userStats) {
+        onUpdateStats((stats) => {
+          stats.cash = res.userStats.cash;
+          stats.totalProfit = res.userStats.totalProfit;
+        });
+      }
 
-    onUpdateStats((stats) => {
-      stats.cash += payout;
-      stats.totalProfit += payout - towerBet;
-    });
+      setTowerActive(false);
+      setTowerReveal(true);
+      if (res.secretGrid) setTowerGrid(res.secretGrid);
 
-    setTowerActive(false);
-    setTowerReveal(true);
-    setShowTowerResultModal({
-      success: true,
-      title: lvl === 10 ? "CONGRATULATIONS!" : "TOWER CLAIMED!",
-      message:
-        lvl === 10
-          ? "🗼 GRAND CLEAR! You conquered the tower and cashed out floor 10 successfully!"
-          : `🗼 Cashed out floor ${lvl} successfully!`,
-      payout,
-      multiplier: mult,
-    });
-    triggerLocalNotice(
-      "Tower Claim Complete!",
-      `🗼 Cashed out floor ${lvl} successfully for a return of $${payout.toLocaleString()} (${mult}x)!`,
-    );
+      setShowTowerResultModal({
+        success: true,
+        title: "TOWER CLAIMED!",
+        message: `🗼 Cashed out successfully for $${res.winnings.toLocaleString()} (${res.multiplier}x)!`,
+        payout: res.winnings,
+        multiplier: res.multiplier,
+      });
+      triggerLocalNotice(
+        "Tower Claim Complete!",
+        `🗼 Cashed out successfully for a return of $${res.winnings.toLocaleString()} (${res.multiplier}x)!`,
+      );
+    } catch (err: any) {
+      triggerLocalNotice("Tower Error", err.message || "Cashout failed.", true);
+    }
   };
 
   const abortTowerBet = () => {
     if (!towerActive || towerLevel > 0) return;
-    onUpdateStats((stats) => {
-      stats.cash += towerBet;
-    });
     setTowerActive(false);
     setTowerReveal(false);
   };

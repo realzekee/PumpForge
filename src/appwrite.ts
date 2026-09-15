@@ -63,11 +63,62 @@ export const account = new Proxy(rawAccount, {
   },
 });
 
+// Protected fields that must never be modified directly by the client browser
+const PROTECTED_USER_FIELDS = new Set([
+  "cash",
+  "gems",
+  "prestigeLevel",
+  "isAdmin",
+  "isBanned",
+  "isSuspended",
+  "suspendedUntil",
+  "title",
+  "role",
+]);
+
 export const databases = new Proxy(rawDatabases, {
   get(target, prop, receiver) {
     const orig = (target as any)[prop];
     if (typeof orig === "function") {
       return async (...args: any[]) => {
+        // Security filter on updateDocument
+        if (prop === "updateDocument") {
+          const [databaseId, collectionId, documentId, data] = args;
+          if (collectionId === "users" && data && typeof data === "object") {
+            const sanitizedData: any = {};
+            for (const key of Object.keys(data)) {
+              if (PROTECTED_USER_FIELDS.has(key)) {
+                console.warn(
+                  `[SECURITY INTERCEPT] Blocked client attempt to directly mutate protected field "${key}" on users collection. Use server-authoritative API.`
+                );
+              } else {
+                sanitizedData[key] = data[key];
+              }
+            }
+            if (Object.keys(sanitizedData).length === 0) {
+              return { $id: documentId, ...data };
+            }
+            args[3] = sanitizedData;
+          }
+        }
+
+        // Security filter on createDocument permissions (eliminate Role.any() update/delete)
+        if (prop === "createDocument" && Array.isArray(args[4])) {
+          args[4] = args[4].filter((perm: any) => {
+            const permStr = String(perm || "");
+            const isAnyWrite =
+              (permStr.includes("update") || permStr.includes("delete")) &&
+              permStr.includes("any");
+            if (isAnyWrite) {
+              console.warn(
+                `[SECURITY INTERCEPT] Stripped insecure Role.any() write permission: ${permStr}`
+              );
+              return false;
+            }
+            return true;
+          });
+        }
+
         const result = await orig.apply(target, args);
         return sanitizeBigInts(result);
       };

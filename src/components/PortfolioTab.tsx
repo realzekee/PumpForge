@@ -62,16 +62,38 @@ export default function PortfolioTab({
     return <SkeletonLoader type="portfolio" />;
   }
 
-  // Calculate current holdings value (exclude list of inactive)
-  const holdingsValue = (holdings || []).reduce((sum, h) => {
-    const coin = (coins || []).find((c) => c && c.id === h.coinId);
-    if (coin) {
-      return sum + (Number(h.amount) || 0) * (Number(coin.price) || 0);
-    }
-    return sum;
-  }, 0);
+  // Calculate current holdings value and cost basis
+  const holdingsSummary = (holdings || []).reduce(
+    (acc, h) => {
+      const coin = (coins || []).find((c) => c && c.id === h.coinId);
+      const amount = Number(h.amount) || 0;
+      const coinPrice = Number(coin?.price) || 0;
+      const avgPrice = Number(h.avgBuyPrice) || coinPrice;
+
+      const currentVal = amount * coinPrice;
+      const costVal = amount * avgPrice;
+
+      acc.currentValue += currentVal;
+      acc.costBasis += costVal;
+      return acc;
+    },
+    { currentValue: 0, costBasis: 0 }
+  );
+
+  const holdingsValue = holdingsSummary.currentValue;
+  const totalCostBasis = holdingsSummary.costBasis;
+  const unrealizedProfit = holdingsValue - totalCostBasis;
+  const unrealizedReturnPct = totalCostBasis > 0 ? (unrealizedProfit / totalCostBasis) * 100 : 0;
+  const realizedProfit = Number(userStats?.totalProfit) || 0;
+  const netTotalProfit = realizedProfit + unrealizedProfit;
 
   const totalPortfolioValue = (Number(userStats?.cash) || 0) + holdingsValue;
+
+  const formatPrice = (price: number) => {
+    if (price >= 1) return `$${price.toFixed(2)}`;
+    if (price >= 0.01) return `$${price.toFixed(4)}`;
+    return `$${price.toFixed(6)}`;
+  };
 
   // Selected asset available balance
   const getSelectedAvailable = () => {
@@ -230,14 +252,14 @@ export default function PortfolioTab({
       </div>
 
       {/* Overview Balance Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 select-none">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 select-none">
         {/* Total portfolio net worth card */}
         <div className="glass-panel border border-white/10 p-5 rounded-3xl flex items-center justify-between shadow-2xl relative overflow-hidden group">
           <div className="flex flex-col">
             <span className="text-[9px] text-zinc-400 uppercase tracking-widest font-extrabold flex items-center gap-1">
-              Total Portfolio Valuation
+              Total Net Worth
             </span>
-            <span className="text-2xl font-black text-white mt-2 tracking-tight">
+            <span className="text-2xl font-black text-white mt-1.5 tracking-tight">
               $
               {totalPortfolioValue.toLocaleString("en-US", {
                 minimumFractionDigits: 2,
@@ -245,21 +267,21 @@ export default function PortfolioTab({
               })}
             </span>
             <span className="text-[10px] text-zinc-400 mt-1">
-              Includes coin assets valued dynamically
+              Cash + Active holdings
             </span>
           </div>
-          <div className="w-12 h-12 glass-card border border-white/10 rounded-2xl flex items-center justify-center">
+          <div className="w-11 h-11 glass-card border border-white/10 rounded-2xl flex items-center justify-center">
             <Briefcase className="w-5 h-5 text-rose-400" />
           </div>
         </div>
 
-        {/* Liquid portion card */}
+        {/* Liquid cash card */}
         <div className="glass-panel border border-white/10 p-5 rounded-3xl flex items-center justify-between shadow-2xl relative overflow-hidden group">
           <div className="flex flex-col">
             <span className="text-[9px] text-zinc-400 uppercase tracking-widest font-extrabold flex items-center gap-1">
-              Cash Balance
+              Cash Reserves
             </span>
-            <span className="text-2xl font-black text-emerald-400 mt-2 tracking-tight">
+            <span className="text-2xl font-black text-emerald-400 mt-1.5 tracking-tight">
               $
               {(Number(userStats?.cash) || 0).toLocaleString("en-US", {
                 minimumFractionDigits: 2,
@@ -267,33 +289,67 @@ export default function PortfolioTab({
               })}
             </span>
             <span className="text-[10px] text-zinc-400 mt-1">
-              Liquid cash reserve
+              Liquid buying power
             </span>
           </div>
-          <div className="w-12 h-12 glass-card border border-white/10 rounded-2xl flex items-center justify-center">
+          <div className="w-11 h-11 glass-card border border-white/10 rounded-2xl flex items-center justify-center">
             <Wallet className="w-5 h-5 text-emerald-400" />
           </div>
         </div>
 
-        {/* Assets holdings card */}
+        {/* Unrealized P/L */}
         <div className="glass-panel border border-white/10 p-5 rounded-3xl flex items-center justify-between shadow-2xl relative overflow-hidden group">
           <div className="flex flex-col">
             <span className="text-[9px] text-zinc-400 uppercase tracking-widest font-extrabold flex items-center gap-1">
-              Coin Holdings Valuation
+              Unrealized P/L
             </span>
-            <span className="text-2xl font-black text-cyan-400 mt-2 tracking-tight">
-              $
-              {(holdingsValue || 0).toLocaleString("en-US", {
+            <span
+              className={`text-2xl font-black mt-1.5 tracking-tight ${
+                unrealizedProfit >= 0 ? "text-emerald-400" : "text-rose-400"
+              }`}
+            >
+              {unrealizedProfit >= 0 ? "+" : ""}$
+              {Math.abs(unrealizedProfit).toLocaleString("en-US", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}
+            </span>
+            <span className="text-[10px] text-zinc-400 mt-1 font-mono">
+              Return:{" "}
+              <span className={unrealizedReturnPct >= 0 ? "text-emerald-400 font-bold" : "text-rose-400 font-bold"}>
+                {unrealizedReturnPct >= 0 ? "+" : ""}
+                {unrealizedReturnPct.toFixed(2)}%
+              </span>
+            </span>
+          </div>
+          <div className="w-11 h-11 glass-card border border-white/10 rounded-2xl flex items-center justify-center">
+            <Coins className="w-5 h-5 text-cyan-400" />
+          </div>
+        </div>
+
+        {/* Realized Total Profit (Server Authoritative) */}
+        <div className="glass-panel border border-white/10 p-5 rounded-3xl flex items-center justify-between shadow-2xl relative overflow-hidden group">
+          <div className="flex flex-col">
+            <span className="text-[9px] text-zinc-400 uppercase tracking-widest font-extrabold flex items-center gap-1">
+              Realized Profit
+            </span>
+            <span
+              className={`text-2xl font-black mt-1.5 tracking-tight ${
+                realizedProfit >= 0 ? "text-amber-400" : "text-rose-400"
+              }`}
+            >
+              {realizedProfit >= 0 ? "+" : ""}$
+              {Math.abs(realizedProfit).toLocaleString("en-US", {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2,
               })}
             </span>
             <span className="text-[10px] text-zinc-400 mt-1">
-              {(holdings || []).length} active positions
+              Server-audited closed P/L
             </span>
           </div>
-          <div className="w-12 h-12 glass-card border border-white/10 rounded-2xl flex items-center justify-center">
-            <Coins className="w-5 h-5 text-cyan-400" />
+          <div className="w-11 h-11 glass-card border border-white/10 rounded-2xl flex items-center justify-center">
+            <Award className="w-5 h-5 text-amber-400" />
           </div>
         </div>
       </div>
@@ -366,10 +422,10 @@ export default function PortfolioTab({
                             })}
                           </td>
                           <td className="px-5 py-3.5 text-right font-mono text-zinc-400 text-xs">
-                            ${avgBuyPrice.toFixed(4)}
+                            {formatPrice(avgBuyPrice)}
                           </td>
                           <td className="px-5 py-3.5 text-right font-mono text-zinc-300 text-xs">
-                            ${(Number(coin.price) || 0).toFixed(4)}
+                            {formatPrice(Number(coin.price) || 0)}
                           </td>
                           <td className="px-5 py-3.5 text-right font-mono">
                             <div className="flex flex-col items-end">
@@ -381,10 +437,12 @@ export default function PortfolioTab({
                                 })}
                               </span>
                               <span
-                                className={`text-[10px] font-bold ${valueDiff >= 0 ? "text-emerald-400" : "text-rose-400"}`}
+                                className={`text-[10px] font-bold flex items-center gap-1 ${valueDiff >= 0 ? "text-emerald-400" : "text-rose-400"}`}
                               >
-                                {valueDiff >= 0 ? "+" : ""}$
-                                {valueDiff.toFixed(2)}
+                                <span>{valueDiff >= 0 ? "+" : ""}${valueDiff.toFixed(2)}</span>
+                                <span className="opacity-75">
+                                  ({totalCost > 0 ? (valueDiff >= 0 ? "+" : "") + ((valueDiff / totalCost) * 100).toFixed(1) : "0"}%)
+                                </span>
                               </span>
                             </div>
                           </td>
@@ -437,8 +495,8 @@ export default function PortfolioTab({
                       <div className="flex flex-col items-end text-right shrink-0 font-mono">
                         <div className="text-[9px] text-zinc-400">
                           Avg:{" "}
-                          <span className="font-extrabold">
-                            ${avgBuyPrice.toFixed(4)}
+                          <span className="font-extrabold text-zinc-300">
+                            {formatPrice(avgBuyPrice)}
                           </span>
                         </div>
                         <div className="text-[12px] font-extrabold text-teal-400 mt-0.5">
@@ -452,7 +510,8 @@ export default function PortfolioTab({
                           <span
                             className={`text-[9.5px] font-bold ${valueDiff >= 0 ? "text-emerald-400" : "text-rose-400"}`}
                           >
-                            {valueDiff >= 0 ? "+" : ""}${valueDiff.toFixed(2)}
+                            {valueDiff >= 0 ? "+" : ""}${valueDiff.toFixed(2)} (
+                            {totalCost > 0 ? (valueDiff >= 0 ? "+" : "") + ((valueDiff / totalCost) * 100).toFixed(1) : "0"}%)
                           </span>
                         </div>
                       </div>

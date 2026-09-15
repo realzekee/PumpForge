@@ -47,7 +47,7 @@ export default function MarketTab({
   const [tradeType, setTradeType] = useState<"BUY" | "SELL">("BUY");
   const [tradeAmount, setTradeAmount] = useState<string>("");
   const [sortBy, setSortBy] = useState<
-    "marketCap" | "price" | "change24h" | "volume24h"
+    "marketCap" | "volume24h" | "gainers" | "losers" | "newest" | "mostTraded" | "price"
   >("marketCap");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [tradePercentage, setTradePercentage] = useState<number | null>(null);
@@ -70,8 +70,23 @@ export default function MarketTab({
         coin.symbol.toLowerCase().includes(searchTerm.toLowerCase()),
     )
     .sort((a, b) => {
-      let valA = a[sortBy];
-      let valB = b[sortBy];
+      if (sortBy === "gainers") {
+        return (Number(b.change24h) || 0) - (Number(a.change24h) || 0);
+      }
+      if (sortBy === "losers") {
+        return (Number(a.change24h) || 0) - (Number(b.change24h) || 0);
+      }
+      if (sortBy === "newest") {
+        const timeA = new Date((a as any).$createdAt || (a as any).createdAt || 0).getTime();
+        const timeB = new Date((b as any).$createdAt || (b as any).createdAt || 0).getTime();
+        return timeB - timeA;
+      }
+      if (sortBy === "mostTraded") {
+        return (Number(b.volume24h) || 0) - (Number(a.volume24h) || 0);
+      }
+
+      let valA = (a as any)[sortBy];
+      let valB = (b as any)[sortBy];
       if (typeof valA === "number" && typeof valB === "number") {
         return sortOrder === "desc" ? valB - valA : valA - valB;
       }
@@ -79,6 +94,10 @@ export default function MarketTab({
     });
 
   const handleSort = (field: typeof sortBy) => {
+    if (field === "gainers" || field === "losers" || field === "newest" || field === "mostTraded") {
+      setSortBy(field);
+      return;
+    }
     if (sortBy === field) {
       setSortOrder(sortOrder === "desc" ? "asc" : "desc");
     } else {
@@ -172,34 +191,33 @@ export default function MarketTab({
             className="w-full pl-10 pr-4 py-2.5 glass-input rounded-xl text-xs text-white focus:outline-none focus:border-rose-500/80 transition-all font-mono"
           />
         </div>
-        <div className="flex items-center gap-2 font-mono text-[10px] uppercase font-bold text-zinc-400 overflow-x-auto shrink-0 py-1">
+        <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase font-bold text-zinc-400 overflow-x-auto shrink-0 py-1">
           <span>Sort:</span>
-          {(["marketCap", "price", "change24h", "volume24h"] as const).map(
-            (field) => (
-              <button
-                key={field}
-                onClick={() => handleSort(field)}
-                className={`px-3 py-1.5 rounded-xl border flex items-center gap-1 transition-all capitalize cursor-pointer ${
-                  sortBy === field
-                    ? "bg-white/[0.12] text-rose-400 border-rose-500/50 font-extrabold shadow-sm"
-                    : "glass-pill text-zinc-400 hover:text-white hover:bg-white/[0.08] border-white/10"
-                }`}
-              >
-                {field === "marketCap"
-                  ? "Market Cap"
-                  : field === "change24h"
-                    ? "24h Change"
-                    : field === "volume24h"
-                      ? "Volume"
-                      : field}
-                {sortBy === field && (
-                  <ArrowUpDown
-                    className={`w-3 h-3 ${sortOrder === "asc" ? "rotate-180" : ""}`}
-                  />
-                )}
-              </button>
-            ),
-          )}
+          {[
+            { id: "marketCap", label: "Market Cap" },
+            { id: "volume24h", label: "Volume" },
+            { id: "gainers", label: "Gainers" },
+            { id: "losers", label: "Losers" },
+            { id: "newest", label: "Newest" },
+            { id: "mostTraded", label: "Most Traded" },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => handleSort(tab.id as any)}
+              className={`px-2.5 py-1 rounded-xl border flex items-center gap-1 transition-all cursor-pointer whitespace-nowrap ${
+                sortBy === tab.id
+                  ? "bg-rose-500/20 text-rose-300 border-rose-500/50 font-extrabold shadow-sm"
+                  : "glass-pill text-zinc-400 hover:text-white hover:bg-white/[0.08] border-white/10"
+              }`}
+            >
+              {tab.label}
+              {(tab.id === "marketCap" || tab.id === "volume24h") && sortBy === tab.id && (
+                <ArrowUpDown
+                  className={`w-3 h-3 ${sortOrder === "asc" ? "rotate-180" : ""}`}
+                />
+              )}
+            </button>
+          ))}
         </div>
       </div>
 

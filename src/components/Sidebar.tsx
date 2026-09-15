@@ -3,6 +3,7 @@ import { useLocation, useNavigate, Link } from "react-router-dom";
 import { Query } from "appwrite";
 import { toast } from "sonner";
 import { databases } from "../appwrite";
+import { apiRedeemPromocode } from "../api/gameClient";
 import {
   Home,
   TrendingUp,
@@ -60,6 +61,7 @@ interface SidebarProps {
   holdings?: PortfolioHolding[];
   onOpenBugReportModal?: () => void;
   registeredUsers?: Array<UserStats & { uid: string }>;
+  onUpdateStats?: (updater: (stats: UserStats) => void) => void;
 }
 
 import { useAppContext } from "../context/AppContext";
@@ -79,8 +81,9 @@ export default function Sidebar({
   holdings = [],
   onOpenBugReportModal,
   registeredUsers = [],
+  onUpdateStats,
 }: SidebarProps) {
-  const { adminSettings } = useAppContext();
+  const { adminSettings, setCash, setGems } = useAppContext();
   const navigate = useNavigate();
   const location = useLocation();
   const activeTab =
@@ -181,68 +184,35 @@ export default function Sidebar({
     toast.loading("Verifying promo code...", { id: "promo-claim" });
 
     try {
-      // Query promocodes collection for the submitted code
-      const response = await databases.listDocuments(
-        "pumpforge",
-        "promocodes",
-        [Query.equal("code", code)]
-      );
+      const res = await apiRedeemPromocode(code);
+      if (res && res.reward) {
+        const rewardAmt = Number(res.reward.amount) || 0;
+        const rewardType = res.reward.type;
+        const msg = rewardType === "gems" ? `+${rewardAmt} Gems` : `+$${rewardAmt.toLocaleString()} Cash`;
+        toast.success(`Redeemed! ${msg}`, { id: "promo-claim" });
+        setPromoSuccess(`Redeemed! ${msg}`);
 
-      if (response.documents.length === 0) {
-         toast.error("Invalid promo code.", { id: "promo-claim" });
-         setPromoError("Invalid promo code.");
-         return;
-      }
-
-      const promoDoc = response.documents[0];
-
-      if (!promoDoc.isActive) {
-         toast.error("This promo code is expired.", { id: "promo-claim" });
-         setPromoError("This promo code is inactive/expired.");
-         return;
-      }
-
-      const nowTime = new Date().getTime();
-      if (promoDoc.expiresAt && new Date(promoDoc.expiresAt).getTime() < nowTime) {
-         toast.error("This promo code has expired.", { id: "promo-claim" });
-         setPromoError("This promo code has expired.");
-         return;
-      }
-
-      const claimedArray: string[] = promoDoc.claimedBy || [];
-      if (claimedArray.includes(uid)) {
-         toast.error("Code already claimed on this account", { id: "promo-claim" });
-         setPromoError("Code already claimed on this account.");
-         return;
-      }
-
-      // Valid and unused by this user!
-      const rewardAmt = Number(promoDoc.rewardAmount) || 0;
-      
-      // Update promo document
-      await databases.updateDocument("pumpforge", "promocodes", promoDoc.$id, {
-        claimedBy: [...claimedArray, uid]
-      });
-
-      // Update user document
-      if (promoDoc.rewardType === "gems") {
-        await databases.updateDocument("pumpforge", "users", uid, {
-           gems: (userStats.gems || 0) + rewardAmt
-        });
-        toast.success(`Redeemed! +${rewardAmt} Gems`, { id: "promo-claim" });
-        setPromoSuccess(`Redeemed! +${rewardAmt} Gems`);
+        if (res.userStats) {
+          if (onUpdateStats) {
+            onUpdateStats((prev) => ({
+              ...prev,
+              cash: res.userStats.cash !== undefined ? res.userStats.cash : prev.cash,
+              gems: res.userStats.gems !== undefined ? res.userStats.gems : prev.gems,
+            }));
+          }
+          if (setCash && res.userStats.cash !== undefined) setCash(res.userStats.cash);
+          if (setGems && res.userStats.gems !== undefined) setGems(res.userStats.gems);
+        }
       } else {
-        await databases.updateDocument("pumpforge", "users", uid, {
-           cash: (userStats.cash || 0) + rewardAmt
-        });
-        toast.success(`Redeemed! +$${rewardAmt.toLocaleString()} Cash`, { id: "promo-claim" });
-        setPromoSuccess(`Redeemed! +$${rewardAmt.toLocaleString()} Cash`);
+        toast.success("Promo code redeemed successfully!", { id: "promo-claim" });
+        setPromoSuccess("Promo code redeemed successfully!");
       }
       setPromoCode("");
     } catch (err: any) {
       console.error("Promo code processing error:", err);
-      toast.error("Error verifying promo code. Please check your connection.", { id: "promo-claim" });
-      setPromoError("Error verifying promo code.");
+      const errMsg = err?.message || "Invalid or expired promo code.";
+      toast.error(errMsg, { id: "promo-claim" });
+      setPromoError(errMsg);
     }
   };
 

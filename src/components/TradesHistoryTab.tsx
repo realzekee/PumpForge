@@ -4,6 +4,7 @@ import { Activity, Clock } from "lucide-react";
 import { databases } from "../appwrite";
 import { Query } from "appwrite";
 import { MemeCoin } from "../types";
+import { UserHoverCard } from "./UserHoverCard";
 
 export function TradesHistoryTab({
   coins,
@@ -66,7 +67,11 @@ export function TradesHistoryTab({
                      <div key={trade.$id || `trade-${idx}`} className="flex justify-between items-center glass-card p-4 rounded-2xl border border-white/10 shadow-sm">
                          <div className="flex flex-col">
                              <div className="text-xs text-zinc-400 flex items-center gap-1.5"><Clock className="w-3.5 h-3.5"/> {trade.$createdAt ? new Date(trade.$createdAt).toLocaleString() : "Just now"}</div>
-                             <div className="text-zinc-200 font-mono text-sm mt-1 truncate max-w-[120px] font-bold">{resolvedHandle}</div>
+                             <div className="text-zinc-200 font-mono text-sm mt-1 truncate max-w-[140px] font-bold">
+                              <UserHoverCard userIdOrHandle={trade.userId || resolvedHandle}>
+                                {resolvedHandle}
+                              </UserHoverCard>
+                            </div>
                          </div>
                          <div className="flex items-center gap-4">
                              <span className="font-mono text-zinc-300 font-bold">{(amountUsd >= 1000 ? (amountUsd/1000).toFixed(2) + "K" : amountUsd.toFixed(2))} USD</span>

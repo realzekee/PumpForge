@@ -15,8 +15,23 @@ import {
   Zap,
   CheckCircle,
   Clock,
+  MessageSquare,
+  Send,
+  Trash2,
+  Flag,
+  ShieldCheck,
+  RefreshCw,
 } from "lucide-react";
+import { toast } from "sonner";
 import { MemeCoin, UserStats, PortfolioHolding } from "../types";
+import {
+  apiGetCoinCandles,
+  apiGetComments,
+  apiPostComment,
+  apiDeleteComment,
+  apiReportComment,
+} from "../api/gameClient";
+import { UserHoverCard } from "./UserHoverCard";
 
 interface CoinDetailsTabProps {
   coin: MemeCoin | null;
@@ -231,22 +246,129 @@ export default function CoinDetailsTab({
     }
   };
 
-  // Generate interactive mock candlestick candles dataset based on tick prices
-  const currentPrice = activeCoin?.price || 0.01;
+  // State for server-authoritative OHLCV candles, coin trades, and comments
+  const currentPrice = activeCoin?.price || 0.000001;
+  const [serverCandles, setServerCandles] = useState<any[]>([]);
+  const [candlesLoading, setCandlesLoading] = useState(false);
+  const [coinTrades, setCoinTrades] = useState<any[]>([]);
+  const [tradesLoading, setTradesLoading] = useState(false);
+  const [comments, setComments] = useState<any[]>([]);
+  const [commentText, setCommentText] = useState("");
+  const [submittingComment, setSubmittingComment] = useState(false);
+
+  // Fetch server-authoritative OHLCV candles
+  const fetchCandles = async () => {
+    if (!activeCoin?.id) return;
+    try {
+      setCandlesLoading(true);
+      const interval = timeframe === "5m" ? 5 : timeframe === "15m" ? 15 : timeframe === "1h" ? 60 : 1;
+      const res = await apiGetCoinCandles(activeCoin.id, interval);
+      if (res.candles && res.candles.length > 0) {
+        setServerCandles(res.candles);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setCandlesLoading(false);
+    }
+  };
+
+  // Fetch recent trades for this coin
+  const fetchCoinTrades = async () => {
+    if (!activeCoin?.id) return;
+    try {
+      setTradesLoading(true);
+      const { Query } = await import("appwrite");
+      const { databases } = await import("../appwrite");
+      const res = await databases.listDocuments("pumpforge", "trades", [
+        Query.equal("coinId", activeCoin.id),
+        Query.orderDesc("timestamp"),
+        Query.limit(20),
+      ]);
+      setCoinTrades(res.documents || []);
+    } catch {
+      // ignore
+    } finally {
+      setTradesLoading(false);
+    }
+  };
+
+  // Fetch comments for this coin
+  const fetchComments = async () => {
+    if (!activeCoin?.id) return;
+    try {
+      const res = await apiGetComments(activeCoin.id);
+      setComments(res.comments || []);
+    } catch {
+      // ignore
+    }
+  };
+
+  useEffect(() => {
+    fetchCandles();
+    fetchCoinTrades();
+    fetchComments();
+    const interval = setInterval(() => {
+      fetchCandles();
+      fetchCoinTrades();
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [activeCoin?.id, timeframe]);
+
+  // Handle comment submit
+  const handlePostComment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser) {
+      toast.error("Please sign in with Google to post comments.");
+      return;
+    }
+    const clean = commentText.trim();
+    if (!clean) return;
+    setSubmittingComment(true);
+    try {
+      const res = await apiPostComment(activeCoin.id, clean);
+      if (res.success && res.comment) {
+        setComments((prev) => [res.comment, ...prev]);
+        setCommentText("");
+        toast.success("Comment posted!");
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Failed to post comment.");
+    } finally {
+      setSubmittingComment(false);
+    }
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+    try {
+      await apiDeleteComment(commentId);
+      setComments((prev) => prev.filter((c) => c.id !== commentId));
+      toast.success("Comment deleted.");
+    } catch (err: any) {
+      toast.error(err.message || "Could not delete comment.");
+    }
+  };
+
+  const handleReportComment = async (commentId: string) => {
+    try {
+      await apiReportComment(commentId);
+      toast.success("Comment reported to moderators.");
+    } catch (err: any) {
+      toast.error("Could not report comment.");
+    }
+  };
+
+  // Server-authoritative or fallback candles dataset
   const candlesData = useMemo(() => {
+    if (serverCandles.length > 0) return serverCandles;
     const historyArr = activeCoin?.history || [];
     const ticks =
       historyArr.length >= 3
         ? historyArr
         : [
-            currentPrice * 0.92,
-            currentPrice * 0.94,
-            currentPrice * 0.93,
-            currentPrice * 0.96,
-            currentPrice * 0.95,
             currentPrice * 0.98,
-            currentPrice * 0.97,
             currentPrice * 0.99,
+            currentPrice * 0.985,
             currentPrice,
           ];
 
@@ -255,10 +377,9 @@ export default function CoinDetailsTab({
       const open = prev;
       const close = tick;
       const isUp = close >= open;
-
-      const wiggle = currentPrice * 0.008;
-      const high = Math.max(open, close) + (isUp ? wiggle : wiggle * 0.4);
-      const low = Math.max(0.000001, Math.min(open, close) - (!isUp ? wiggle : wiggle * 0.4));
+      const wiggle = currentPrice * 0.005;
+      const high = Math.max(open, close) + (isUp ? wiggle : wiggle * 0.3);
+      const low = Math.max(0.000001, Math.min(open, close) - (!isUp ? wiggle : wiggle * 0.3));
       const volume = Math.round(15000 + ((tick * 2000 * (index + 1)) % 40000));
 
       return {
@@ -272,7 +393,7 @@ export default function CoinDetailsTab({
         isUp,
       };
     });
-  }, [activeCoin, currentPrice]);
+  }, [serverCandles, activeCoin, currentPrice]);
 
   const { chartMax, chartMin, chartRange } = useMemo(() => {
     const allPrices = candlesData.flatMap((c) => [c.open, c.close, c.high, c.low]);
@@ -382,12 +503,14 @@ export default function CoinDetailsTab({
                     </span>
                   </div>
 
-                  {/* Creator citation */}
-                  <span className="text-[11px] text-zinc-400">
+                  {/* Creator citation with public dossier card */}
+                  <span className="text-[11px] text-zinc-400 flex items-center gap-1">
                     Created by{" "}
-                    <strong className="text-zinc-200 hover:text-rose-400 transition-colors">
-                      {activeCoin.creatorName || activeCoin.creator}
-                    </strong>
+                    <UserHoverCard userIdOrHandle={activeCoin.creatorId || activeCoin.creator}>
+                      <strong className="text-zinc-200 hover:text-rose-400 transition-colors cursor-pointer underline decoration-dotted decoration-zinc-600 underline-offset-2">
+                        {activeCoin.creatorName || activeCoin.creator}
+                      </strong>
+                    </UserHoverCard>
                   </span>
                 </div>
               </div>
@@ -913,6 +1036,206 @@ export default function CoinDetailsTab({
               ))
               ) : (
                 <div className="text-center font-mono text-zinc-400 text-xs py-4">No holders found.</div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mt-2">
+        {/* Left Col: Live Coin Trades Feed (7 cols) */}
+        <div className="lg:col-span-12 xl:col-span-7 flex flex-col gap-4">
+          <div className="glass-panel border border-white/10 p-6 rounded-3xl flex flex-col gap-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-white/10 pb-4">
+              <div className="flex items-center gap-2.5">
+                <Activity className="w-4 h-4 text-emerald-400 animate-pulse" />
+                <h3 className="text-xs font-black text-white uppercase tracking-widest font-mono">
+                  Live Coin Trades
+                </h3>
+                <span className="text-[9px] bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 px-2 py-0.5 rounded-full font-bold">
+                  {coinTrades.length} recorded
+                </span>
+              </div>
+              <span className="text-[10px] text-zinc-400 font-mono">
+                Trades &ge; $1K highlighted
+              </span>
+            </div>
+
+            {tradesLoading && coinTrades.length === 0 ? (
+              <div className="py-8 text-center text-xs text-zinc-400 font-mono flex items-center justify-center gap-2">
+                <RefreshCw className="w-4 h-4 animate-spin text-zinc-500" /> Loading trade order flow...
+              </div>
+            ) : coinTrades.length === 0 ? (
+              <div className="py-8 text-center text-xs text-zinc-400 font-mono">
+                No recent trades recorded for this asset yet. Be the first to execute!
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left font-mono text-xs">
+                  <thead className="text-[9px] text-zinc-400 uppercase tracking-widest border-b border-white/10">
+                    <tr>
+                      <th className="pb-3">Trader</th>
+                      <th className="pb-3 text-center">Type</th>
+                      <th className="pb-3 text-right">Amount</th>
+                      <th className="pb-3 text-right">Price</th>
+                      <th className="pb-3 text-right">Total</th>
+                      <th className="pb-3 text-right">Time</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {coinTrades.map((t) => {
+                      const totalVal = Number(t.total) || (Number(t.amount) || 0) * (Number(t.price) || 0);
+                      const isWhaleTrade = totalVal >= 1000;
+                      const isBuy = t.type === "BUY";
+
+                      return (
+                        <tr
+                          key={t.$id || t.id}
+                          className={`hover:bg-white/[0.03] transition-colors ${
+                            isWhaleTrade ? "bg-amber-500/10 border-l-2 border-amber-400" : ""
+                          }`}
+                        >
+                          <td className="py-2.5 pr-2">
+                            <UserHoverCard userIdOrHandle={t.userId || t.userHandle || "user"}>
+                              <span className="text-zinc-200 hover:text-white cursor-pointer font-bold flex items-center gap-1">
+                                {isWhaleTrade && <span title="High-roller &ge; $1,000">💎</span>}
+                                @{(t.userHandle || t.userId || "trader").replace(/^@/, "").slice(0, 10)}
+                              </span>
+                            </UserHoverCard>
+                          </td>
+                          <td className="py-2.5 text-center">
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
+                                isBuy
+                                  ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40"
+                                  : "bg-rose-500/20 text-rose-400 border border-rose-500/40"
+                              }`}
+                            >
+                              {t.type}
+                            </span>
+                          </td>
+                          <td className="py-2.5 text-right text-zinc-300 font-semibold">
+                            {(Number(t.amount) || 0).toLocaleString("en-US", { maximumFractionDigits: 2 })}
+                          </td>
+                          <td className="py-2.5 text-right text-zinc-400">
+                            ${(Number(t.price) || 0).toFixed(6)}
+                          </td>
+                          <td className="py-2.5 text-right font-black">
+                            <span className={isWhaleTrade ? "text-amber-400 font-black" : isBuy ? "text-emerald-400" : "text-rose-400"}>
+                              ${totalVal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                          </td>
+                          <td className="py-2.5 text-right text-zinc-500 text-[10px]">
+                            {t.timestamp
+                              ? new Date(t.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                              : "just now"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right Col: Community Comments & Discourse (5 cols) */}
+        <div className="lg:col-span-12 xl:col-span-5 flex flex-col gap-4">
+          <div className="glass-panel border border-white/10 p-6 rounded-3xl flex flex-col gap-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-white/10 pb-4">
+              <div className="flex items-center gap-2">
+                <MessageSquare className="w-4 h-4 text-cyan-400" />
+                <h3 className="text-xs font-black text-white uppercase tracking-widest font-mono">
+                  Community Discussion
+                </h3>
+              </div>
+              <span className="text-[10px] text-zinc-400 font-mono">
+                {comments.length} comments
+              </span>
+            </div>
+
+            {/* Post comment input */}
+            <form onSubmit={handlePostComment} className="flex flex-col gap-2">
+              <div className="relative flex items-center">
+                <input
+                  type="text"
+                  value={commentText}
+                  onChange={(e) => setCommentText(e.target.value)}
+                  placeholder={currentUser ? "Share your thoughts on this token..." : "Sign in with Google to post comments"}
+                  disabled={!currentUser || submittingComment}
+                  maxLength={500}
+                  className="w-full bg-black/40 border border-white/15 rounded-2xl px-4 py-2.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-rose-500 font-mono disabled:opacity-50"
+                />
+                <button
+                  type="submit"
+                  disabled={!currentUser || submittingComment || !commentText.trim()}
+                  className="absolute right-2 p-2 bg-rose-600 hover:bg-rose-500 disabled:opacity-40 text-white rounded-xl transition-all cursor-pointer"
+                  title="Send comment"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <span className="text-[9px] text-zinc-500 font-mono">
+                Respect community guidelines. Spam or harassment will be reported and moderated.
+              </span>
+            </form>
+
+            {/* Comments list */}
+            <div className="flex flex-col gap-2.5 max-h-80 overflow-y-auto pr-1">
+              {comments.length === 0 ? (
+                <div className="py-8 text-center text-xs text-zinc-400 font-mono">
+                  No comments yet. Start the conversation!
+                </div>
+              ) : (
+                comments.map((c) => {
+                  const isAuthor = currentUser && (currentUser.$id === c.userId || currentUser.uid === c.userId);
+
+                  return (
+                    <div
+                      key={c.id}
+                      className="glass-card border border-white/10 p-3 rounded-2xl flex flex-col gap-1.5 hover:bg-white/[0.04] transition-colors"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <UserHoverCard userIdOrHandle={c.handle || c.userId}>
+                            <span className="text-xs font-bold text-white hover:text-rose-400 cursor-pointer">
+                              {c.username || "Trader"}
+                            </span>
+                          </UserHoverCard>
+                          <span className="text-[9px] text-zinc-400 font-mono">
+                            {c.handle}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[9px] text-zinc-500 font-mono">
+                            {new Date(c.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          </span>
+                          {isAuthor ? (
+                            <button
+                              onClick={() => handleDeleteComment(c.id)}
+                              className="text-zinc-500 hover:text-rose-400 transition-colors p-1"
+                              title="Delete comment"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleReportComment(c.id)}
+                              className="text-zinc-500 hover:text-amber-400 transition-colors p-1"
+                              title="Report comment"
+                            >
+                              <Flag className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-xs text-zinc-200 font-mono break-words leading-relaxed">
+                        {c.text}
+                      </p>
+                    </div>
+                  );
+                })
               )}
             </div>
           </div>

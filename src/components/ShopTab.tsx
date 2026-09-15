@@ -25,6 +25,7 @@ interface ShopProps {
 }
 
 import { useAppContext } from "../context/AppContext";
+import { apiShopBuy } from "../api/gameClient";
 
 export default function ShopTab({
   userStats,
@@ -136,7 +137,7 @@ export default function ShopTab({
     },
   ];
 
-  const buyColor = (
+  const buyColor = async (
     id: string,
     name: string,
     colorClass: string,
@@ -149,22 +150,29 @@ export default function ShopTab({
       return;
     }
 
-    onUpdateStats((stats) => {
-      stats.gems -= cost;
-      stats.nameColor = colorClass;
-    });
+    try {
+      const res = await apiShopBuy("color", { colorClass, cost });
+      if (res.userStats) {
+        onUpdateStats((stats) => {
+          stats.gems = res.userStats.gems;
+          stats.nameColor = res.userStats.nameColor;
+        });
+      }
 
-    onAddNotification(
-      "Skin Unlocked",
-      `Equipped custom ${name} username color style!`,
-      "info",
-    );
-    alert(
-      `✨ COSMETIC PURCHASED! You bought and equipped "${name}". Check your name styling in the sidebar!`,
-    );
+      onAddNotification(
+        "Skin Unlocked",
+        `Equipped custom ${name} username color style!`,
+        "info",
+      );
+      alert(
+        `✨ COSMETIC PURCHASED! You bought and equipped "${name}". Check your name styling in the sidebar!`,
+      );
+    } catch (err: any) {
+      alert(err.message || "Failed to purchase color cosmetic.");
+    }
   };
 
-  const openCrate = (crateId: string, name: string, cost: number) => {
+  const openCrate = async (crateId: string, name: string, cost: number) => {
     if (userStats.gems < cost) {
       alert("Insufficient Gems to open this chest!");
       return;
@@ -173,75 +181,30 @@ export default function ShopTab({
     setUnboxingCrate(crateId);
     setUnboxReward(null);
 
-    // Subtract Gems
-    onUpdateStats((stats) => {
-      stats.gems -= cost;
-    });
+    try {
+      const res = await apiShopBuy("crate", { crateId, cost });
 
-    // Simulate an animated chest opening spin click
-    setTimeout(() => {
-      let minCash = 5000;
-      let maxCash = 15000;
-      let bonusGems = 0;
-      let unlockedColors: string[] = [];
-
-      if (crateId === "small") {
-        minCash = 5000;
-        maxCash = 15000;
-        bonusGems = Math.floor(Math.random() * 25) + 5;
-      } else if (crateId === "fatass") {
-        minCash = 20000;
-        maxCash = 60000;
-        bonusGems = Math.floor(Math.random() * 80) + 20;
-      } else if (crateId === "motion") {
-        minCash = 100000;
-        maxCash = 250000;
-        bonusGems = Math.floor(Math.random() * 200) + 50;
-      } else if (crateId === "auraful") {
-        minCash = 300000;
-        maxCash = 1000000;
-        bonusGems = Math.floor(Math.random() * 600) + 150;
-      }
-
-      let rawCashReward = Math.floor(
-        Math.random() * (maxCash - minCash) + minCash,
-      );
-
-      const rigMode = adminSettings.arcadeRigMode || (adminSettings.isCasinoRigged ? "win" : "fair");
-
-      if (rigMode === "win") {
-        if (crateId === "small") {
-          rawCashReward = 15000 * 3;
-          bonusGems = 150;
-        } else if (crateId === "fatass") {
-          rawCashReward = 60000 * 3;
-          bonusGems = 400;
-        } else if (crateId === "motion") {
-          rawCashReward = 250000 * 3;
-          bonusGems = 1000;
-        } else if (crateId === "auraful") {
-          rawCashReward = 1000000 * 3;
-          bonusGems = 2500;
+      setTimeout(() => {
+        if (res.userStats) {
+          onUpdateStats((stats) => {
+            stats.cash = res.userStats.cash;
+            stats.gems = res.userStats.gems;
+          });
         }
-      } else if (rigMode === "lose") {
-        rawCashReward = Math.floor(minCash * 0.4);
-        bonusGems = 0;
-      }
 
-      onUpdateStats((stats) => {
-        stats.cash += rawCashReward;
-        stats.gems += bonusGems;
-      });
+        setUnboxReward({ cash: res.cashReward, gems: res.gemReward });
+        setUnboxingCrate(null);
 
-      setUnboxReward({ cash: rawCashReward, gems: bonusGems });
+        onAddNotification(
+          "Loot Box Opened",
+          `Unboxed ${name}! Gained $${res.cashReward.toLocaleString()} and 💎 ${res.gemReward}!`,
+          "achievement",
+        );
+      }, 1500);
+    } catch (err: any) {
       setUnboxingCrate(null);
-
-      onAddNotification(
-        "Loot Box Opened",
-        `Unboxed ${name}! Gained $${rawCashReward.toLocaleString()} and 💎 ${bonusGems}!`,
-        "achievement",
-      );
-    }, 1500);
+      alert(err.message || "Failed to open crate.");
+    }
   };
 
   return (

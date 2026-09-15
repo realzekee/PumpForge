@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { CheckCircle, XCircle, Ban, Activity, Clock, Globe } from "lucide-react";
 import { SkeletonLoader } from "./SkeletonLoader";
 import { formatToDeviceTimezone, getDeviceTimezoneInfo } from "../utils/timezone";
+import { apiAdminResolveMarket } from "../api/gameClient";
 
 export default function PolymarketAdminTab() {
   const [markets, setMarkets] = useState<any[]>([]);
@@ -33,86 +34,16 @@ export default function PolymarketAdminTab() {
 
   const executePayouts = async (marketId: string, winningChoice: string) => {
     try {
-      if (winningChoice === "CANCEL") {
-        winningChoice = "REFUND"; // Logically refund if cancelled, however problem doesn't explicitly restrict winningOutome so we use CANCEL
-      }
-      
-      // 1. Update Market
-      await databases.updateDocument("pumpforge", "polymarkets", marketId, {
-        status: "closed",
-        winningOutcome: winningChoice,
-        resolvedAt: new Date().toISOString(),
-      });
-
-      // 2. Query all wagers
-      const wagersRes = await databases.listDocuments("pumpforge", "wagers", [
-        Query.equal("polymarketId", marketId),
-        Query.limit(1000), // Max for Appwrite
-      ]);
-
-      const wagers = wagersRes.documents;
-      let payoutCount = 0;
-
-      // 3. Process each wager
-      for (const wager of wagers) {
-        if (wager.isPaid) continue;
-
-        let shouldPayout = false;
-        let payoutAmount = 0;
-
-        if (winningChoice === "CANCEL") {
-          // Refund
-          shouldPayout = true;
-          payoutAmount = wager.amount;
-        } else if (wager.choice === winningChoice) {
-          // Calculate payout (using simplified calculation: 2x, or pool based if required, but let's just use 2x for now unless pool is strictly calculated)
-          // Wait, real polymarket payout would be (user amount / total pool for that choice) * (total pool).
-          // But wait, the schema doesn't ask us to do complex AMM. Let's calculate total pool.
-          
-          shouldPayout = true;
-          // As simple calculation, just pay 2x for correct guess if pool logic is complex. Or if poolYes/poolNo are available:
-          const market = markets.find((m) => m.$id === marketId);
-          if (market) {
-            const totalPool = (market.poolYes || 0) + (market.poolNo || 0);
-            const winningPool = winningChoice === "YES" ? market.poolYes : market.poolNo;
-            
-            if (winningPool > 0) {
-              const share = wager.amount / winningPool;
-              payoutAmount = share * totalPool;
-            } else {
-              payoutAmount = wager.amount * 2; // Fallback
-            }
-          } else {
-            payoutAmount = wager.amount * 2;
-          }
-        }
-
-        if (shouldPayout) {
-          try {
-            // Fetch User
-            const user = await databases.getDocument("pumpforge", "users", wager.userId);
-            if (user) {
-              await databases.updateDocument("pumpforge", "users", wager.userId, {
-                cash: (user.cash || 0) + payoutAmount,
-              });
-              payoutCount++;
-            }
-            
-            // 4. Update Wager to Paid
-            await databases.updateDocument("pumpforge", "wagers", wager.$id, {
-              isPaid: true,
-            });
-          } catch (e) {
-             console.error("Failed to pay user", wager.userId, e);
-          }
-        }
-      }
-
-      toast.success(`Market resolved successfully. ${payoutCount} users paid.`);
+      setResolving(marketId);
+      const choice = winningChoice as "YES" | "NO" | "CANCEL";
+      const res = await apiAdminResolveMarket(marketId, choice);
+      toast.success(
+        `Market resolved (${choice}). Paid $${(res.totalPaidOut || 0).toLocaleString()} across ${res.winnersCount || 0} wagers.`
+      );
       fetchMarkets();
     } catch (error: any) {
       console.error("Failed to resolve market", error);
-      toast.error("Error resolving market: " + error.message);
+      toast.error("Error resolving market: " + (error.message || "Request failed"));
     } finally {
       setResolving(null);
     }

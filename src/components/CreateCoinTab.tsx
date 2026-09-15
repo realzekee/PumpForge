@@ -11,8 +11,7 @@ import {
   CheckCircle,
 } from "lucide-react";
 import { UserStats } from "../types";
-import { databases } from "../appwrite";
-import { ID, Permission, Role } from "appwrite";
+import { apiCreateCoin } from "../api/gameClient";
 
 interface CreateCoinProps {
   setCoins: React.Dispatch<React.SetStateAction<any[]>>;
@@ -94,66 +93,18 @@ export default function CreateCoinTab({ setCoins, coins }: CreateCoinProps) {
 
     setIsLaunching(true);
     try {
-      const dbPrice = parseFloat("0.005");
-      const dbMarketCap = parseFloat("1000.0");
-      const newCoinId = ID.unique();
-      const payload = {
-        coinId: newCoinId,
-        creatorId: currentUser?.$id || currentUser?.uid || "unknown",
-        creatorName: currentUser?.name || userStats.username || "Unknown",
-        creator: userStats.handle || "@system",
+      const res = await apiCreateCoin({
         name: name.trim(),
         symbol: symbol.trim().toUpperCase(),
-        description: desc.trim(),
-        price: dbPrice,
-        marketCap: dbMarketCap,
-      };
-
-      await databases.createDocument("pumpforge", "coins", newCoinId, payload, [
-        Permission.read(Role.any()),
-        Permission.update(Role.any()),
-        Permission.delete(Role.any())
-      ]);
-
-      const newCash = userStats.cash - 1100;
-
-      await databases.updateDocument(
-        "pumpforge",
-        "users",
-        currentUser.uid || currentUser.$id,
-        {
-          cash: newCash,
-          coinsCreatedCount: userStats.coinsCreatedCount + 1,
-        },
-      );
-
-      const listPrice = 0.005;
-      const nowString = new Date().toISOString();
-      const newMeme = {
-        id: newCoinId,
-        createdAt: nowString,
-        name: name.trim(),
-        symbol: symbol.trim().toUpperCase(),
-        creator: userStats.handle,
         description: desc.trim(),
         avatarEmoji: selectedEmoji,
-        avatarBg: "bg-emerald-950 text-emerald-300 border-emerald-500",
-        price: listPrice,
-        marketCap: 1000,
-        supply: 200000,
-        volume24h: 300,
-        change24h: 0,
-        history: [listPrice, listPrice, listPrice, listPrice],
-        isUserCreated: true,
-      };
+      });
 
-      setCoins((prev) => [newMeme, ...prev]);
-      setCash(newCash);
-      if (userId) {
-        databases.updateDocument("pumpforge", "users", userId, {
-          cash: newCash,
-          coins: (userStats.coinsCreatedCount || 0) + 1,
-        });
+      if (res && res.coin) {
+        setCoins((prev) => [res.coin, ...prev]);
+      }
+      if (res && res.userStats && res.userStats.cash !== undefined) {
+        setCash(res.userStats.cash);
       }
 
       setSuccess(true);

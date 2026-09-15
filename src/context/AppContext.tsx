@@ -72,8 +72,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               customAdminBadge: "Operator"
             }, [
               Permission.read(Role.any()),
-              Permission.update(Role.any()),
-              Permission.delete(Role.any())
             ]);
           } catch(e) {
              console.warn("Could not create admin_settings, maybe collection missing. Using default.", e);

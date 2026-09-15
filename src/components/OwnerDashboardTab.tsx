@@ -79,6 +79,21 @@ import {
 import { databases } from "../appwrite";
 import { ID, Permission, Role, Query } from "appwrite";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  apiAdminUpdateCoin,
+  apiAdminPumpCoin,
+  apiAdminDumpCoin,
+  apiAdminDeleteCoin,
+  apiAdminGrantBalance,
+  apiAdminSanctionUser,
+  apiAdminResolveMarket,
+  apiAdminUpdateSettings,
+  apiAdminUpdateUserProfile,
+  apiAdminUpdateBugStatus,
+  apiAdminDeleteBugReport,
+  apiGetAuditLogs,
+  apiGetSchemaAudit,
+} from "../api/gameClient";
 
 interface OwnerDashboardProps {
   coins: MemeCoin[];
@@ -96,7 +111,7 @@ interface OwnerDashboardProps {
   onUpdateStats?: (updater: (stats: UserStats) => void) => void;
 }
 
-type AdminSubTab = "overview" | "users" | "market" | "coins" | "announcements" | "bugs";
+type AdminSubTab = "overview" | "users" | "market" | "coins" | "announcements" | "bugs" | "audit";
 
 export default function OwnerDashboardTab({
   coins,
@@ -115,6 +130,47 @@ export default function OwnerDashboardTab({
 
   // Active sub-tab state
   const [activeSubTab, setActiveSubTab] = useState<AdminSubTab>("overview");
+
+  // Audit Logs & Schema Audit state
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false);
+  const [schemaAuditData, setSchemaAuditData] = useState<any>(null);
+  const [isLoadingSchemaAudit, setIsLoadingSchemaAudit] = useState(false);
+
+  const fetchAuditLogs = async () => {
+    setIsLoadingLogs(true);
+    try {
+      const res = await apiGetAuditLogs();
+      setAuditLogs(res.logs || []);
+    } catch (err: any) {
+      toast.error("Failed to load audit logs: " + err.message);
+    } finally {
+      setIsLoadingLogs(false);
+    }
+  };
+
+  const fetchSchemaAudit = async () => {
+    setIsLoadingSchemaAudit(true);
+    try {
+      const res = await apiGetSchemaAudit();
+      setSchemaAuditData(res);
+      if (res.overallStatus === "PASS") {
+        toast.success("Appwrite Schema is 100% compliant with spec!");
+      } else {
+        toast.info("Schema audit completed with notes.");
+      }
+    } catch (err: any) {
+      toast.error("Schema audit error: " + err.message);
+    } finally {
+      setIsLoadingSchemaAudit(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeSubTab === "audit") {
+      fetchAuditLogs();
+    }
+  }, [activeSubTab]);
 
   // Registered users query from Appwrite
   const { data: usersQueryData = [], isError: isUsersError, error: usersError } = useQuery({
@@ -249,22 +305,27 @@ export default function OwnerDashboardTab({
     if (newStats.gems !== undefined) setGems(newStats.gems);
     const targetId = userId || (userStats as any)?.$id || userStats?.userId;
     if (targetId) {
-      databases.updateDocument("pumpforge", "users", targetId, {
-        cash: newStats.cash,
-        gems: newStats.gems,
+      apiAdminUpdateUserProfile(targetId, {
         prestigeLevel: newStats.prestigeLevel,
         isSuspended: newStats.isSuspended,
         isBanned: newStats.isBanned,
         suspendedUntil: newStats.suspendedUntil,
         title: newStats.title,
-      }).catch((e) => console.warn("Failed to persist stats update to Appwrite:", e));
+      }).catch((e) => console.warn("Failed to persist stats update to backend:", e));
     }
   };
 
   // Helper to persist coin updates to Appwrite & persistent local store
   const updateCoinInAppwrite = async (coinId: string, updates: Partial<MemeCoin>, fullCoin?: MemeCoin) => {
     try {
-      // 1. Immediately persist to client overrides map so refresh never loses the edit
+      // 1. Immediately persist to server-authoritative coin store
+      try {
+        await apiAdminUpdateCoin(coinId, updates);
+      } catch (srvErr) {
+        console.warn("apiAdminUpdateCoin notice:", srvErr);
+      }
+
+      // 2. Persist to client overrides map so refresh never loses the edit
       saveStoredCoinOverride(coinId, {
         price: updates.price !== undefined ? Number(updates.price) : undefined,
         marketCap: updates.marketCap !== undefined ? Math.floor(Number(updates.marketCap)) : undefined,
@@ -323,14 +384,10 @@ export default function OwnerDashboardTab({
           try {
             await databases.createDocument("pumpforge", "coins", coinId, createPayload, [
               Permission.read(Role.any()),
-              Permission.update(Role.any()),
-              Permission.delete(Role.any()),
             ]);
           } catch (createErr) {
             await databases.createDocument("pumpforge", "coins", ID.unique(), createPayload, [
               Permission.read(Role.any()),
-              Permission.update(Role.any()),
-              Permission.delete(Role.any()),
             ]);
           }
         }
@@ -482,8 +539,6 @@ export default function OwnerDashboardTab({
         },
         [
           Permission.read(Role.any()),
-          Permission.update(Role.any()),
-          Permission.delete(Role.any()),
         ]
       );
       fetchActiveBroadcasts();
@@ -694,6 +749,11 @@ export default function OwnerDashboardTab({
     try {
       saveDeletedCoin(coinId);
       try {
+        await apiAdminDeleteCoin(coinId);
+      } catch (e) {
+        console.warn("apiAdminDeleteCoin notice:", e);
+      }
+      try {
         await databases.deleteDocument("pumpforge", "coins", coinId);
       } catch (err1) {
         try {
@@ -797,8 +857,6 @@ export default function OwnerDashboardTab({
         payload,
         [
           Permission.read(Role.any()),
-          Permission.update(Role.any()),
-          Permission.delete(Role.any()),
         ]
       );
 
@@ -857,8 +915,6 @@ export default function OwnerDashboardTab({
         },
         [
           Permission.read(Role.any()),
-          Permission.update(Role.any()),
-          Permission.delete(Role.any()),
         ]
       );
       toast.success(`Promo code ${promoPubCode.toUpperCase()} published!`, { id: "promo-publish" });
@@ -886,7 +942,7 @@ export default function OwnerDashboardTab({
 
     try {
       localStorage.setItem("pf_arcade_rig_mode", mode);
-      await databases.updateDocument("pumpforge", "admin_settings", "global", {
+      await apiAdminUpdateSettings({
         arcadeRigMode: mode,
         isCasinoRigged: mode === "win",
       });
@@ -924,10 +980,9 @@ export default function OwnerDashboardTab({
       );
       const uid = currentUserReg?.uid || userId || (userStats as any)?.$id || userStats?.userId;
       const amountToAdd = Number(customCash) || 0;
-      const targetCash = (Number(userStats?.cash) || 0) + amountToAdd;
 
       if (uid) {
-        await databases.updateDocument("pumpforge", "users", uid, { cash: targetCash });
+        await apiAdminGrantBalance(uid, "add", "cash", amountToAdd);
         queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
       }
 
@@ -956,10 +1011,9 @@ export default function OwnerDashboardTab({
       );
       const uid = currentUserReg?.uid || userId || (userStats as any)?.$id || userStats?.userId;
       const amountToAdd = Number(customGems) || 0;
-      const targetGems = (Number(userStats?.gems) || 0) + amountToAdd;
 
       if (uid) {
-        await databases.updateDocument("pumpforge", "users", uid, { gems: targetGems });
+        await apiAdminGrantBalance(uid, "add", "gems", amountToAdd);
         queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
       }
 
@@ -1035,6 +1089,8 @@ export default function OwnerDashboardTab({
       id: "mutate-" + playerHandle,
     });
 
+    const uid = targetUid || (isUser ? (userId || (userStats as any)?.$id || userStats?.userId) : undefined);
+
     if (isUser) {
       const currentCash = Number(userStats?.cash) || 0;
       let newCash = currentCash;
@@ -1043,9 +1099,11 @@ export default function OwnerDashboardTab({
       else if (mode === "set") newCash = Math.max(0, amount);
 
       try {
-        const uid = targetUid || userId || (userStats as any)?.$id || userStats?.userId;
-        if (uid) {
-          await databases.updateDocument("pumpforge", "users", uid, { cash: newCash });
+        if (uid && !uid.startsWith("sim_")) {
+          const res = await apiAdminGrantBalance(uid, mode, "cash", amount);
+          if (res?.userStats?.cash !== undefined) {
+            newCash = res.userStats.cash;
+          }
           queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
         }
         onUpdateStats((stats) => {
@@ -1070,16 +1128,8 @@ export default function OwnerDashboardTab({
       }
     } else {
       try {
-        const uid = targetUid;
         if (uid && !uid.startsWith("sim_") && !uid.startsWith("usr_")) {
-          const userDoc = await databases.getDocument("pumpforge", "users", uid);
-          const currentBal = Number(userDoc?.cash) || 5000;
-          let finalCash = currentBal;
-          if (mode === "add") finalCash += amount;
-          else if (mode === "deduct") finalCash = Math.max(0, currentBal - amount);
-          else if (mode === "set") finalCash = Math.max(0, amount);
-
-          await databases.updateDocument("pumpforge", "users", uid, { cash: finalCash });
+          await apiAdminGrantBalance(uid, mode, "cash", amount);
           queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
         }
 
@@ -1122,6 +1172,8 @@ export default function OwnerDashboardTab({
       id: "mutate-gems-" + playerHandle,
     });
 
+    const uid = targetUid || (isUser ? (userId || (userStats as any)?.$id || userStats?.userId) : undefined);
+
     if (isUser) {
       const currentGems = Number(userStats?.gems) || 0;
       let newGems = currentGems;
@@ -1130,9 +1182,11 @@ export default function OwnerDashboardTab({
       else if (mode === "set") newGems = Math.max(0, amount);
 
       try {
-        const uid = targetUid || userId || (userStats as any)?.$id || userStats?.userId;
-        if (uid) {
-          await databases.updateDocument("pumpforge", "users", uid, { gems: newGems });
+        if (uid && !uid.startsWith("sim_")) {
+          const res = await apiAdminGrantBalance(uid, mode, "gems", amount);
+          if (res?.userStats?.gems !== undefined) {
+            newGems = res.userStats.gems;
+          }
           queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
         }
         onUpdateStats((stats) => {
@@ -1152,16 +1206,8 @@ export default function OwnerDashboardTab({
       }
     } else {
       try {
-        const uid = targetUid;
         if (uid && !uid.startsWith("sim_") && !uid.startsWith("usr_")) {
-          const userDoc = await databases.getDocument("pumpforge", "users", uid);
-          const currentGems = Number(userDoc?.gems) || 100;
-          let finalGems = currentGems;
-          if (mode === "add") finalGems += amount;
-          else if (mode === "deduct") finalGems = Math.max(0, currentGems - amount);
-          else if (mode === "set") finalGems = Math.max(0, amount);
-
-          await databases.updateDocument("pumpforge", "users", uid, { gems: finalGems });
+          await apiAdminGrantBalance(uid, mode, "gems", amount);
           queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
         }
 
@@ -1215,9 +1261,9 @@ export default function OwnerDashboardTab({
         const uid = targetUid || userId || (userStats as any)?.$id || userStats?.userId;
         if (uid && !uid.startsWith("sim_") && !uid.startsWith("usr_")) {
           try {
-            await databases.updateDocument("pumpforge", "users", uid, { prestigeLevel: level });
+            await apiAdminUpdateUserProfile(uid, { prestigeLevel: level });
           } catch (appwriteErr) {
-            console.warn("Appwrite doc update for prestigeLevel:", appwriteErr);
+            console.warn("API profile update for prestigeLevel:", appwriteErr);
           }
           queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
         }
@@ -1235,9 +1281,9 @@ export default function OwnerDashboardTab({
         const uid = targetUid;
         if (uid && !uid.startsWith("sim_") && !uid.startsWith("usr_")) {
           try {
-            await databases.updateDocument("pumpforge", "users", uid, { prestigeLevel: level });
+            await apiAdminUpdateUserProfile(uid, { prestigeLevel: level });
           } catch (appwriteErr) {
-            console.warn("Appwrite doc update for prestigeLevel:", appwriteErr);
+            console.warn("API profile update for prestigeLevel:", appwriteErr);
           }
           queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
         }
@@ -1277,10 +1323,9 @@ export default function OwnerDashboardTab({
         const uid = targetUid || userId || (userStats as any)?.$id || userStats?.userId;
         if (uid && !uid.startsWith("sim_") && !uid.startsWith("usr_")) {
           try {
-            await databases.updateDocument("pumpforge", "users", uid, { title });
+            await apiAdminUpdateUserProfile(uid, { title });
           } catch (appwriteErr) {
-            // Appwrite users collection lacks 'title' attribute; gracefully handled by our storage layer
-            console.warn("Appwrite title attribute not declared, using local store:", appwriteErr);
+            console.warn("API profile update for title:", appwriteErr);
           }
           queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
         }
@@ -1298,9 +1343,9 @@ export default function OwnerDashboardTab({
         const uid = targetUid;
         if (uid && !uid.startsWith("sim_") && !uid.startsWith("usr_")) {
           try {
-            await databases.updateDocument("pumpforge", "users", uid, { title });
+            await apiAdminUpdateUserProfile(uid, { title });
           } catch (appwriteErr) {
-            console.warn("Appwrite title attribute not declared, using local store:", appwriteErr);
+            console.warn("API profile update for title:", appwriteErr);
           }
           queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
         }
@@ -1342,12 +1387,12 @@ export default function OwnerDashboardTab({
         const uid = targetUid || userId || (userStats as any)?.$id || userStats?.userId;
         if (uid && !uid.startsWith("sim_") && !uid.startsWith("usr_")) {
           try {
-            await databases.updateDocument("pumpforge", "users", uid, {
+            await apiAdminUpdateUserProfile(uid, {
               isAdmin: makeAdmin,
               title: assignedTitle,
             });
           } catch (appwriteErr) {
-            console.warn("Appwrite role attribute not declared, using local store:", appwriteErr);
+            console.warn("API profile update for role:", appwriteErr);
           }
           queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
         }
@@ -1366,12 +1411,12 @@ export default function OwnerDashboardTab({
         const uid = targetUid;
         if (uid && !uid.startsWith("sim_") && !uid.startsWith("usr_")) {
           try {
-            await databases.updateDocument("pumpforge", "users", uid, {
+            await apiAdminUpdateUserProfile(uid, {
               isAdmin: makeAdmin,
               title: assignedTitle,
             });
           } catch (appwriteErr) {
-            console.warn("Appwrite role attribute not declared, using local store:", appwriteErr);
+            console.warn("API profile update for role:", appwriteErr);
           }
           queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
         }
@@ -1424,12 +1469,17 @@ export default function OwnerDashboardTab({
       try {
         const uid = targetUid || userId || (userStats as any)?.$id || userStats?.userId;
         if (uid && !uid.startsWith("sim_") && !uid.startsWith("usr_")) {
-          // Strictly send valid Appwrite schema attributes
-          await databases.updateDocument("pumpforge", "users", uid, {
-            cash: 5000,
-            gems: 100,
-            prestigeLevel: 0,
-          });
+          await apiAdminGrantBalance(uid, "set", "cash", 5000);
+          await apiAdminGrantBalance(uid, "set", "gems", 100);
+          try {
+            await apiAdminSanctionUser(uid, "unban");
+            await apiAdminSanctionUser(uid, "unsuspend");
+          } catch (sErr) {}
+          try {
+            await apiAdminUpdateUserProfile(uid, {
+              prestigeLevel: 0,
+            });
+          } catch (e) {}
           queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
         }
         onUpdateStats((stats) => {
@@ -1451,11 +1501,17 @@ export default function OwnerDashboardTab({
       try {
         const uid = targetUid;
         if (uid && !uid.startsWith("sim_") && !uid.startsWith("usr_")) {
-          await databases.updateDocument("pumpforge", "users", uid, {
-            cash: 5000,
-            gems: 100,
-            prestigeLevel: 0,
-          });
+          await apiAdminGrantBalance(uid, "set", "cash", 5000);
+          await apiAdminGrantBalance(uid, "set", "gems", 100);
+          try {
+            await apiAdminSanctionUser(uid, "unban");
+            await apiAdminSanctionUser(uid, "unsuspend");
+          } catch (sErr) {}
+          try {
+            await apiAdminUpdateUserProfile(uid, {
+              prestigeLevel: 0,
+            });
+          } catch (e) {}
           queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
         }
         if (setSimulatedPlayers) {
@@ -1529,6 +1585,18 @@ export default function OwnerDashboardTab({
     if (targetUid) saveStoredSanction(targetUid, sanctionPayload);
     setStoredSanctions(getStoredSanctions());
 
+    const effectiveTargetUid = targetUid || (isUser ? (userId || (userStats as any)?.$id || userStats?.userId) : undefined);
+    if (effectiveTargetUid && !effectiveTargetUid.startsWith("sim_")) {
+      const sanctionType = action === "lift"
+        ? (currentSanction.isBanned ? "unban" : "unsuspend")
+        : (action === "ban" ? (isNowBanned ? "ban" : "unban") : (isNowSuspended ? "suspend" : "unsuspend"));
+      try {
+        await apiAdminSanctionUser(effectiveTargetUid, sanctionType, days * 24 * 60);
+      } catch (e) {
+        console.warn("apiAdminSanctionUser notice:", e);
+      }
+    }
+
     if (isUser) {
       onUpdateStats((stats) => {
         stats.isSuspended = isNowSuspended;
@@ -1545,15 +1613,6 @@ export default function OwnerDashboardTab({
     } else {
       try {
         if (targetUid && !targetUid.startsWith("sim_") && !targetUid.startsWith("usr_")) {
-          try {
-            await databases.updateDocument("pumpforge", "users", targetUid, {
-              isSuspended: isNowSuspended,
-              isBanned: isNowBanned,
-              suspendedUntil: isNowSuspended ? suspendMs : null,
-            });
-          } catch (appwriteErr) {
-            console.warn("Appwrite sanction attributes not declared, using local store:", appwriteErr);
-          }
           queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
         }
         if (setSimulatedPlayers) {
@@ -1583,7 +1642,7 @@ export default function OwnerDashboardTab({
   const handleToggleBugStatus = async (bugId: string, currentStatus: string) => {
     try {
       const nextStatus = currentStatus === "open" ? "resolved" : "open";
-      await databases.updateDocument("pumpforge", "bugs", bugId, { status: nextStatus });
+      await apiAdminUpdateBugStatus(bugId, nextStatus);
       setBugReports((prev) => prev.map((b) => (b.id === bugId ? { ...b, status: nextStatus } : b)));
       toast.success(`Bug marked as ${nextStatus}!`);
     } catch (e: any) {
@@ -1593,7 +1652,7 @@ export default function OwnerDashboardTab({
 
   const handleDeleteBugReport = async (bugId: string) => {
     try {
-      await databases.deleteDocument("pumpforge", "bugs", bugId);
+      await apiAdminDeleteBugReport(bugId);
       setBugReports((prev) => prev.filter((b) => b.id !== bugId));
       toast.success("Bug report deleted.");
     } catch (e: any) {
@@ -1610,7 +1669,7 @@ export default function OwnerDashboardTab({
         return;
       }
       for (const bug of resolvedList) {
-        await databases.deleteDocument("pumpforge", "bugs", bug.id);
+        await apiAdminDeleteBugReport(bug.id);
       }
       setBugReports((prev) => prev.filter((b) => b.status !== "resolved"));
       toast.success(`Pruned ${resolvedList.length} resolved bug reports.`);
@@ -1904,6 +1963,7 @@ export default function OwnerDashboardTab({
           { id: "users" as const, label: "User Terminal", icon: UserCheck, count: systemUsersList.length },
           { id: "announcements" as const, label: "Announcements", icon: BellRing, count: activeBroadcastsList.length },
           { id: "bugs" as const, label: "Bug Reports", icon: Bug, count: bugReports.filter((b) => b.status === "open").length },
+          { id: "audit" as const, label: "Security & Audit", icon: ShieldCheck, badge: "AUTHORITATIVE" },
         ].map((tab) => {
           const Icon = tab.icon;
           const isActive = activeSubTab === tab.id;
@@ -3540,6 +3600,187 @@ export default function OwnerDashboardTab({
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ==================================================== */}
+      {/* --- SUB-TAB 7: SECURITY & SCHEMA AUDIT --- */}
+      {/* ==================================================== */}
+      {activeSubTab === "audit" && (
+        <div className="space-y-6 animate-in fade-in duration-300">
+          <div className="bg-zinc-900/60 border border-white/10 rounded-2xl p-6 flex flex-wrap items-center justify-between gap-4 shadow-xl">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-emerald-400" />
+                <h3 className="text-lg font-black text-white">Authoritative Security & Schema Audit</h3>
+                <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-mono px-2 py-0.5 rounded-full font-bold border border-emerald-500/30">
+                  SECURE
+                </span>
+              </div>
+              <p className="text-xs text-zinc-400">
+                Tamper-evident audit logs of all administrative mutations and Appwrite collection schema validation against specification.
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={fetchAuditLogs}
+                disabled={isLoadingLogs}
+                className="flex items-center gap-2 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl text-xs font-bold transition border border-white/10 cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isLoadingLogs ? "animate-spin text-rose-400" : ""}`} />
+                <span>Refresh Audit Logs</span>
+              </button>
+              <button
+                onClick={fetchSchemaAudit}
+                disabled={isLoadingSchemaAudit}
+                className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition shadow-lg shadow-emerald-950/40 border border-emerald-400/40 cursor-pointer disabled:opacity-50"
+              >
+                <ShieldCheck className={`w-3.5 h-3.5 ${isLoadingSchemaAudit ? "animate-spin" : ""}`} />
+                <span>Run Schema Audit</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Schema Audit Results if triggered */}
+          {schemaAuditData && (
+            <div className="bg-zinc-900/80 border border-emerald-500/30 rounded-2xl p-6 space-y-4 shadow-2xl shadow-emerald-950/20">
+              <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                <div className="flex items-center gap-3">
+                  <div className={`p-2 rounded-xl border ${
+                    schemaAuditData.overallStatus === "PASS"
+                      ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+                      : "bg-amber-500/10 border-amber-500/30 text-amber-400"
+                  }`}>
+                    {schemaAuditData.overallStatus === "PASS" ? (
+                      <CheckCircle2 className="w-5 h-5" />
+                    ) : (
+                      <AlertTriangle className="w-5 h-5" />
+                    )}
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-white">
+                      Appwrite Schema Validation: <span className={schemaAuditData.overallStatus === "PASS" ? "text-emerald-400" : "text-amber-400"}>{schemaAuditData.overallStatus}</span>
+                    </h4>
+                    <p className="text-xs text-zinc-400">
+                      Audit completed at {new Date(schemaAuditData.timestamp).toLocaleTimeString()}
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-xs font-mono font-bold text-zinc-300">
+                    Collections Checked: {schemaAuditData.collectionAudits?.length || 0}
+                  </span>
+                </div>
+              </div>
+
+              {/* Collections Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {schemaAuditData.collectionAudits?.map((col: any) => (
+                  <div
+                    key={col.collectionId}
+                    className="p-3 bg-zinc-950/60 border border-white/5 rounded-xl space-y-2 text-xs"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono font-bold text-white flex items-center gap-1.5">
+                        <Layers className="w-3.5 h-3.5 text-zinc-400" />
+                        {col.collectionId}
+                      </span>
+                      <span
+                        className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${
+                          col.status === "PASS"
+                            ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                            : "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                        }`}
+                      >
+                        {col.status}
+                      </span>
+                    </div>
+
+                    <div className="text-[11px] text-zinc-400 space-y-0.5">
+                      <div>Expected attributes: {col.expectedAttributesCount}</div>
+                      <div>Actual attributes found: {col.actualAttributesCount}</div>
+                      {col.missingAttributes && col.missingAttributes.length > 0 && (
+                        <div className="text-amber-400">
+                          Missing: {col.missingAttributes.join(", ")}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Summary Notes */}
+              {schemaAuditData.summaryNotes && schemaAuditData.summaryNotes.length > 0 && (
+                <div className="p-3 bg-zinc-950/80 border border-white/10 rounded-xl space-y-1">
+                  <div className="text-xs font-bold text-zinc-300">Audit Notes:</div>
+                  <ul className="text-xs text-zinc-400 space-y-1 list-disc list-inside">
+                    {schemaAuditData.summaryNotes.map((note: string, idx: number) => (
+                      <li key={idx} className="font-mono text-[11px]">{note}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Audit Logs Table */}
+          <div className="bg-zinc-900/60 border border-white/10 rounded-2xl p-6 space-y-4 shadow-xl">
+            <div className="flex items-center justify-between pb-3 border-b border-white/10">
+              <div className="flex items-center gap-2">
+                <Activity className="w-4 h-4 text-rose-400" />
+                <h4 className="text-sm font-bold text-white">Immutable Administrative Audit Log</h4>
+              </div>
+              <span className="text-xs text-zinc-400 font-mono">
+                {auditLogs.length} total recorded operations
+              </span>
+            </div>
+
+            {isLoadingLogs ? (
+              <div className="py-12 flex flex-col items-center justify-center gap-3 text-zinc-400">
+                <RefreshCw className="w-6 h-6 animate-spin text-rose-500" />
+                <span className="text-xs font-mono">Retrieving authoritative server audit stream...</span>
+              </div>
+            ) : auditLogs.length === 0 ? (
+              <div className="py-12 text-center text-zinc-500 text-xs font-mono">
+                No administrative actions logged in current server lifecycle yet.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-white/10 text-zinc-400 font-mono text-[11px]">
+                      <th className="pb-2.5 font-bold">TIMESTAMP</th>
+                      <th className="pb-2.5 font-bold">ADMIN / ACTOR</th>
+                      <th className="pb-2.5 font-bold">ACTION TYPE</th>
+                      <th className="pb-2.5 font-bold">PARAMETERS & DETAILS</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5 font-mono text-[11px]">
+                    {auditLogs.map((log) => (
+                      <tr key={log.id} className="hover:bg-white/[0.02] transition">
+                        <td className="py-3 text-zinc-400 whitespace-nowrap">
+                          {new Date(log.timestamp).toLocaleString()}
+                        </td>
+                        <td className="py-3 text-zinc-200 whitespace-nowrap">
+                          <span className="font-bold text-rose-400">{log.adminEmail || log.adminId}</span>
+                        </td>
+                        <td className="py-3 whitespace-nowrap">
+                          <span className="px-2 py-0.5 rounded-full bg-rose-500/10 border border-rose-500/30 text-rose-300 font-bold text-[10px]">
+                            {log.action}
+                          </span>
+                        </td>
+                        <td className="py-3 text-zinc-400 max-w-md break-all">
+                          <code className="text-[10px] text-zinc-300 bg-zinc-950 px-2 py-1 rounded border border-white/5 block">
+                            {JSON.stringify(log.details)}
+                          </code>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
