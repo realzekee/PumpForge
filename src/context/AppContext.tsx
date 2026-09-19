@@ -52,7 +52,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const initAppwrite = async () => {
       try {
-        // Fetch or create admin settings
+        // Fetch admin settings (Read Any is permitted under zero-trust)
         try {
           const settingsDoc = await databases.getDocument("pumpforge", "admin_settings", "global");
           const mode: ArcadeRigMode = settingsDoc.arcadeRigMode || (settingsDoc.isCasinoRigged ? "win" : getSavedRigMode());
@@ -63,50 +63,46 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             customAdminBadge: settingsDoc.customAdminBadge ?? "Operator"
           });
         } catch (setErr) {
-          console.warn("Global admin_settings not found, trying to create...", setErr);
-          try {
-            await databases.createDocument("pumpforge", "admin_settings", "global", {
-              isCasinoRigged: false,
-              arcadeRigMode: "fair",
-              rainbowCosmetics: false,
-              customAdminBadge: "Operator"
-            }, [
-              Permission.read(Role.any()),
-            ]);
-          } catch(e) {
-             console.warn("Could not create admin_settings, maybe collection missing. Using default.", e);
-          }
-        }
-
-        const user = await account.get();
-        setCurrentUser(user);
-        setUserId(user.$id);
-        const doc = await databases.getDocument("pumpforge", "users", user.$id);
-        setUserStats(doc);
-        setCash(doc.cash ?? 5000);
-        setGems(doc.gems ?? 90);
-        setPrestigeLevel(doc.prestigeLevel ?? 0);
-        
-        const lastC = doc.lastClaimed || doc.lastDailyRewardClaim;
-        if (lastC) {
-           localStorage.setItem("pf_last_claimed", lastC);
-        }
-
-        // Mirror session validation flag to bypass Firefox ETP dropping the third-party cookie
-        localStorage.setItem("pf_session_valid", "true");
-        localStorage.setItem("pf_fallback_userId", user.$id);
-      } catch (e: any) {
-        console.warn(
-          "Appwrite init error in context (possible Firefox ETP):",
-          e,
-        );
-        if (e?.code === 403) {
-          import("sonner").then(({ toast }) => {
-            toast.error(
-              "Appwrite Permission Denied (403): Check your Security Roles or Collection Permissions in the console.",
-            );
+          // Zero-trust note: Clients have Read Any, Create None. If doc doesn't exist yet, use defaults safely.
+          console.log("Admin settings defaulted (safe zero-trust fallback):", (setErr as any)?.message || setErr);
+          setAdminSettings({
+            isCasinoRigged: false,
+            arcadeRigMode: getSavedRigMode(),
+            rainbowCosmetics: false,
+            customAdminBadge: "Operator"
           });
         }
+
+        // Fetch user account session if logged in
+        try {
+          const user = await account.get();
+          if (user && user.$id) {
+            setCurrentUser(user);
+            setUserId(user.$id);
+            try {
+              const doc = await databases.getDocument("pumpforge", "users", user.$id);
+              setUserStats(doc);
+              setCash(doc.cash ?? 5000);
+              setGems(doc.gems ?? 90);
+              setPrestigeLevel(doc.prestigeLevel ?? 0);
+              
+              const lastC = doc.lastClaimed || doc.lastDailyRewardClaim;
+              if (lastC) {
+                localStorage.setItem("pf_last_claimed", lastC);
+              }
+
+              localStorage.setItem("pf_session_valid", "true");
+              localStorage.setItem("pf_fallback_userId", user.$id);
+            } catch (docErr) {
+              console.warn("User document not yet initialized in users table:", docErr);
+            }
+          }
+        } catch (authErr) {
+          // Normal guest state: user is not yet logged in with Appwrite
+          console.log("Active guest session (unauthenticated visitor)");
+        }
+      } catch (e: any) {
+        console.warn("Appwrite init error in context:", e);
 
         // Firefox ETP fallback hydration
         const isSessionValid = localStorage.getItem("pf_session_valid");

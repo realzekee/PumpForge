@@ -78,7 +78,7 @@ export default function PolymarketTab({
   };
 
   return (
-    <div className="flex flex-col gap-6 w-full h-full animate-fade-in relative">
+    <div className="flex flex-col gap-6 w-full max-w-full overflow-hidden h-full animate-fade-in relative">
       <div className="glass-panel border border-white/10 p-6 md:p-8 rounded-3xl relative overflow-hidden backdrop-blur-xl shadow-2xl">
         <div className="absolute -right-12 -bottom-12 w-64 h-64 bg-rose-500/10 rounded-full blur-3xl pointer-events-none" />
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-5 relative z-10">

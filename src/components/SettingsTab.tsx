@@ -53,7 +53,7 @@ const SettingsTab: React.FC<SettingsTabProps> = ({
   };
 
   return (
-    <div className="flex-1 flex flex-col gap-6 animate-fade-in text-zinc-100 font-mono">
+    <div className="flex-1 flex flex-col gap-6 animate-fade-in text-zinc-100 font-mono w-full max-w-full overflow-hidden">
       <div className="flex items-center justify-between border-b border-zinc-800 pb-4">
         <h2 className="text-2xl font-extrabold flex items-center gap-2">
           <Settings className="w-6 h-6 text-zinc-400" />

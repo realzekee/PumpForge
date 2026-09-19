@@ -660,7 +660,7 @@ export default function ArcadeTab({
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 animate-fade-in select-none">
+    <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 animate-fade-in w-full max-w-full overflow-hidden">
       {/* Universal in-game localNotice toast notifications */}
       {localNotice && (
         <div
@@ -1310,9 +1310,9 @@ export default function ArcadeTab({
 
                 {/* Banner outcome display overlay */}
                 {diceResultVal !== null && !diceIsRollingState && (
-                  <div className="absolute inset-x-0 bottom-[-14px] flex justify-center animate-in fade-in slide-in-from-bottom-2 duration-300">
+                  <div className="absolute inset-x-0 bottom-[-14px] flex justify-center animate-in fade-in slide-in-from-bottom-2 duration-300 px-2">
                     <div
-                      className={`px-5 py-2 rounded-xl flex flex-col items-center shadow-2xl border text-center font-bold tracking-mono text-[11px] min-w-[210px] backdrop-blur-md ${
+                      className={`px-5 py-2 rounded-xl flex flex-col items-center shadow-2xl border text-center font-bold tracking-mono text-[11px] max-w-[95%] sm:min-w-[210px] backdrop-blur-md ${
                         diceResultVal === diceSelectedNum
                           ? "bg-emerald-950/90 border-emerald-500/40 text-emerald-300"
                           : "bg-rose-950/90 border-rose-500/40 text-rose-300"

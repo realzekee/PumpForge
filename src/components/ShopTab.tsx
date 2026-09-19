@@ -208,7 +208,7 @@ export default function ShopTab({
   };
 
   return (
-    <div className="flex flex-col gap-6 animate-fade-in select-none">
+    <div className="flex flex-col gap-6 animate-fade-in w-full max-w-full overflow-hidden">
       <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4 w-full">
         <div className="flex flex-col gap-1.5">
           <h2 className="text-sm font-extrabold text-zinc-300 font-mono tracking-widest uppercase flex items-center gap-2 leading-none">

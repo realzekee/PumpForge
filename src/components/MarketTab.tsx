@@ -178,9 +178,9 @@ export default function MarketTab({
   }
 
   return (
-    <div className="flex flex-col gap-5 animate-fade-in">
+    <div className="flex flex-col gap-5 animate-fade-in w-full max-w-full">
       {/* Search and stats bar */}
-      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 w-full">
+      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 w-full max-w-full">
         <div className="relative flex-1">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
           <input
@@ -191,7 +191,7 @@ export default function MarketTab({
             className="w-full pl-10 pr-4 py-2.5 glass-input rounded-xl text-xs text-white focus:outline-none focus:border-rose-500/80 transition-all font-mono"
           />
         </div>
-        <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase font-bold text-zinc-400 overflow-x-auto shrink-0 py-1">
+        <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase font-bold text-zinc-400 overflow-x-auto max-w-full py-1 custom-scrollbar">
           <span>Sort:</span>
           {[
             { id: "marketCap", label: "Market Cap" },
@@ -222,9 +222,9 @@ export default function MarketTab({
       </div>
 
       {/* Coins Market Table or List */}
-      <div className="glass-panel border border-white/10 rounded-3xl overflow-hidden select-none shadow-2xl">
+      <div className="glass-panel border border-white/10 rounded-3xl overflow-hidden shadow-2xl w-full max-w-full">
         {/* Desktop Table View */}
-        <div className="hidden md:block overflow-x-auto">
+        <div className="hidden md:block overflow-x-auto max-w-full custom-scrollbar">
           <table className="w-full text-left font-mono">
             <thead className="bg-white/[0.03] border-b border-white/[0.08] text-[10px] text-zinc-400 uppercase tracking-wider font-extrabold">
               <tr>
@@ -255,7 +255,15 @@ export default function MarketTab({
                   return (
                     <tr
                       key={coin.id}
-                      className="hover:bg-white/[0.04] transition-colors"
+                      onClick={() => navigate(`/coin/${coin.id}`)}
+                      className="hover:bg-white/[0.08] transition-colors cursor-pointer group"
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          navigate(`/coin/${coin.id}`);
+                        }
+                      }}
                     >
                       {/* Name Col */}
                       <td className="px-5 py-3.5 flex items-center gap-3">
@@ -266,7 +274,7 @@ export default function MarketTab({
                         </div>
                         <div className="flex flex-col min-w-0">
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="font-extrabold text-white text-[13px] tracking-tight leading-none truncate overflow-ellipsis">
+                            <span className="font-extrabold text-white text-[13px] tracking-tight leading-none truncate overflow-ellipsis group-hover:text-rose-400 transition-colors">
                               {coin.name}
                             </span>
                             {coin.isUserCreated && (
@@ -355,8 +363,11 @@ export default function MarketTab({
                           {isCreator ? (
                             <div className="flex gap-1.5">
                               <button
-                                onClick={() => navigate(`/coin/${coin.id}`)}
-                                className="font-black py-1.5 px-3 rounded-xl text-[10px] select-none tracking-widest uppercase transition-all glass-pill hover:bg-white/[0.12] text-zinc-200 hover:text-white border-white/10 hover:border-orange-500 cursor-pointer"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  navigate(`/coin/${coin.id}`);
+                                }}
+                                className="font-black py-1.5 px-3 rounded-xl text-[10px] tracking-widest uppercase transition-all glass-pill hover:bg-white/[0.12] text-zinc-200 hover:text-white border-white/10 hover:border-orange-500 cursor-pointer"
                               >
                                 Trade
                               </button>
@@ -372,8 +383,11 @@ export default function MarketTab({
                             </div>
                           ) : (
                             <button
-                              onClick={() => navigate(`/coin/${coin.id}`)}
-                              className="font-black py-1.5 px-3.5 rounded-xl text-[10px] select-none tracking-widest uppercase transition-all glass-pill hover:bg-white/[0.12] text-zinc-200 hover:text-white border-white/10 hover:border-rose-500 cursor-pointer"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigate(`/coin/${coin.id}`);
+                              }}
+                              className="font-black py-1.5 px-3.5 rounded-xl text-[10px] tracking-widest uppercase transition-all glass-pill hover:bg-white/[0.12] text-zinc-200 hover:text-white border-white/10 hover:border-rose-500 cursor-pointer"
                             >
                               Trade
                             </button>
@@ -402,7 +416,15 @@ export default function MarketTab({
               return (
                 <div
                   key={coin.id}
-                  className="p-3.5 flex items-center justify-between gap-2.5 hover:bg-white/[0.04] transition-colors"
+                  onClick={() => navigate(`/coin/${coin.id}`)}
+                  className="p-3.5 flex items-center justify-between gap-2.5 hover:bg-white/[0.08] transition-colors cursor-pointer group"
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      navigate(`/coin/${coin.id}`);
+                    }
+                  }}
                 >
                   {/* Left: Avatar & info stacked */}
                   <div className="flex items-center gap-2.5 min-w-0 flex-1">
@@ -413,7 +435,7 @@ export default function MarketTab({
                     </div>
                     <div className="flex flex-col min-w-0">
                       <div className="flex items-center gap-1 flex-wrap">
-                        <span className="font-extrabold text-white text-[12.5px] tracking-tight truncate leading-none">
+                        <span className="font-extrabold text-white text-[12.5px] tracking-tight truncate leading-none group-hover:text-rose-400 transition-colors">
                           {coin.name}
                         </span>
                         {coin.isUserCreated && (
@@ -478,8 +500,11 @@ export default function MarketTab({
                     {isCreator ? (
                       <div className="flex gap-1">
                         <button
-                          onClick={() => navigate(`/coin/${coin.id}`)}
-                          className="font-black py-1.5 px-2.5 rounded-xl text-[9px] select-none tracking-widest uppercase transition-all leading-none glass-pill hover:bg-white/[0.12] text-zinc-200 hover:text-white border-white/10 cursor-pointer"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/coin/${coin.id}`);
+                          }}
+                          className="font-black py-1.5 px-2.5 rounded-xl text-[9px] tracking-widest uppercase transition-all leading-none glass-pill hover:bg-white/[0.12] text-zinc-200 hover:text-white border-white/10 cursor-pointer"
                         >
                           Trade
                         </button>
@@ -495,8 +520,11 @@ export default function MarketTab({
                       </div>
                     ) : (
                       <button
-                        onClick={() => navigate(`/coin/${coin.id}`)}
-                        className="font-black py-1.5 px-3 rounded-xl text-[10px] select-none tracking-widest uppercase transition-all leading-none glass-pill hover:bg-white/[0.12] text-zinc-200 hover:text-white border-white/10 cursor-pointer"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/coin/${coin.id}`);
+                        }}
+                        className="font-black py-1.5 px-3 rounded-xl text-[10px] tracking-widest uppercase transition-all leading-none glass-pill hover:bg-white/[0.12] text-zinc-200 hover:text-white border-white/10 cursor-pointer"
                       >
                         Trade
                       </button>

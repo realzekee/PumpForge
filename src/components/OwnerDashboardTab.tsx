@@ -1869,7 +1869,7 @@ export default function OwnerDashboardTab({
   }
 
   return (
-    <div className="flex-1 flex flex-col gap-6 animate-fade-in text-zinc-100 font-sans pb-16 max-w-7xl mx-auto w-full px-2 sm:px-4">
+    <div className="flex-1 flex flex-col gap-6 animate-fade-in text-zinc-100 font-sans pb-16 max-w-7xl mx-auto w-full max-w-full overflow-hidden px-2 sm:px-4">
       {/* ==================================================== */}
       {/* --- COMMAND CENTER HEADER & STATS BAR --- */}
       {/* ==================================================== */}

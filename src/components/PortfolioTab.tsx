@@ -225,7 +225,7 @@ export default function PortfolioTab({
 
   return (
     <div
-      className="flex-col flex gap-6 animate-fade-in text-zinc-100 font-mono"
+      className="flex-col flex gap-6 animate-fade-in text-zinc-100 font-mono w-full max-w-full overflow-hidden"
       id="portfolio-tab-view"
     >
       {/* Page Header */}

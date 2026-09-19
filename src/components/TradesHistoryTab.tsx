@@ -39,7 +39,7 @@ export function TradesHistoryTab({
   }, []);
 
   return (
-    <div className="flex flex-col gap-6 animate-fade-in">
+    <div className="flex flex-col gap-6 animate-fade-in w-full max-w-full overflow-hidden">
       <div className="flex items-center gap-3 border-b border-white/10 pb-4">
         <div className="p-3 glass-card rounded-2xl border border-white/10 shadow-sm">
           <Activity className="w-6 h-6 text-emerald-400" />

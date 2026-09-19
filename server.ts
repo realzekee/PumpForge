@@ -35,29 +35,42 @@ import {
   adminDeleteBugReport,
   getAuditLogs,
 } from "./src/server/adminEngine";
-import { coinStore, getAuthoritativeUser, getPublicUserProfile } from "./src/server/db";
+import { coinStore, getAuthoritativeUser, getPublicUserProfile, syncAdminSettingsWithDatabase } from "./src/server/db";
 import { auditAppwriteSchema } from "./src/server/schemaAudit";
 
-async function startServer() {
-  const app = express();
-  const PORT = 3000;
+const app = express();
+const PORT = 3000;
 
-  app.use(express.json());
-  app.use(authMiddleware);
+// CORS & Preflight handling for all environments (Local, Cloud Run, Vercel, Iframe)
+app.use((req, res, next) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept, X-Requested-With, X-Appwrite-JWT, X-Guest-ID");
+  if (req.method === "OPTIONS") {
+    return res.status(204).end();
+  }
+  next();
+});
 
-  // 1. Mandatory JSON Content-Type and Cache-Control headers on all API responses
-  app.use("/api", (_req, res, next) => {
-    res.setHeader("Content-Type", "application/json; charset=utf-8");
-    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-    res.setHeader("Pragma", "no-cache");
-    res.setHeader("Expires", "0");
-    next();
-  });
+app.use(express.json());
+app.use(authMiddleware);
 
-  // Sync coins with Appwrite at startup
-  coinStore.syncWithDatabase().catch((e) => {
-    console.warn("Initial Appwrite coin sync warning:", e);
-  });
+// 1. Mandatory JSON Content-Type and Cache-Control headers on all API responses
+app.use("/api", (_req, res, next) => {
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  next();
+});
+
+// Sync coins and settings with Appwrite at startup
+coinStore.syncWithDatabase().catch((e) => {
+  console.warn("Initial Appwrite coin sync warning:", e);
+});
+syncAdminSettingsWithDatabase().catch((e) => {
+  console.warn("Initial Appwrite admin settings sync warning:", e);
+});
 
   // ==========================================
   // --- HEALTH & AUTH ROUTES ---
@@ -475,23 +488,28 @@ async function startServer() {
   // ==========================================
   // --- VITE MIDDLEWARE / STATIC ASSETS ---
   // ==========================================
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (_req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+  async function startServer() {
+    if (process.env.NODE_ENV !== "production") {
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+      });
+      app.use(vite.middlewares);
+    } else {
+      const distPath = path.join(process.cwd(), "dist");
+      app.use(express.static(distPath));
+      app.get("*", (_req, res) => {
+        res.sendFile(path.join(distPath, "index.html"));
+      });
+    }
+
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`PumpForge authoritative game server running on http://localhost:${PORT}`);
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`PumpForge authoritative game server running on http://localhost:${PORT}`);
-  });
-}
+  export default app;
 
-startServer();
+  if (!process.env.VERCEL) {
+    startServer();
+  }

@@ -510,3 +510,36 @@ export const globalAdminSettings: GlobalAdminSettings = {
   arcadeRigMode: "fair",
   isCasinoRigged: false,
 };
+
+export async function syncAdminSettingsWithDatabase() {
+  if (!APPWRITE_API_KEY) return;
+  try {
+    const databases = getDatabases();
+    try {
+      const doc = await databases.getDocument("pumpforge", "admin_settings", "global");
+      if (doc) {
+        if (doc.arcadeRigMode) globalAdminSettings.arcadeRigMode = doc.arcadeRigMode;
+        if (doc.isCasinoRigged !== undefined) globalAdminSettings.isCasinoRigged = !!doc.isCasinoRigged;
+      }
+    } catch (err: any) {
+      if (err?.code === 404 || err?.status === 404) {
+        console.log("Creating default global admin_settings via server key...");
+        await databases.createDocument(
+          "pumpforge",
+          "admin_settings",
+          "global",
+          {
+            arcadeRigMode: "fair",
+            isCasinoRigged: false,
+            rainbowCosmetics: false,
+            customAdminBadge: "Operator",
+          },
+          [Permission.read(Role.any())]
+        );
+      }
+    }
+  } catch (e) {
+    console.warn("Server admin_settings sync notice:", e);
+  }
+}
+

@@ -136,8 +136,8 @@ export default function LeaderboardTab({
   });
 
   return (
-    <div className="flex flex-col gap-5 animate-fade-in select-none">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 w-full">
+    <div className="flex flex-col gap-5 animate-fade-in w-full max-w-full overflow-hidden">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 w-full max-w-full">
         <div className="flex flex-col gap-1.5">
           <h2 className="text-sm font-extrabold text-zinc-400 font-mono tracking-widest uppercase flex items-center gap-1.5 leading-none">
             <Trophy className="text-orange-500 w-4 h-4" /> Official Hall of Fame Leaderboard
@@ -148,7 +148,7 @@ export default function LeaderboardTab({
         </div>
 
         {/* Category Switcher Tabs */}
-        <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase font-bold p-1 bg-white/[0.04] border border-white/10 rounded-2xl shrink-0 overflow-x-auto">
+        <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase font-bold p-1 bg-white/[0.04] border border-white/10 rounded-2xl max-w-full overflow-x-auto custom-scrollbar">
           {[
             { id: "gains", label: "Top Gains", icon: TrendingUp },
             { id: "prestige", label: "Prestige Rank", icon: Crown },

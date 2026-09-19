@@ -157,7 +157,7 @@ export default function ProfileTab({
 
   return (
     <div
-      className="flex-1 flex flex-col gap-6 animate-fade-in text-zinc-100 font-mono"
+      className="flex-1 flex flex-col gap-6 animate-fade-in text-zinc-100 font-mono w-full max-w-full overflow-hidden"
       id="profile-tab-view"
     >
       <div className="flex flex-col">
