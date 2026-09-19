@@ -55,15 +55,46 @@ export default function ArcadeTab({
     multiplier?: number;
   } | null>(null);
 
+  const formatNoticeMessage = (msg: any, fallback = "Operation could not be completed."): string => {
+    if (!msg) return fallback;
+    if (typeof msg === "string") {
+      const trimmed = msg.trim();
+      if (trimmed === "[object Object]" || trimmed === "{}" || trimmed === "") return fallback;
+      return trimmed;
+    }
+    if (typeof msg.message === "string") {
+      const trimmed = msg.message.trim();
+      if (trimmed !== "[object Object]" && trimmed !== "{}" && trimmed !== "") return trimmed;
+    }
+    if (typeof msg.error === "string") {
+      const trimmed = msg.error.trim();
+      if (trimmed !== "[object Object]" && trimmed !== "{}" && trimmed !== "") return trimmed;
+    }
+    if (msg.message && typeof msg.message === "object") {
+      return formatNoticeMessage(msg.message, fallback);
+    }
+    if (msg.error && typeof msg.error === "object") {
+      return formatNoticeMessage(msg.error, fallback);
+    }
+    try {
+      const str = JSON.stringify(msg);
+      if (str && str !== "{}" && str !== "[]") return str;
+    } catch (_) {}
+    return fallback;
+  };
+
   const triggerLocalNotice = (
     title: string,
-    message: string,
+    message: any,
     isError = false,
   ) => {
-    setLocalNotice({ title, message, isError });
+    const cleanMessage = isError
+      ? formatNoticeMessage(message, "Failed to complete arcade transaction. Please try again.")
+      : String(message || "");
+    setLocalNotice({ title, message: cleanMessage, isError });
     setTimeout(() => {
       setLocalNotice((current) => {
-        if (current?.title === title && current?.message === message) {
+        if (current?.title === title && current?.message === cleanMessage) {
           return null;
         }
         return current;

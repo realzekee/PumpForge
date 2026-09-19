@@ -74,76 +74,9 @@ import {
   apiBugReport,
   apiGetMe,
   apiUpdateProfile,
+  apiGetUserWagers,
+  apiCreateCoin,
 } from "./api/gameClient";
-
-const syncCoinToAppwrite = async (coinId: string, updatedCoin: MemeCoin) => {
-  try {
-    const { Query } = await import("appwrite");
-    const payload = {
-      price: Number(updatedCoin.price),
-      marketCap: Math.floor(updatedCoin.marketCap),
-      totalLiquidity: Number(updatedCoin.totalLiquidity || 0),
-      total_value: Number(updatedCoin.totalLiquidity || 0),
-      volume24h: Number(updatedCoin.volume24h || 0),
-      change24h: Number(updatedCoin.change24h || 0),
-      history: Array.isArray(updatedCoin.history) ? updatedCoin.history : [updatedCoin.price],
-    };
-
-    try {
-      await databases.updateDocument("pumpforge", "coins", coinId, payload);
-      return;
-    } catch (err1) {
-      try {
-        const queryRes = await databases.listDocuments("pumpforge", "coins", [
-          Query.equal("coinId", coinId),
-        ]);
-        if (queryRes.documents.length > 0) {
-          await databases.updateDocument(
-            "pumpforge",
-            "coins",
-            queryRes.documents[0].$id,
-            payload
-          );
-          return;
-        }
-      } catch (err2) {
-        // Fall through to create document
-      }
-    }
-
-    const createPayload = {
-      coinId: coinId,
-      creator: updatedCoin.creator || "@system",
-      creatorId: updatedCoin.creatorId || "system",
-      creatorName: updatedCoin.creatorName || "System",
-      name: updatedCoin.name,
-      symbol: updatedCoin.symbol,
-      description: updatedCoin.description || "",
-      price: Number(updatedCoin.price),
-      marketCap: Math.floor(updatedCoin.marketCap),
-      totalLiquidity: Number(updatedCoin.totalLiquidity || 0),
-      total_value: Number(updatedCoin.totalLiquidity || 0),
-      volume24h: Number(updatedCoin.volume24h || 0),
-      change24h: Number(updatedCoin.change24h || 0),
-      history: Array.isArray(updatedCoin.history) ? updatedCoin.history : [updatedCoin.price],
-      avatarEmoji: updatedCoin.avatarEmoji || "🪙",
-      avatarBg: updatedCoin.avatarBg || "bg-zinc-900 border-zinc-800",
-      supply: updatedCoin.supply || 1000000,
-    };
-
-    try {
-      await databases.createDocument("pumpforge", "coins", coinId, createPayload, [
-        Permission.read(Role.any()),
-      ]);
-    } catch (err3) {
-      await databases.createDocument("pumpforge", "coins", ID.unique(), createPayload, [
-        Permission.read(Role.any()),
-      ]);
-    }
-  } catch (outerErr) {
-    console.warn("syncCoinToAppwrite error:", outerErr);
-  }
-};
 
 const PRESTIGE_NAMES = [
   "Degen Level I",
@@ -1606,7 +1539,6 @@ export default function App() {
 
   useEffect(() => {
     let unsub = () => {};
-    let wagersUnsub = () => {};
 
     if (currentUser?.uid || currentUser?.$id) {
       const uid = currentUser?.uid || currentUser?.$id;
@@ -1628,20 +1560,18 @@ export default function App() {
         console.warn("Appwrite Realtime subscription failed. (Skipping)", e);
       }
 
-      // Appwrite Real-time Wagers Subscription & Fetch
+      // Server-Authoritative Wagers Fetch (Zero-Trust)
       const fetchUserWagers = async () => {
         try {
-          const { Query } = await import("appwrite");
-          const res = await databases.listDocuments("pumpforge", "wagers", [
-            Query.equal("userId", uid),
-            Query.limit(100),
-          ]);
+          const res = await apiGetUserWagers();
           const betsMap: { [marketId: string]: { side: "YES" | "NO"; amount: number } } = {};
-          for (const w of res.documents) {
-            betsMap[w.polymarketId] = {
-              side: w.choice === "YES" || w.choice === "NO" ? w.choice : "YES",
-              amount: Number(w.amount || 0),
-            };
+          if (Array.isArray(res?.wagers)) {
+            for (const w of res.wagers) {
+              betsMap[w.polymarketId] = {
+                side: w.choice === "YES" || w.choice === "NO" ? w.choice : "YES",
+                amount: Number(w.amount || 0),
+              };
+            }
           }
           setUserBets((prev) => {
             const merged = { ...prev, ...betsMap };
@@ -1649,26 +1579,14 @@ export default function App() {
             return merged;
           });
         } catch (err) {
-          console.warn("Failed to fetch user wagers from Appwrite:", err);
+          console.warn("Failed to fetch user wagers from server:", err);
         }
       };
 
       fetchUserWagers();
-
-      try {
-        wagersUnsub = client.subscribe(
-          "databases.pumpforge.collections.wagers.documents",
-          () => {
-            fetchUserWagers();
-          }
-        );
-      } catch (e) {
-        console.warn("Wagers realtime subscription failed:", e);
-      }
     }
     return () => {
       unsub();
-      wagersUnsub();
     };
   }, [currentUser]);
 
@@ -1936,39 +1854,50 @@ export default function App() {
 
     if (currentUser) {
       try {
-        // Appwrite persistent coin cache document initialization
-        try {
-          await databases.createDocument("pumpforge", "coins", coinId, {
-            coinId: coinId,
-            creatorId: currentUser.$id,
-            creatorName: currentUser.name || "Zeke",
-            creator: userStats.handle,
-            name,
-            symbol,
-            description: desc,
-            price: Number(listPrice),
-            marketCap: 1000.0,
-            volume24h: 300,
+        const srvRes = await apiCreateCoin({
+          name,
+          symbol,
+          description: desc,
+          avatarEmoji: emoji,
+        });
+        if (srvRes?.coin) {
+          const srvCoin: MemeCoin = {
+            id: srvRes.coin.id || srvRes.coin.coinId || coinId,
+            name: srvRes.coin.name,
+            symbol: srvRes.coin.symbol,
+            creator: srvRes.coin.creator || userStats.handle,
+            description: srvRes.coin.description || desc,
+            avatarEmoji: srvRes.coin.avatarEmoji || emoji,
+            avatarBg: srvRes.coin.avatarBg || "bg-emerald-950 text-emerald-300 border-emerald-500",
+            price: Number(srvRes.coin.price || listPrice),
+            marketCap: Number(srvRes.coin.marketCap || 1000),
+            supply: Number(srvRes.coin.supply || 200000),
+            volume24h: 0,
             change24h: 0,
-          }, [
-            Permission.read(Role.any()),
-          ]);
-          console.log("Appwrite: Successfully cached coin document.");
-        } catch (appwriteCoinErr) {
-          console.warn(
-            "Appwrite: Could not write coin, proceeding:",
-            appwriteCoinErr,
-          );
+            history: srvRes.coin.history || [listPrice],
+            isUserCreated: true,
+          };
+          setCoins((prev) => [srvCoin, ...prev]);
+        } else {
+          setCoins((prev) => [newMeme, ...prev]);
         }
-
-        
+        if (srvRes?.userStats) {
+          setUserStats(srvRes.userStats);
+        } else {
+          setUserStats((prev) => ({
+            ...prev,
+            cash: nextCash,
+            coinsCreatedCount: nextCreatedCount,
+          }));
+        }
+      } catch (e: any) {
+        console.error("Error creating coin via server API:", e);
+        setCoins((prev) => [newMeme, ...prev]);
         setUserStats((prev) => ({
           ...prev,
           cash: nextCash,
           coinsCreatedCount: nextCreatedCount,
         }));
-      } catch (e: any) {
-         console.error("Error creating coin:", e);
       }
     } else {
       setCoins((prev) => [newMeme, ...prev]);

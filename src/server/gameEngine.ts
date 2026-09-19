@@ -1393,6 +1393,24 @@ export async function processPolymarketWager(
   });
 }
 
+export async function getUserWagers(user: AuthenticatedUser) {
+  if (user.isGuest || !user.userId) {
+    return { wagers: [] };
+  }
+
+  try {
+    const databases = getDatabases(user.jwt);
+    const res = await databases.listDocuments("pumpforge", "wagers", [
+      Query.equal("userId", user.userId),
+      Query.limit(100),
+    ]);
+    return { wagers: res.documents };
+  } catch (err: any) {
+    console.warn("Could not fetch user wagers from Appwrite:", err);
+    return { wagers: [] };
+  }
+}
+
 // ----------------------------------------------------
 // 12. PREDICTION MARKET CREATION ENGINE
 // ----------------------------------------------------

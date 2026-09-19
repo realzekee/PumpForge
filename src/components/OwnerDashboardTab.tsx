@@ -91,6 +91,10 @@ import {
   apiAdminUpdateUserProfile,
   apiAdminUpdateBugStatus,
   apiAdminDeleteBugReport,
+  apiAdminGetBugs,
+  apiAdminCreateBroadcast,
+  apiAdminDeleteBroadcast,
+  apiAdminCreatePromoCode,
   apiGetAuditLogs,
   apiGetSchemaAudit,
 } from "../api/gameClient";
@@ -256,17 +260,17 @@ export default function OwnerDashboardTab({
     }
   }, [isUsersError, usersError]);
 
-  // Fetch bugs from Appwrite
+  // Fetch bugs from Server API (Zero-Trust Authoritative)
   useEffect(() => {
     let active = true;
     const fetchBugs = async () => {
       try {
-        const res = await databases.listDocuments("pumpforge", "bugs", [Query.orderDesc("timestamp"), Query.limit(100)]);
-        if (active) {
-          setBugReports(res.documents.map((d) => ({ id: d.$id, ...d })));
+        const { bugs } = await apiAdminGetBugs();
+        if (active && Array.isArray(bugs)) {
+          setBugReports(bugs.map((d: any) => ({ id: d.$id, ...d })));
         }
       } catch (err) {
-        // Appwrite collection might be fresh
+        // Safe fallback if bugs table is empty or server unreachable
       }
     };
     fetchBugs();
@@ -315,10 +319,10 @@ export default function OwnerDashboardTab({
     }
   };
 
-  // Helper to persist coin updates to Appwrite & persistent local store
-  const updateCoinInAppwrite = async (coinId: string, updates: Partial<MemeCoin>, fullCoin?: MemeCoin) => {
+  // Helper to persist coin updates to Server API & persistent local store
+  const updateCoinInAppwrite = async (coinId: string, updates: Partial<MemeCoin>, _fullCoin?: MemeCoin) => {
     try {
-      // 1. Immediately persist to server-authoritative coin store
+      // 1. Immediately persist to server-authoritative coin store (Zero-Trust Server API)
       try {
         await apiAdminUpdateCoin(coinId, updates);
       } catch (srvErr) {
@@ -334,66 +338,8 @@ export default function OwnerDashboardTab({
         volume24h: updates.volume24h !== undefined ? Number(updates.volume24h) : undefined,
         history: updates.history,
       });
-
-      const payload: any = {};
-      if (updates.price !== undefined) payload.price = Number(updates.price);
-      if (updates.history !== undefined) payload.history = updates.history;
-      if (updates.change24h !== undefined) payload.change24h = Number(updates.change24h);
-      if (updates.marketCap !== undefined) payload.marketCap = Math.floor(Number(updates.marketCap));
-      if (updates.volume24h !== undefined) payload.volume24h = Number(updates.volume24h);
-      if (updates.totalLiquidity !== undefined) {
-        payload.totalLiquidity = Number(updates.totalLiquidity);
-        payload.total_value = Number(updates.totalLiquidity);
-      }
-      if (updates.name !== undefined) payload.name = updates.name;
-      if (updates.symbol !== undefined) payload.symbol = updates.symbol;
-      if (updates.supply !== undefined) payload.supply = Number(updates.supply);
-
-      try {
-        await databases.updateDocument("pumpforge", "coins", coinId, payload);
-        return;
-      } catch (err1) {
-        const res = await databases.listDocuments("pumpforge", "coins", [Query.equal("coinId", coinId)]);
-        if (res.documents.length > 0) {
-          await databases.updateDocument("pumpforge", "coins", res.documents[0].$id, payload);
-          return;
-        }
-
-        // If not found in Appwrite (e.g. standard preset coin), create it so it persists!
-        const coinToCreate = fullCoin || coins.find((c) => c.id === coinId);
-        if (coinToCreate) {
-          const createPayload = {
-            coinId: coinId,
-            creator: coinToCreate.creator || "@system",
-            creatorId: coinToCreate.creatorId || "system",
-            creatorName: coinToCreate.creatorName || "System",
-            name: updates.name || coinToCreate.name,
-            symbol: updates.symbol || coinToCreate.symbol,
-            description: coinToCreate.description || "",
-            price: Number(updates.price ?? coinToCreate.price),
-            marketCap: Math.floor(updates.marketCap ?? coinToCreate.marketCap ?? 0),
-            totalLiquidity: Number(updates.totalLiquidity ?? coinToCreate.totalLiquidity ?? 0),
-            total_value: Number(updates.totalLiquidity ?? coinToCreate.totalLiquidity ?? 0),
-            volume24h: Number(updates.volume24h ?? coinToCreate.volume24h ?? 0),
-            change24h: Number(updates.change24h ?? coinToCreate.change24h ?? 0),
-            history: Array.isArray(updates.history) ? updates.history : coinToCreate.history || [coinToCreate.price],
-            avatarEmoji: coinToCreate.avatarEmoji || "🪙",
-            avatarBg: coinToCreate.avatarBg || "bg-zinc-900 border-zinc-800",
-            supply: Number(updates.supply ?? coinToCreate.supply ?? 1000000),
-          };
-          try {
-            await databases.createDocument("pumpforge", "coins", coinId, createPayload, [
-              Permission.read(Role.any()),
-            ]);
-          } catch (createErr) {
-            await databases.createDocument("pumpforge", "coins", ID.unique(), createPayload, [
-              Permission.read(Role.any()),
-            ]);
-          }
-        }
-      }
     } catch (e) {
-      console.warn("Appwrite coin update sync notice:", e);
+      console.warn("Coin update notice:", e);
     }
   };
 
@@ -525,25 +471,16 @@ export default function OwnerDashboardTab({
       )
     );
 
-    // Auto dispatch black swan announcement
+    // Auto dispatch black swan announcement via Server API
     try {
-      await databases.createDocument(
-        "pumpforge",
-        "broadcasts",
-        ID.unique(),
-        {
-          title: "🚨 BLACK SWAN DETECTED",
-          message: "Catastrophic liquidity drainage detected across the decentralized market matrix!",
-          type: "crash",
-          timestamp: new Date().toISOString(),
-        },
-        [
-          Permission.read(Role.any()),
-        ]
-      );
+      await apiAdminCreateBroadcast({
+        title: "🚨 BLACK SWAN DETECTED",
+        message: "Catastrophic liquidity drainage detected across the decentralized market matrix!",
+        type: "crash",
+      });
       fetchActiveBroadcasts();
     } catch (e) {
-      console.warn(e);
+      console.warn("Broadcast creation notice:", e);
     }
 
     toast.success("Black Swan Liquidation Event completed!", { id: "black-swan" });
@@ -753,16 +690,6 @@ export default function OwnerDashboardTab({
       } catch (e) {
         console.warn("apiAdminDeleteCoin notice:", e);
       }
-      try {
-        await databases.deleteDocument("pumpforge", "coins", coinId);
-      } catch (err1) {
-        try {
-          const res = await databases.listDocuments("pumpforge", "coins", [Query.equal("coinId", coinId)]);
-          if (res.documents.length > 0) {
-            await databases.deleteDocument("pumpforge", "coins", res.documents[0].$id);
-          }
-        } catch (err2) {}
-      }
       setCoins((prev) => {
         const next = prev.filter((c) => c.id !== coinId && (c as any).$id !== coinId);
         try {
@@ -845,20 +772,11 @@ export default function OwnerDashboardTab({
       title: alertTitle.trim(),
       message: alertMsg.trim(),
       type: alertType,
-      timestamp: new Date().toISOString(),
       expiresAt: expiresAt,
     };
 
     try {
-      await databases.createDocument(
-        "pumpforge",
-        "broadcasts",
-        ID.unique(),
-        payload,
-        [
-          Permission.read(Role.any()),
-        ]
-      );
+      await apiAdminCreateBroadcast(payload);
 
       toast.success("Broadcast dispatched globally!", { id: "announcement" });
       onAddNotification(
@@ -879,7 +797,7 @@ export default function OwnerDashboardTab({
 
   const handleDeleteBroadcast = async (broadcastId: string) => {
     try {
-      await databases.deleteDocument("pumpforge", "broadcasts", broadcastId);
+      await apiAdminDeleteBroadcast(broadcastId);
       toast.success("Broadcast banner removed.");
       fetchActiveBroadcasts();
     } catch (e: any) {
@@ -901,22 +819,12 @@ export default function OwnerDashboardTab({
     setPromoPubIsLoading(true);
     toast.loading("Publishing promo code...", { id: "promo-publish" });
     try {
-      await databases.createDocument(
-        "pumpforge",
-        "promocodes",
-        ID.unique(),
-        {
-          code: promoPubCode.trim().toUpperCase(),
-          rewardType: promoPubType,
-          rewardAmount: Number(promoPubAmount),
-          isActive: true,
-          claimedBy: [],
-          expiresAt: promoPubExpiresAt ? new Date(promoPubExpiresAt).toISOString() : null,
-        },
-        [
-          Permission.read(Role.any()),
-        ]
-      );
+      await apiAdminCreatePromoCode({
+        code: promoPubCode.trim().toUpperCase(),
+        rewardType: promoPubType,
+        rewardAmount: Number(promoPubAmount),
+        expiresAt: promoPubExpiresAt || null,
+      });
       toast.success(`Promo code ${promoPubCode.toUpperCase()} published!`, { id: "promo-publish" });
       setPromoPubCode("");
       setPromoPubAmount("");

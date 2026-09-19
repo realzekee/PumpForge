@@ -80,11 +80,16 @@ export async function authenticateRequest(req: Request): Promise<AuthenticatedUs
       appwriteAccount = null;
     }
 
+    const guestIdHeader = (req.headers["x-guest-id"] as string)?.trim();
+    const guestUserId = guestIdHeader && /^[a-zA-Z0-9_-]{4,64}$/.test(guestIdHeader)
+      ? `guest_${guestIdHeader}`
+      : "guest_player";
+
     if (!appwriteAccount || !appwriteAccount.$id) {
       return {
-        userId: "guest_player",
+        userId: guestUserId,
         email: "",
-        name: "Guest Player",
+        name: "Guest Trader",
         isAdmin: false,
         isGuest: true,
       };
@@ -111,10 +116,15 @@ export async function authenticateRequest(req: Request): Promise<AuthenticatedUs
     return authenticatedUser;
   } catch (err) {
     console.error("Authentication verification error with Appwrite:", err);
+    const guestIdHeader = (req.headers["x-guest-id"] as string)?.trim();
+    const guestUserId = guestIdHeader && /^[a-zA-Z0-9_-]{4,64}$/.test(guestIdHeader)
+      ? `guest_${guestIdHeader}`
+      : "guest_player";
+
     return {
-      userId: "guest_player",
+      userId: guestUserId,
       email: "",
-      name: "Guest Player",
+      name: "Guest Trader",
       isAdmin: false,
       isGuest: true,
     };

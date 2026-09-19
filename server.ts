@@ -1,6 +1,5 @@
 import express from "express";
 import path from "path";
-import { createServer as createViteServer } from "vite";
 import { authMiddleware, requireAdmin, requireAuth } from "./src/server/auth";
 import {
   processDailyReward,
@@ -20,6 +19,7 @@ import {
   processUpdateProfile,
   processGetCoinCandles,
   processGetLeaderboard,
+  getUserWagers,
 } from "./src/server/gameEngine";
 import {
   resolveMarketAndPayout,
@@ -33,9 +33,13 @@ import {
   adminUpdateSettings,
   adminUpdateBugStatus,
   adminDeleteBugReport,
+  adminGetBugs,
+  adminCreateBroadcast,
+  adminDeleteBroadcast,
+  adminCreatePromoCode,
   getAuditLogs,
 } from "./src/server/adminEngine";
-import { coinStore, getAuthoritativeUser, getPublicUserProfile, syncAdminSettingsWithDatabase } from "./src/server/db";
+import { coinStore, getAuthoritativeUser, getPublicUserProfile, syncAdminSettingsWithDatabase, globalAdminSettings } from "./src/server/db";
 import { auditAppwriteSchema } from "./src/server/schemaAudit";
 
 const app = express();
@@ -53,6 +57,34 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json());
+
+// Normalize URLs when running on Vercel Serverless or behind reverse proxies
+app.use((req, _res, next) => {
+  const matchedPath =
+    (req.headers["x-matched-path"] as string) ||
+    (req.headers["x-vercel-matched-path"] as string) ||
+    (req.headers["x-invoke-path"] as string);
+
+  if (matchedPath && matchedPath.startsWith("/api") && (req.url === "/api" || req.url === "/api/" || req.url === "/api/index")) {
+    req.url = matchedPath;
+  } else if (req.headers["x-now-route-matches"] && (req.url === "/api" || req.url === "/api/" || req.url === "/api/index")) {
+    try {
+      const match = String(req.headers["x-now-route-matches"]).match(/1=([^&]+)/);
+      if (match && match[1]) {
+        const subPath = decodeURIComponent(match[1]);
+        req.url = `/api/${subPath.replace(/^\/+/, "")}`;
+      }
+    } catch (_) {}
+  }
+
+  // If request arrived without "/api" prefix (e.g. /game/arcade/wager), prepend /api
+  if (!req.url.startsWith("/api") && !req.url.startsWith("/@") && !req.url.startsWith("/src")) {
+    req.url = `/api${req.url.startsWith("/") ? "" : "/"}${req.url}`;
+  }
+
+  next();
+});
+
 app.use(authMiddleware);
 
 // 1. Mandatory JSON Content-Type and Cache-Control headers on all API responses
@@ -246,6 +278,29 @@ syncAdminSettingsWithDatabase().catch((e) => {
     }
   });
 
+  app.get("/api/game/wagers", async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const result = await getUserWagers(user);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/game/settings", (_req, res) => {
+    try {
+      res.json({
+        arcadeRigMode: globalAdminSettings.arcadeRigMode || "fair",
+        isCasinoRigged: globalAdminSettings.isCasinoRigged || false,
+        rainbowCosmetics: (globalAdminSettings as any).rainbowCosmetics || false,
+        customAdminBadge: (globalAdminSettings as any).customAdminBadge || "Operator",
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // ==========================================
   // --- COMMENTS & COMMUNITY ROUTES ---
   // ==========================================
@@ -414,6 +469,16 @@ syncAdminSettingsWithDatabase().catch((e) => {
     }
   });
 
+  app.get("/api/admin/bugs", requireAdmin, async (req, res) => {
+    try {
+      const admin = (req as any).user;
+      const result = await adminGetBugs(admin);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.post("/api/admin/bugs/update-status", requireAdmin, async (req, res) => {
     try {
       const admin = (req as any).user;
@@ -430,6 +495,37 @@ syncAdminSettingsWithDatabase().catch((e) => {
       const admin = (req as any).user;
       const { bugId } = req.body;
       const result = await adminDeleteBugReport(admin, bugId);
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/admin/broadcasts/create", requireAdmin, async (req, res) => {
+    try {
+      const admin = (req as any).user;
+      const result = await adminCreateBroadcast(admin, req.body);
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/admin/broadcasts/delete", requireAdmin, async (req, res) => {
+    try {
+      const admin = (req as any).user;
+      const { broadcastId } = req.body;
+      const result = await adminDeleteBroadcast(admin, broadcastId);
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/admin/promocodes/create", requireAdmin, async (req, res) => {
+    try {
+      const admin = (req as any).user;
+      const result = await adminCreatePromoCode(admin, req.body);
       res.json(result);
     } catch (err: any) {
       res.status(400).json({ error: err.message });
@@ -490,6 +586,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
   // ==========================================
   async function startServer() {
     if (process.env.NODE_ENV !== "production") {
+      const { createServer: createViteServer } = await import("vite");
       const vite = await createViteServer({
         server: { middlewareMode: true },
         appType: "spa",
@@ -511,5 +608,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
   export default app;
 
   if (!process.env.VERCEL) {
-    startServer();
+    startServer().catch((err) => {
+      console.error("PumpForge startup error:", err);
+    });
   }

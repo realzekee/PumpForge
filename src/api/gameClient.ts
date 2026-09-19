@@ -32,11 +32,22 @@ export function clearAuthJwt() {
   jwtExpiresAt = 0;
 }
 
+function getGuestId(): string {
+  if (typeof window === "undefined" || !window.localStorage) return "client_default";
+  let gid = localStorage.getItem("pf_guest_uid");
+  if (!gid) {
+    gid = "g_" + Math.random().toString(36).substring(2, 11) + Date.now().toString(36);
+    localStorage.setItem("pf_guest_uid", gid);
+  }
+  return gid;
+}
+
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const jwt = await getAuthJwt();
   const headers: Record<string, string> = {
     "Accept": "application/json",
     "Content-Type": "application/json",
+    "X-Guest-ID": getGuestId(),
     ...(options.headers as Record<string, string> || {}),
   };
 
@@ -86,7 +97,23 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   }
 
   if (!res.ok) {
-    const errorMsg = data?.error || data?.message || `Server request failed with status ${res.status}`;
+    let errorMsg = "";
+    if (typeof data?.error === "string" && data.error.trim() !== "[object Object]") {
+      errorMsg = data.error;
+    } else if (typeof data?.message === "string" && data.message.trim() !== "[object Object]") {
+      errorMsg = data.message;
+    } else if (data?.error && typeof data.error === "object") {
+      errorMsg = data.error.message || data.error.error || JSON.stringify(data.error);
+    } else if (data?.message && typeof data.message === "object") {
+      errorMsg = data.message.message || data.message.error || JSON.stringify(data.message);
+    } else if (data) {
+      errorMsg = typeof data === "string" ? data : JSON.stringify(data);
+    }
+
+    if (!errorMsg || errorMsg.trim() === "{}" || errorMsg.trim() === "[object Object]") {
+      errorMsg = `Server request failed with HTTP ${res.status}${res.statusText ? ` (${res.statusText})` : ""}`;
+    }
+
     throw new Error(errorMsg);
   }
 
@@ -346,6 +373,54 @@ export async function apiAdminDeleteBugReport(bugId: string) {
   return request<any>("/api/admin/bugs/delete", {
     method: "POST",
     body: JSON.stringify({ bugId }),
+  });
+}
+
+export async function apiGetSettings() {
+  return request<{
+    arcadeRigMode: "fair" | "win" | "lose";
+    isCasinoRigged: boolean;
+    rainbowCosmetics?: boolean;
+    customAdminBadge?: string;
+  }>("/api/game/settings");
+}
+
+export async function apiGetUserWagers() {
+  return request<{ wagers: any[] }>("/api/game/wagers");
+}
+
+export async function apiAdminGetBugs() {
+  return request<{ bugs: any[] }>("/api/admin/bugs");
+}
+
+export async function apiAdminCreateBroadcast(payload: {
+  title: string;
+  message: string;
+  type?: string;
+  expiresAt?: string | null;
+}) {
+  return request<{ success: boolean; broadcast: any }>("/api/admin/broadcasts/create", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function apiAdminDeleteBroadcast(broadcastId: string) {
+  return request<{ success: boolean; broadcastId: string }>("/api/admin/broadcasts/delete", {
+    method: "POST",
+    body: JSON.stringify({ broadcastId }),
+  });
+}
+
+export async function apiAdminCreatePromoCode(promoData: {
+  code: string;
+  rewardType: string;
+  rewardAmount: number;
+  expiresAt?: string | null;
+}) {
+  return request<{ success: boolean; promocode: any }>("/api/admin/promocodes/create", {
+    method: "POST",
+    body: JSON.stringify(promoData),
   });
 }
 

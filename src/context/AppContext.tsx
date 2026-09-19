@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { account, databases, client } from "../appwrite";
 import { Permission, Role } from "appwrite";
+import { apiGetSettings } from "../api/gameClient";
 
 export type ArcadeRigMode = "fair" | "win" | "lose";
 
@@ -52,19 +53,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const initAppwrite = async () => {
       try {
-        // Fetch admin settings (Read Any is permitted under zero-trust)
+        // Fetch server-authoritative admin settings via Express API
         try {
-          const settingsDoc = await databases.getDocument("pumpforge", "admin_settings", "global");
-          const mode: ArcadeRigMode = settingsDoc.arcadeRigMode || (settingsDoc.isCasinoRigged ? "win" : getSavedRigMode());
+          const settings = await apiGetSettings();
+          const mode: ArcadeRigMode = settings.arcadeRigMode || (settings.isCasinoRigged ? "win" : getSavedRigMode());
           setAdminSettings({
             isCasinoRigged: mode === "win",
             arcadeRigMode: mode,
-            rainbowCosmetics: settingsDoc.rainbowCosmetics ?? false,
-            customAdminBadge: settingsDoc.customAdminBadge ?? "Operator"
+            rainbowCosmetics: settings.rainbowCosmetics ?? false,
+            customAdminBadge: settings.customAdminBadge ?? "Operator"
           });
         } catch (setErr) {
-          // Zero-trust note: Clients have Read Any, Create None. If doc doesn't exist yet, use defaults safely.
-          console.log("Admin settings defaulted (safe zero-trust fallback):", (setErr as any)?.message || setErr);
+          console.log("Admin settings defaulted:", (setErr as any)?.message || setErr);
           setAdminSettings({
             isCasinoRigged: false,
             arcadeRigMode: getSavedRigMode(),
@@ -140,25 +140,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!userId) return;
     const unsub = client.subscribe(
-      [
-        `databases.pumpforge.collections.users.documents.${userId}`,
-        `databases.pumpforge.collections.admin_settings.documents.global`
-      ],
+      `databases.pumpforge.collections.users.documents.${userId}`,
       (response: any) => {
         if (
           response.events.includes("databases.*.collections.*.documents.*.update") ||
           response.events.includes("databases.*.collections.*.documents.*.create")
         ) {
           const updatedDoc = response.payload;
-          if (updatedDoc.$collectionId === "admin_settings") {
-            const mode: ArcadeRigMode = updatedDoc.arcadeRigMode || (updatedDoc.isCasinoRigged ? "win" : "fair");
-            setAdminSettings({
-              isCasinoRigged: mode === "win",
-              arcadeRigMode: mode,
-              rainbowCosmetics: updatedDoc.rainbowCosmetics ?? false,
-              customAdminBadge: updatedDoc.customAdminBadge ?? "Operator"
-            });
-          } else if (updatedDoc.$collectionId === "users") {
+          if (updatedDoc.$collectionId === "users") {
             setCash(updatedDoc.cash);
             setGems(updatedDoc.gems);
             setPrestigeLevel(updatedDoc.prestigeLevel);

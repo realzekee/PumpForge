@@ -367,6 +367,12 @@ export async function adminUpdateSettings(admin: AuthenticatedUser, settings: an
   if (settings.isCasinoRigged !== undefined) {
     globalAdminSettings.isCasinoRigged = !!settings.isCasinoRigged;
   }
+  if (settings.rainbowCosmetics !== undefined) {
+    (globalAdminSettings as any).rainbowCosmetics = !!settings.rainbowCosmetics;
+  }
+  if (settings.customAdminBadge !== undefined) {
+    (globalAdminSettings as any).customAdminBadge = String(settings.customAdminBadge);
+  }
 
   // Update in Appwrite admin_settings collection
   try {
@@ -376,6 +382,15 @@ export async function adminUpdateSettings(admin: AuthenticatedUser, settings: an
       await databases.updateDocument("pumpforge", "admin_settings", res.documents[0].$id, {
         arcadeRigMode: globalAdminSettings.arcadeRigMode,
         isCasinoRigged: globalAdminSettings.isCasinoRigged,
+        rainbowCosmetics: (globalAdminSettings as any).rainbowCosmetics ?? false,
+        customAdminBadge: (globalAdminSettings as any).customAdminBadge ?? "Operator",
+      });
+    } else {
+      await databases.createDocument("pumpforge", "admin_settings", "global", {
+        arcadeRigMode: globalAdminSettings.arcadeRigMode,
+        isCasinoRigged: globalAdminSettings.isCasinoRigged,
+        rainbowCosmetics: (globalAdminSettings as any).rainbowCosmetics ?? false,
+        customAdminBadge: (globalAdminSettings as any).customAdminBadge ?? "Operator",
       });
     }
   } catch (e) {
@@ -389,6 +404,22 @@ export async function adminUpdateSettings(admin: AuthenticatedUser, settings: an
 // ----------------------------------------------------
 // 5. BUG REPORTS MANAGEMENT
 // ----------------------------------------------------
+export async function adminGetBugs(admin: AuthenticatedUser) {
+  if (!admin.isAdmin) throw new Error("Admin privileges required.");
+
+  try {
+    const databases = getDatabases(admin.jwt);
+    const res = await databases.listDocuments("pumpforge", "bugs", [
+      Query.orderDesc("timestamp"),
+      Query.limit(100),
+    ]);
+    return { bugs: res.documents };
+  } catch (err: any) {
+    console.warn("Could not fetch bugs from Appwrite:", err);
+    return { bugs: [] };
+  }
+}
+
 export async function adminUpdateBugStatus(admin: AuthenticatedUser, bugId: string, status: string) {
   if (!admin.isAdmin) throw new Error("Admin privileges required.");
 
@@ -415,4 +446,96 @@ export async function adminDeleteBugReport(admin: AuthenticatedUser, bugId: stri
 
   await recordAuditLog(admin, "BUG_DELETE", { bugId });
   return { success: true, bugId };
+}
+
+// ----------------------------------------------------
+// 6. BROADCASTS MANAGEMENT
+// ----------------------------------------------------
+export async function adminCreateBroadcast(
+  admin: AuthenticatedUser,
+  payload: { title: string; message: string; type?: string; expiresAt?: string | null }
+) {
+  if (!admin.isAdmin) throw new Error("Admin privileges required.");
+
+  const docId = ID.unique();
+  const broadcastDoc = {
+    title: payload.title.trim(),
+    message: payload.message.trim(),
+    type: payload.type || "info",
+    timestamp: new Date().toISOString(),
+    expiresAt: payload.expiresAt || null,
+  };
+
+  try {
+    const databases = getDatabases(admin.jwt);
+    const created = await databases.createDocument(
+      "pumpforge",
+      "broadcasts",
+      docId,
+      broadcastDoc,
+      [Permission.read(Role.any())]
+    );
+    await recordAuditLog(admin, "BROADCAST_CREATE", broadcastDoc);
+    return { success: true, broadcast: created };
+  } catch (err: any) {
+    console.error("Failed to create broadcast in Appwrite:", err);
+    throw new Error(err.message || "Failed to create broadcast.");
+  }
+}
+
+export async function adminDeleteBroadcast(admin: AuthenticatedUser, broadcastId: string) {
+  if (!admin.isAdmin) throw new Error("Admin privileges required.");
+
+  try {
+    const databases = getDatabases(admin.jwt);
+    await databases.deleteDocument("pumpforge", "broadcasts", broadcastId);
+    await recordAuditLog(admin, "BROADCAST_DELETE", { broadcastId });
+    return { success: true, broadcastId };
+  } catch (err: any) {
+    console.error("Failed to delete broadcast from Appwrite:", err);
+    throw new Error(err.message || "Failed to delete broadcast.");
+  }
+}
+
+// ----------------------------------------------------
+// 7. PROMO CODE CREATION (SERVER AUTHORITATIVE)
+// ----------------------------------------------------
+export async function adminCreatePromoCode(
+  admin: AuthenticatedUser,
+  promoData: {
+    code: string;
+    rewardType: "cash" | "gems";
+    rewardAmount: number;
+    expiresAt?: string | null;
+  }
+) {
+  if (!admin.isAdmin) throw new Error("Admin privileges required.");
+
+  const cleanCode = promoData.code.trim().toUpperCase();
+  if (!cleanCode) throw new Error("Promo code cannot be empty.");
+
+  const docId = ID.unique();
+  const docPayload = {
+    code: cleanCode,
+    rewardType: promoData.rewardType || "cash",
+    rewardAmount: Number(promoData.rewardAmount) || 0,
+    isActive: true,
+    claimedBy: [],
+    expiresAt: promoData.expiresAt ? new Date(promoData.expiresAt).toISOString() : null,
+  };
+
+  try {
+    const databases = getDatabases(admin.jwt);
+    const created = await databases.createDocument(
+      "pumpforge",
+      "promocodes",
+      docId,
+      docPayload
+    );
+    await recordAuditLog(admin, "PROMOCODE_CREATE", { code: cleanCode, rewardAmount: promoData.rewardAmount });
+    return { success: true, promocode: created };
+  } catch (err: any) {
+    console.error("Failed to create promocode in Appwrite:", err);
+    throw new Error(err.message || "Failed to create promocode.");
+  }
 }
