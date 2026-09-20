@@ -53,11 +53,15 @@ export const dailyRewardLimiter = new RateLimiter(1, 10000); // 1 claim attempt 
 export const bugReportLimiter = new RateLimiter(2, 60000); // 2 bug reports per 60 seconds
 export const adminLimiter = new RateLimiter(40, 10000); // 40 admin calls per 10 seconds
 
-// Periodic cleanup every 5 minutes
-setInterval(() => {
+// Periodic cleanup every 5 minutes (unrefed so it does not block serverless execution)
+const cleanupTimer = setInterval(() => {
   tradeLimiter.clean();
   arcadeLimiter.clean();
   dailyRewardLimiter.clean();
   bugReportLimiter.clean();
   adminLimiter.clean();
 }, 300000);
+
+if (cleanupTimer && typeof cleanupTimer.unref === "function") {
+  cleanupTimer.unref();
+}

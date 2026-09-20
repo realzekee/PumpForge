@@ -31,6 +31,7 @@ import {
   apiDeleteComment,
   apiReportComment,
 } from "../api/gameClient";
+import { formatErrorMessage } from "../utils/formatError";
 import { UserHoverCard } from "./UserHoverCard";
 
 interface CoinDetailsTabProps {
@@ -225,7 +226,7 @@ export default function CoinDetailsTab({
       console.error("Trade execution failed:", err);
       setFeedback({
         type: "error",
-        msg: err?.message || "Transaction could not be completed.",
+        msg: formatErrorMessage(err, "Transaction could not be completed."),
       });
     } finally {
       setExecutingState(false);

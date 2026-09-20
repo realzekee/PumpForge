@@ -64,9 +64,10 @@ app.use((req, _res, next) => {
   const matchedPath =
     (req.headers["x-matched-path"] as string) ||
     (req.headers["x-vercel-matched-path"] as string) ||
-    (req.headers["x-invoke-path"] as string);
+    (req.headers["x-invoke-path"] as string) ||
+    (req.originalUrl && req.originalUrl.startsWith("/api") ? req.originalUrl : null);
 
-  if (matchedPath && matchedPath.startsWith("/api") && (req.url === "/api" || req.url === "/api/" || req.url === "/api/index")) {
+  if (matchedPath && (req.url === "/api" || req.url === "/api/" || req.url === "/api/index")) {
     req.url = matchedPath;
   } else if (req.headers["x-now-route-matches"] && (req.url === "/api" || req.url === "/api/" || req.url === "/api/index")) {
     try {
@@ -78,8 +79,15 @@ app.use((req, _res, next) => {
     } catch (_) {}
   }
 
-  // If request arrived without "/api" prefix (e.g. /game/arcade/wager), prepend /api
-  if (!req.url.startsWith("/api") && !req.url.startsWith("/@") && !req.url.startsWith("/src")) {
+  // Prepend /api only if original path targets a known game or admin endpoint
+  if (
+    !req.url.startsWith("/api") &&
+    (req.url.startsWith("/game/") ||
+      req.url.startsWith("/arcade/") ||
+      req.url.startsWith("/auth/") ||
+      req.url.startsWith("/admin/") ||
+      req.url.startsWith("/health"))
+  ) {
     req.url = `/api${req.url.startsWith("/") ? "" : "/"}${req.url}`;
   }
 
@@ -601,7 +609,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
   app.all("/api/*", (req, res) => {
     res.setHeader("Content-Type", "application/json; charset=utf-8");
     res.status(404).json({
-      error: `API route not found: ${req.method} ${req.originalUrl}`,
+      error: `API route not found: ${req.method} ${req.originalUrl || req.url}`,
       code: "NOT_FOUND",
     });
   });
@@ -617,7 +625,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
         appType: "spa",
       });
       app.use(vite.middlewares);
-    } else {
+    } else if (!process.env.VERCEL) {
       const distPath = path.join(process.cwd(), "dist");
       app.use(express.static(distPath));
       app.get("*", (_req, res) => {
@@ -625,14 +633,27 @@ syncAdminSettingsWithDatabase().catch((e) => {
       });
     }
 
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log(`PumpForge authoritative game server running on http://localhost:${PORT}`);
+    if (!process.env.VERCEL) {
+      app.listen(PORT, "0.0.0.0", () => {
+        console.log(`PumpForge authoritative game server running on http://localhost:${PORT}`);
+      });
+    }
+  }
+
+  // Safe fallback for Vercel Serverless Function invocations
+  if (process.env.VERCEL) {
+    app.all("*", (req, res) => {
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.status(404).json({
+        error: `Endpoint not found: ${req.method} ${req.originalUrl || req.url}`,
+        code: "NOT_FOUND",
+      });
     });
   }
 
   export default app;
 
-  if (!process.env.VERCEL) {
+  if (!process.env.VERCEL && !process.env.VERCEL_ENV && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
     startServer().catch((err) => {
       console.error("PumpForge startup error:", err);
     });

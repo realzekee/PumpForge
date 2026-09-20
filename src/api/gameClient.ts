@@ -1,4 +1,5 @@
 import { account } from "../appwrite";
+import { formatErrorMessage } from "../utils/formatError";
 
 let cachedJwt: string | null = null;
 let jwtExpiresAt = 0;
@@ -70,7 +71,8 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
       body,
     });
   } catch (networkErr: any) {
-    throw new Error(`Network error connecting to ${endpoint}: ${networkErr?.message || "Connection failed"}`);
+    const cleanNetworkMsg = formatErrorMessage(networkErr, "Network connection failure. Please check your internet connection.");
+    throw new Error(`Network error connecting to ${endpoint}: ${cleanNetworkMsg}`);
   }
 
   const contentType = res.headers.get("content-type") || "";
@@ -97,24 +99,16 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   }
 
   if (!res.ok) {
-    let errorMsg = "";
-    if (typeof data?.error === "string" && data.error.trim() !== "[object Object]") {
-      errorMsg = data.error;
-    } else if (typeof data?.message === "string" && data.message.trim() !== "[object Object]") {
-      errorMsg = data.message;
-    } else if (data?.error && typeof data.error === "object") {
-      errorMsg = data.error.message || data.error.error || JSON.stringify(data.error);
-    } else if (data?.message && typeof data.message === "object") {
-      errorMsg = data.message.message || data.message.error || JSON.stringify(data.message);
-    } else if (data) {
-      errorMsg = typeof data === "string" ? data : JSON.stringify(data);
-    }
-
-    if (!errorMsg || errorMsg.trim() === "{}" || errorMsg.trim() === "[object Object]") {
-      errorMsg = `Server request failed with HTTP ${res.status}${res.statusText ? ` (${res.statusText})` : ""}`;
-    }
+    const errorMsg = formatErrorMessage(
+      data?.error || data?.message || data,
+      `Server request failed with HTTP ${res.status}${res.statusText ? ` (${res.statusText})` : ""}`
+    );
 
     throw new Error(errorMsg);
+  }
+
+  if (data && data.success === false && data.error) {
+    throw new Error(formatErrorMessage(data.error, "Requested action was rejected by the server."));
   }
 
   return (data ?? {}) as T;

@@ -40,6 +40,7 @@ import {
 } from "./types";
 import { INITIAL_COINS } from "./data/memeCoins";
 import { getDeletedCoins, getStoredCoinOverrides, saveStoredCoinOverride } from "./utils/userMetaStorage";
+import { formatErrorMessage } from "./utils/formatError";
 import {
   Gift,
   Sparkles,
@@ -722,11 +723,15 @@ export default function App() {
     isError?: boolean;
   } | null>(null);
 
-  const triggerToast = (title: string, message: string, isError = false) => {
-    setCustomToast({ title, message, isError });
+  const triggerToast = (title: string, message: any, isError = false) => {
+    const cleanMessage = formatErrorMessage(
+      message,
+      isError ? "Operation failed. Please check your balance or network connection." : "Notification"
+    );
+    setCustomToast({ title, message: cleanMessage, isError });
     setTimeout(() => {
       setCustomToast((current) => {
-        if (current?.title === title && current?.message === message) {
+        if (current?.title === title && current?.message === cleanMessage) {
           return null;
         }
         return current;
@@ -1007,7 +1012,7 @@ export default function App() {
           String(err).includes("401") ||
           err?.message?.includes("No active session found");
         if (!isNormalUnauthenticated) {
-          triggerToast("Diagnostic Error", err?.message || String(err), true);
+          triggerToast("Diagnostic Error", formatErrorMessage(err, "Authentication check failed."), true);
         }
 
         // Clean up session caches on standard session failures
@@ -1758,7 +1763,7 @@ export default function App() {
         "info",
       );
     } catch (e: any) {
-      toast.error(e.message || "Daily reward is not available yet.");
+      toast.error(formatErrorMessage(e, "Daily reward is not available yet."));
     }
   };
 
@@ -1887,7 +1892,7 @@ export default function App() {
 
       return res;
     } catch (err: any) {
-      triggerToast("Transaction Failed", err.message || "Trade execution failed.", true);
+      triggerToast("Transaction Failed", formatErrorMessage(err, "Trade execution failed."), true);
       throw err;
     }
   };
@@ -2109,7 +2114,7 @@ export default function App() {
         "trade"
       );
     } catch (err: any) {
-      toast.error(err.message || "Polymarket bet failed.");
+      toast.error(formatErrorMessage(err, "Polymarket bet failed."));
     }
   };
 
@@ -2193,7 +2198,7 @@ export default function App() {
       await apiBugReport(title, description);
     } catch (e: any) {
       console.error("Bug report submission error:", e);
-      triggerToast("Error", e?.message || "Failed to submit bug report.", true);
+      triggerToast("Error", formatErrorMessage(e, "Failed to submit bug report."), true);
       return false;
     }
     
@@ -2407,7 +2412,7 @@ export default function App() {
       );
     } catch (err: any) {
       console.error("Error creating polymarket:", err);
-      toast.error(err.message || "Failed to create prediction market.");
+      toast.error(formatErrorMessage(err, "Failed to create prediction market."));
     }
   };
 
