@@ -188,6 +188,28 @@ export async function apiDailyReward() {
 
 export const apiClaimDailyReward = apiDailyReward;
 
+export async function apiArcadeCoinflip(betAmount: number, side: "heads" | "tails") {
+  return request<{
+    success: boolean;
+    game: string;
+    outcome: "heads" | "tails";
+    won: boolean;
+    payout: number;
+    profit: number;
+    betAmount: number;
+    userStats: any;
+  }>("/api/arcade/coinflip", {
+    method: "POST",
+    body: JSON.stringify({
+      betAmount: Number(betAmount),
+      bet: Number(betAmount),
+      side,
+    }),
+  });
+}
+
+export const apiCoinflip = apiArcadeCoinflip;
+
 export async function apiArcadeWager(game: string, action: string, params: any) {
   return request<any>("/api/game/arcade/wager", {
     method: "POST",

@@ -4,7 +4,7 @@
  */
 
 import { getDatabases } from "./db";
-import { Permission, Role, Query } from "appwrite";
+import { Permission, Role, Query } from "node-appwrite";
 
 export interface CollectionSchemaDefinition {
   id: string;

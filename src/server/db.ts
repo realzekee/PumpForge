@@ -1,4 +1,4 @@
-import { Client, Databases, Query, ID, Permission, Role } from "appwrite";
+import { Client, Databases, Query, ID, Permission, Role } from "node-appwrite";
 import { INITIAL_COINS } from "../data/memeCoins";
 import { MemeCoin } from "../types";
 
@@ -96,8 +96,24 @@ class AuthoritativeCoinStore {
   }
 
   public getCoin(coinId: string): MemeCoin | undefined {
+    if (!coinId) return undefined;
     if (this.deletedCoinIds.has(coinId)) return undefined;
-    return this.coins.get(coinId);
+    const direct = this.coins.get(coinId);
+    if (direct) return direct;
+    const lower = coinId.toLowerCase().trim();
+    for (const c of this.coins.values()) {
+      if (this.deletedCoinIds.has(c.id)) continue;
+      if (
+        c.id.toLowerCase() === lower ||
+        c.symbol.toLowerCase() === lower ||
+        (c as any).slug?.toLowerCase() === lower ||
+        (c as any).$id?.toLowerCase() === lower ||
+        (c as any).coinId?.toLowerCase() === lower
+      ) {
+        return c;
+      }
+    }
+    return undefined;
   }
 
   public setCoin(coin: MemeCoin) {
@@ -105,7 +121,7 @@ class AuthoritativeCoinStore {
   }
 
   public updateCoin(coinId: string, updates: Partial<MemeCoin>): MemeCoin | undefined {
-    const existing = this.coins.get(coinId);
+    const existing = this.getCoin(coinId);
     if (!existing) return undefined;
 
     const updated: MemeCoin = {
@@ -119,7 +135,10 @@ class AuthoritativeCoinStore {
       history: updates.history || existing.history,
     };
 
-    this.coins.set(coinId, updated);
+    this.coins.set(existing.id, updated);
+    if (coinId !== existing.id) {
+      this.coins.set(coinId, updated);
+    }
     return updated;
   }
 

@@ -33,7 +33,8 @@ interface ArcadeTabProps {
 type MenuGameType = "coinflip" | "slots" | "mines" | "dice" | "tower";
 
 import { useAppContext } from "../context/AppContext";
-import { apiArcadeWager } from "../api/gameClient";
+import { apiArcadeWager, apiCoinflip } from "../api/gameClient";
+import { toast } from "sonner";
 
 export default function ArcadeTab({
   userStats,
@@ -92,6 +93,9 @@ export default function ArcadeTab({
       ? formatNoticeMessage(message, "Failed to complete arcade transaction. Please try again.")
       : String(message || "");
     setLocalNotice({ title, message: cleanMessage, isError });
+    if (isError) {
+      toast.error(cleanMessage);
+    }
     setTimeout(() => {
       setLocalNotice((current) => {
         if (current?.title === title && current?.message === cleanMessage) {
@@ -209,7 +213,18 @@ export default function ArcadeTab({
 
   // 1. Coinflip
   const playCoinflip = async () => {
-    if (userStats.cash < coinBet) {
+    // 6. Verify numbers: Parse betAmount as Number(betAmount) before comparison or payload dispatch
+    const betAmount = Number(coinBet);
+    if (typeof betAmount !== "number" || isNaN(betAmount) || betAmount <= 0) {
+      triggerLocalNotice(
+        "Invalid Bet",
+        "Please enter a valid positive bet amount.",
+        true,
+      );
+      return;
+    }
+
+    if (Number(userStats.cash) < betAmount) {
       triggerLocalNotice(
         "Insufficient Funds",
         "You do not have enough cash to place this Coinflip bet!",
@@ -223,10 +238,8 @@ export default function ArcadeTab({
     setCoinResultMsg("");
 
     try {
-      const res = await apiArcadeWager("coinflip", "play", {
-        bet: coinBet,
-        side: coinSide,
-      });
+      // 3. Ensure the Coinflip action calls /api/arcade/coinflip
+      const res = await apiCoinflip(betAmount, coinSide);
 
       setTimeout(() => {
         setCoinOutcome(res.outcome);
@@ -248,15 +261,28 @@ export default function ArcadeTab({
             `Won $${res.payout.toLocaleString("en-US")} on ${coinSide.toUpperCase()}!`,
             "info",
           );
+          toast.success(`🎉 Won $${res.payout.toLocaleString("en-US")} on ${coinSide.toUpperCase()}!`);
         } else {
           setCoinResultMsg(
-            `😓 Unfortunate, it land on ${res.outcome.toUpperCase()}. You lost your bet.`,
+            `😓 Unfortunate, it landed on ${res.outcome.toUpperCase()}. You lost your bet.`,
           );
         }
       }, 1200);
     } catch (err: any) {
       setCoinIsFlapping(false);
-      triggerLocalNotice("Coinflip Error", err.message || "Failed to place bet.", true);
+      // 4. Update error handling around the flip action:
+      // Handle failed requests by reading error.message or the server JSON response.
+      // Do NOT pass raw error objects into the toast notification, preventing "[object Object]" banners.
+      const errorText =
+        typeof err === "string" && err.trim() !== "[object Object]"
+          ? err
+          : typeof err?.message === "string" && err.message.trim() !== "[object Object]"
+          ? err.message
+          : typeof err?.error === "string" && err.error.trim() !== "[object Object]"
+          ? err.error
+          : "Failed to place coinflip bet.";
+
+      triggerLocalNotice("Coinflip Error", errorText, true);
     }
   };
 

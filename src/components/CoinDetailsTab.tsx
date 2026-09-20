@@ -42,7 +42,7 @@ interface CoinDetailsTabProps {
     coinId: string,
     amountCoins: number,
     type: "BUY" | "SELL",
-  ) => void;
+  ) => Promise<any> | void;
   onBackToList?: () => void;
 }
 
@@ -165,7 +165,7 @@ export default function CoinDetailsTab({
   }, [holdings, activeCoin?.id]);
 
   // Handle transaction execute
-  const handleExecuteTrade = (e: React.FormEvent) => {
+  const handleExecuteTrade = async (e: React.FormEvent) => {
     e.preventDefault();
     setFeedback(null);
     const numericAmt = parseFloat(tradeAmountCoins);
@@ -205,33 +205,31 @@ export default function CoinDetailsTab({
     }
 
     setExecutingState(true);
-    setTimeout(() => {
-      try {
-        onTradeAction(
-          activeCoin.id,
-          numericAmt,
-          activeTradeMode as "BUY" | "SELL",
-        );
-        setFeedback({
-          type: "success",
-          msg: `Successfully ${activeTradeMode === "BUY" ? "purchased" : "sold"} ${numericAmt.toLocaleString()} *${activeCoin.symbol} tokens!`,
-        });
-        setTradeAmountCoins("");
-        setTradePercentage(null);
-        setTimeout(() => {
-          setActiveTradeMode("NONE");
-          setFeedback(null);
-        }, 1800);
-      } catch (err: any) {
-        setFeedback({
-          type: "error",
-          msg:
-            err?.message || "Transaction could not be verified.",
-        });
-      } finally {
-        setExecutingState(false);
-      }
-    }, 800);
+    try {
+      await onTradeAction(
+        activeCoin.id,
+        numericAmt,
+        activeTradeMode as "BUY" | "SELL",
+      );
+      setFeedback({
+        type: "success",
+        msg: `Successfully ${activeTradeMode === "BUY" ? "purchased" : "sold"} ${numericAmt.toLocaleString()} *${activeCoin.symbol} tokens!`,
+      });
+      setTradeAmountCoins("");
+      setTradePercentage(null);
+      setTimeout(() => {
+        setActiveTradeMode("NONE");
+        setFeedback(null);
+      }, 1800);
+    } catch (err: any) {
+      console.error("Trade execution failed:", err);
+      setFeedback({
+        type: "error",
+        msg: err?.message || "Transaction could not be completed.",
+      });
+    } finally {
+      setExecutingState(false);
+    }
   };
 
   const setPercentOfMax = (percent: number) => {

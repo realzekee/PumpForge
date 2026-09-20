@@ -2,7 +2,7 @@ import { getDatabases, coinStore, globalAdminSettings, getAuthoritativeUser, sav
 import { withMarketLock, withUserLock } from "./locks";
 import { adminLimiter } from "./rateLimit";
 import { AuthenticatedUser } from "./types";
-import { Query, Permission, Role, ID } from "appwrite";
+import { Query, Permission, Role, ID } from "node-appwrite";
 
 export interface AuditLogEntry {
   id: string;

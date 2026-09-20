@@ -1539,6 +1539,8 @@ export default function App() {
 
   useEffect(() => {
     let unsub = () => {};
+    let userDocUnsub = () => {};
+    let holdingsUnsub = () => {};
 
     if (currentUser?.uid || currentUser?.$id) {
       const uid = currentUser?.uid || currentUser?.$id;
@@ -1552,6 +1554,53 @@ export default function App() {
               if (doc.userId === uid) {
                 // Trigger local alert using existing helper
                 onAddNotification(doc.title, doc.message, doc.type || "info");
+              }
+            }
+          }
+        );
+
+        // Appwrite Real-time user stats subscription (authoritative cash & gems sync)
+        userDocUnsub = client.subscribe(
+          `databases.pumpforge.collections.users.documents.${uid}`,
+          (response: any) => {
+            const updatedDoc = response.payload;
+            if (updatedDoc) {
+              setUserStats((prev) => {
+                const next = {
+                  ...prev,
+                  cash: updatedDoc.cash !== undefined ? Number(updatedDoc.cash) : prev.cash,
+                  gems: updatedDoc.gems !== undefined ? Number(updatedDoc.gems) : prev.gems,
+                  prestigeLevel: updatedDoc.prestigeLevel !== undefined ? Number(updatedDoc.prestigeLevel) : prev.prestigeLevel,
+                  tradesCount: updatedDoc.tradesCount !== undefined ? Number(updatedDoc.tradesCount) : prev.tradesCount,
+                  totalProfit: updatedDoc.totalProfit !== undefined ? Number(updatedDoc.totalProfit) : prev.totalProfit,
+                };
+                safeStorage.setItem("cached_appwrite_stats", JSON.stringify(next));
+                return next;
+              });
+            }
+          }
+        );
+
+        // Appwrite Real-time holdings subscription
+        holdingsUnsub = client.subscribe(
+          "databases.pumpforge.collections.holdings.documents",
+          async (response: any) => {
+            const doc = response.payload;
+            if (doc && doc.userId === uid) {
+              try {
+                const { Query } = await import("appwrite");
+                const hDocs = await databases.listDocuments("pumpforge", "holdings", [
+                  Query.equal("userId", uid),
+                ]);
+                const fetchedHoldings = hDocs.documents.map((d: any) => ({
+                  coinId: d.coinId,
+                  amount: Number(d.amount ?? d.tokenAmount ?? 0),
+                  avgBuyPrice: Number(d.avgBuyPrice ?? d.avgPrice ?? d.price ?? 0),
+                }));
+                setHoldings(fetchedHoldings);
+                safeStorage.setItem(`memex_holdings_${uid}`, JSON.stringify(fetchedHoldings));
+              } catch (hErr) {
+                console.warn("Realtime holdings refresh error:", hErr);
               }
             }
           }
@@ -1587,6 +1636,8 @@ export default function App() {
     }
     return () => {
       unsub();
+      userDocUnsub();
+      holdingsUnsub();
     };
   }, [currentUser]);
 
@@ -1716,73 +1767,106 @@ export default function App() {
     amountCoins: number,
     type: "BUY" | "SELL",
   ) => {
-    const coin = coins.find((c) => c.id === coinId);
-    if (!coin) return;
+    const coin = coins.find(
+      (c) =>
+        c.id === coinId ||
+        c.symbol?.toLowerCase() === coinId?.toLowerCase() ||
+        (c as any).slug?.toLowerCase() === coinId?.toLowerCase() ||
+        (c as any).$id === coinId
+    );
+    if (!coin) {
+      triggerToast("Transaction Failed", "Selected coin could not be identified in market.", true);
+      throw new Error("Selected coin could not be identified in market.");
+    }
 
     if (!currentUser) {
       setSignInReason(`${type.toLowerCase()} meme-coin assets`);
       setShowSignInModal(true);
-      return;
+      triggerToast("Sign In Required", "Please connect your account to execute trades.", true);
+      throw new Error("Please connect your account to execute trades.");
     }
 
     const totalUsdVal = amountCoins * coin.price;
 
     if (type === "BUY" && userStats.cash < totalUsdVal) {
-      triggerToast(
-        "Transaction Failed",
-        "Insufficient cash balance to purchase this asset!",
-        true,
-      );
-      return;
+      const msg = `Insufficient cash balance! Required: $${totalUsdVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}, Available: $${userStats.cash.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+      triggerToast("Transaction Failed", msg, true);
+      throw new Error(msg);
     }
 
     if (type === "SELL") {
-      const existingHolding = holdings.find((h) => h.coinId === coinId);
+      const existingHolding = holdings.find(
+        (h) => h.coinId === coin.id || h.coinId === coinId || h.coinId === coin.symbol
+      );
       if (!existingHolding || existingHolding.amount < amountCoins) {
-        triggerToast(
-          "Transaction Failed",
-          "You do not own that many tokens to sell!",
-          true,
-        );
-        return;
+        const owned = existingHolding ? existingHolding.amount.toLocaleString() : "0";
+        const msg = `You do not own enough tokens to sell! Owned: ${owned}, Requested: ${amountCoins.toLocaleString()}`;
+        triggerToast("Transaction Failed", msg, true);
+        throw new Error(msg);
       }
     }
 
     try {
-      const res = await apiTrade(coinId, type, amountCoins);
+      const res = await apiTrade(coin.id, type, amountCoins);
       if (res.userStats) {
-        setUserStats((prev) => ({
-          ...prev,
-          cash: res.userStats.cash,
-          totalProfit: res.userStats.totalProfit,
-          tradesCount: res.userStats.tradesCount,
-        }));
+        const nextCash = Number(res.userStats.cash);
+        const nextProfit = Number(res.userStats.totalProfit ?? userStats.totalProfit);
+        const nextTrades = Number(res.userStats.tradesCount ?? userStats.tradesCount);
+        setUserStats((prev) => {
+          const next = {
+            ...prev,
+            cash: nextCash,
+            totalProfit: nextProfit,
+            tradesCount: nextTrades,
+          };
+          safeStorage.setItem("cached_appwrite_stats", JSON.stringify(next));
+          return next;
+        });
       }
-      if (type === "BUY") {
-        setHoldings((prev) => {
-          const exists = prev.find((h) => h.coinId === coinId);
+
+      setHoldings((prev) => {
+        let nextHoldings: PortfolioHolding[];
+        if (type === "BUY") {
+          const exists = prev.find(
+            (h) => h.coinId === coin.id || h.coinId === coinId || h.coinId === coin.symbol
+          );
           if (exists) {
             const nextAmt = exists.amount + amountCoins;
             const nextAvg = (exists.amount * exists.avgBuyPrice + (res.totalCost || totalUsdVal)) / nextAmt;
-            return prev.map((h) => (h.coinId === coinId ? { ...h, amount: nextAmt, avgBuyPrice: nextAvg } : h));
+            nextHoldings = prev.map((h) =>
+              h.coinId === exists.coinId
+                ? { ...h, coinId: coin.id, amount: nextAmt, avgBuyPrice: nextAvg }
+                : h
+            );
+          } else {
+            nextHoldings = [
+              ...prev,
+              { coinId: coin.id, amount: amountCoins, avgBuyPrice: res.price || coin.price },
+            ];
           }
-          return [...prev, { coinId, amount: amountCoins, avgBuyPrice: coin.price }];
-        });
-      } else {
-        setHoldings((prev) => {
-          return prev
-            .map((h) => (h.coinId === coinId ? { ...h, amount: h.amount - amountCoins } : h))
+        } else {
+          nextHoldings = prev
+            .map((h) =>
+              h.coinId === coin.id || h.coinId === coinId || h.coinId === coin.symbol
+                ? { ...h, amount: h.amount - amountCoins }
+                : h
+            )
             .filter((h) => h.amount > 0.000001);
-        });
-      }
+        }
+
+        const uid = currentUser?.$id || currentUser?.uid;
+        if (uid) {
+          safeStorage.setItem(`memex_holdings_${uid}`, JSON.stringify(nextHoldings));
+        }
+        return nextHoldings;
+      });
+
       if (res.coin) {
-        setCoins((prev) =>
-          prev.map((c) => (c.id === coinId ? res.coin : c))
-        );
-        safeStorage.setItem(
-          "pumpforge_cached_coins",
-          JSON.stringify(coins.map((c) => (c.id === coinId ? res.coin : c)))
-        );
+        setCoins((prev) => {
+          const nextCoins = prev.map((c) => (c.id === coin.id ? { ...c, ...res.coin } : c));
+          safeStorage.setItem("pumpforge_cached_coins", JSON.stringify(nextCoins));
+          return nextCoins;
+        });
       }
 
       onAddNotification(
@@ -1792,8 +1876,19 @@ export default function App() {
           : `Sold ${amountCoins.toLocaleString()} *${coin.symbol} for $${(res.netPayout || totalUsdVal).toFixed(2)}`,
         "trade",
       );
+
+      triggerToast(
+        type === "BUY" ? "Purchase Successful" : "Sale Successful",
+        type === "BUY"
+          ? `Acquired ${amountCoins.toLocaleString()} *${coin.symbol} tokens!`
+          : `Liquidated ${amountCoins.toLocaleString()} *${coin.symbol} tokens!`,
+        false,
+      );
+
+      return res;
     } catch (err: any) {
       triggerToast("Transaction Failed", err.message || "Trade execution failed.", true);
+      throw err;
     }
   };
 

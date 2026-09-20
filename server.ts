@@ -41,6 +41,7 @@ import {
 } from "./src/server/adminEngine";
 import { coinStore, getAuthoritativeUser, getPublicUserProfile, syncAdminSettingsWithDatabase, globalAdminSettings } from "./src/server/db";
 import { auditAppwriteSchema } from "./src/server/schemaAudit";
+import { processCoinflip } from "./src/server/arcadeEngine";
 
 const app = express();
 const PORT = 3000;
@@ -172,8 +173,11 @@ syncAdminSettingsWithDatabase().catch((e) => {
   app.post("/api/game/trade", async (req, res) => {
     try {
       const user = (req as any).user;
-      const { coinId, type, amountCoins } = req.body;
-      const result = await processTrade(user, coinId, type, Number(amountCoins));
+      const coinId = req.body.coinId;
+      const type = req.body.type;
+      const rawAmt = req.body.amountCoins !== undefined ? req.body.amountCoins : req.body.amount;
+      const amountCoins = Number(rawAmt);
+      const result = await processTrade(user, coinId, type, amountCoins);
       res.json(result);
     } catch (err: any) {
       res.status(400).json({ error: err.message });
@@ -183,6 +187,27 @@ syncAdminSettingsWithDatabase().catch((e) => {
   // ==========================================
   // --- AUTHORITATIVE ARCADE & GAMING ---
   // ==========================================
+  // Dedicated Coinflip route (Zero-Trust Authoritative via node-appwrite)
+  app.post("/api/arcade/coinflip", async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const rawBet = req.body.betAmount !== undefined ? req.body.betAmount : req.body.bet;
+      const betAmount = Number(rawBet);
+      const side = req.body.side || req.body.choice || "heads";
+
+      const result = await processCoinflip(user, betAmount, side);
+      res.json(result);
+    } catch (err: any) {
+      const errorMsg =
+        typeof err?.message === "string" && err.message.trim() !== "[object Object]"
+          ? err.message
+          : typeof err === "string"
+          ? err
+          : "Failed to process coinflip wager.";
+      res.status(400).json({ error: errorMsg });
+    }
+  });
+
   app.post("/api/game/arcade/wager", async (req, res) => {
     try {
       const user = (req as any).user;

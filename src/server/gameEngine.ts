@@ -7,6 +7,7 @@ import {
   getDatabases,
 } from "./db";
 import { withUserLock } from "./locks";
+import { executeCoinflipCore } from "./arcadeEngine";
 import {
   RateLimiter,
   tradeLimiter,
@@ -15,7 +16,7 @@ import {
   bugReportLimiter,
 } from "./rateLimit";
 import { AuthenticatedUser } from "./types";
-import { ID, Permission, Role, Query } from "appwrite";
+import { ID, Permission, Role, Query } from "node-appwrite";
 
 /**
  * Generates a cryptographically secure random float in [0, 1)
@@ -175,6 +176,13 @@ export async function processTrade(
         user.jwt
       );
 
+      let holdingResult = {
+        coinId: coin.id,
+        coinSymbol: coin.symbol,
+        amount: amountCoins,
+        avgBuyPrice: currentPrice,
+      };
+
       // Record trade and holding in Appwrite if authenticated
       if (!user.isGuest) {
         try {
@@ -183,20 +191,36 @@ export async function processTrade(
           // Update user holding
           const holdingsRes = await databases.listDocuments("pumpforge", "holdings", [
             Query.equal("userId", user.userId),
-            Query.equal("coinId", coinId),
           ]);
 
-          if (holdingsRes.documents.length > 0) {
-            const h = holdingsRes.documents[0];
-            const prevAmt = Number(h.tokenAmount || 0);
-            const prevAvg = Number(h.avgBuyPrice || currentPrice);
-            const nextAmt = prevAmt + amountCoins;
-            const nextAvg = (prevAmt * prevAvg + tradeValue) / nextAmt;
+          const matchDoc = holdingsRes.documents.find(
+            (d: any) =>
+              d.coinId === coin.id ||
+              d.coinId === coinId ||
+              d.coinSymbol?.toLowerCase() === coin.symbol.toLowerCase()
+          );
 
-            await databases.updateDocument("pumpforge", "holdings", h.$id, {
+          if (matchDoc) {
+            const prevAmt = Number(matchDoc.amount ?? matchDoc.tokenAmount ?? 0);
+            const prevAvg = Number(matchDoc.avgBuyPrice ?? currentPrice);
+            const nextAmt = Number((prevAmt + amountCoins).toFixed(4));
+            const nextAvg = Number(((prevAmt * prevAvg + tradeValue) / nextAmt).toFixed(6));
+            const prevInvested = Number(matchDoc.totalInvested ?? 0);
+
+            await databases.updateDocument("pumpforge", "holdings", matchDoc.$id, {
+              amount: nextAmt,
               tokenAmount: nextAmt,
               avgBuyPrice: nextAvg,
+              totalInvested: Number((prevInvested + tradeValue).toFixed(2)),
+              lastUpdated: new Date().toISOString(),
             });
+
+            holdingResult = {
+              coinId: coin.id,
+              coinSymbol: coin.symbol,
+              amount: nextAmt,
+              avgBuyPrice: nextAvg,
+            };
           } else {
             await databases.createDocument(
               "pumpforge",
@@ -204,28 +228,36 @@ export async function processTrade(
               ID.unique(),
               {
                 userId: user.userId,
-                coinId,
-                tokenAmount: amountCoins,
-                avgBuyPrice: currentPrice,
+                coinId: coin.id,
+                coinSymbol: coin.symbol,
+                amount: Number(amountCoins.toFixed(4)),
+                tokenAmount: Number(amountCoins.toFixed(4)),
+                avgBuyPrice: Number(currentPrice.toFixed(6)),
+                totalInvested: Number(tradeValue.toFixed(2)),
+                lastUpdated: new Date().toISOString(),
               },
-              [Permission.read(Role.user(user.userId))]
+              [
+                Permission.read(Role.user(user.userId)),
+                Permission.update(Role.user(user.userId)),
+                Permission.delete(Role.user(user.userId)),
+              ]
             );
           }
 
-          // Record trade log
+          // Record trade log matching schema
           await databases.createDocument(
             "pumpforge",
             "trades",
             ID.unique(),
             {
               userId: user.userId,
-              userName: user.name,
-              coinId,
+              coinId: coin.id,
               coinSymbol: coin.symbol,
               type: "BUY",
-              amount: amountCoins,
-              price: currentPrice,
-              totalValue: tradeValue,
+              amountCoins: Number(amountCoins.toFixed(4)),
+              pricePerCoin: Number(currentPrice.toFixed(6)),
+              totalCash: Number(tradeValue.toFixed(2)),
+              fee: Number(fee.toFixed(2)),
               timestamp: new Date().toISOString(),
             },
             [Permission.read(Role.any())]
@@ -243,6 +275,7 @@ export async function processTrade(
         totalCost,
         userStats: updatedUser,
         coin: updatedCoin,
+        holding: holdingResult,
       };
     } else {
       // SELL Operation
@@ -255,14 +288,19 @@ export async function processTrade(
           const databases = getDatabases(user.jwt);
           const holdingsRes = await databases.listDocuments("pumpforge", "holdings", [
             Query.equal("userId", user.userId),
-            Query.equal("coinId", coinId),
           ]);
 
-          if (holdingsRes.documents.length > 0) {
-            const h = holdingsRes.documents[0];
-            userHoldingAmount = Number(h.tokenAmount || 0);
-            holdingAvgPrice = Number(h.avgBuyPrice || currentPrice);
-            holdingDocId = h.$id;
+          const matchDoc = holdingsRes.documents.find(
+            (d: any) =>
+              d.coinId === coin.id ||
+              d.coinId === coinId ||
+              d.coinSymbol?.toLowerCase() === coin.symbol.toLowerCase()
+          );
+
+          if (matchDoc) {
+            userHoldingAmount = Number(matchDoc.amount ?? matchDoc.tokenAmount ?? 0);
+            holdingAvgPrice = Number(matchDoc.avgBuyPrice ?? currentPrice);
+            holdingDocId = matchDoc.$id;
           }
         } catch (e) {
           console.warn("Could not query holdings from database:", e);
@@ -270,7 +308,7 @@ export async function processTrade(
       }
 
       if (userHoldingAmount < amountCoins && !user.isGuest) {
-        throw new Error(`Insufficient tokens owned. Owned: ${userHoldingAmount}, Requested: ${amountCoins}`);
+        throw new Error(`Insufficient tokens owned. Owned: ${userHoldingAmount.toLocaleString()}, Requested: ${amountCoins.toLocaleString()}`);
       }
 
       const fee = tradeValue * 0.005;
@@ -286,7 +324,7 @@ export async function processTrade(
       const currentHist = coin.history && coin.history.length > 0 ? [...coin.history] : [currentPrice];
       const newHist = [...currentHist.slice(-29), newPrice];
 
-      const updatedCoin = coinStore.updateCoin(coinId, {
+      const updatedCoin = coinStore.updateCoin(coin.id, {
         price: newPrice,
         marketCap: newMarketCap,
         totalLiquidity: newLiquidity,
@@ -294,10 +332,10 @@ export async function processTrade(
         history: newHist,
       })!;
 
-      const profit = netPayout - amountCoins * holdingAvgPrice;
-      const nextCash = userState.cash + netPayout;
+      const profit = Number((netPayout - amountCoins * holdingAvgPrice).toFixed(2));
+      const nextCash = Number((userState.cash + netPayout).toFixed(2));
       const nextTrades = (userState.tradesCount || 0) + 1;
-      const nextProfit = (userState.totalProfit || 0) + profit;
+      const nextProfit = Number(((userState.totalProfit || 0) + profit).toFixed(2));
 
       const updatedUser = await saveAuthoritativeUser(
         user.userId,
@@ -309,34 +347,42 @@ export async function processTrade(
         user.jwt
       );
 
+      const nextRemaining = Number(Math.max(0, userHoldingAmount - amountCoins).toFixed(4));
+      let holdingResult = {
+        coinId: coin.id,
+        coinSymbol: coin.symbol,
+        amount: nextRemaining,
+        avgBuyPrice: holdingAvgPrice,
+      };
+
       // Update holding in Appwrite
       if (!user.isGuest && holdingDocId) {
         try {
           const databases = getDatabases(user.jwt);
-          const nextRemaining = userHoldingAmount - amountCoins;
           if (nextRemaining <= 0.00001) {
             await databases.deleteDocument("pumpforge", "holdings", holdingDocId);
           } else {
             await databases.updateDocument("pumpforge", "holdings", holdingDocId, {
+              amount: nextRemaining,
               tokenAmount: nextRemaining,
+              lastUpdated: new Date().toISOString(),
             });
           }
 
-          // Record trade
+          // Record trade matching schema
           await databases.createDocument(
             "pumpforge",
             "trades",
             ID.unique(),
             {
               userId: user.userId,
-              userName: user.name,
-              coinId,
+              coinId: coin.id,
               coinSymbol: coin.symbol,
               type: "SELL",
-              amount: amountCoins,
-              price: currentPrice,
-              totalValue: tradeValue,
-              profit,
+              amountCoins: Number(amountCoins.toFixed(4)),
+              pricePerCoin: Number(currentPrice.toFixed(6)),
+              totalCash: Number(tradeValue.toFixed(2)),
+              fee: Number(fee.toFixed(2)),
               timestamp: new Date().toISOString(),
             },
             [Permission.read(Role.any())]
@@ -355,6 +401,7 @@ export async function processTrade(
         profit,
         userStats: updatedUser,
         coin: updatedCoin,
+        holding: holdingResult,
       };
     }
   });
@@ -406,50 +453,22 @@ export async function processArcadeWager(
 
     // --- COINFLIP ---
     if (game === "coinflip") {
-      const bet = Number(params.bet);
-      const chosenSide = params.side as "heads" | "tails";
-      if (!chosenSide || !["heads", "tails"].includes(chosenSide)) {
+      const rawBet = params.betAmount !== undefined ? params.betAmount : params.bet;
+      const bet = Number(rawBet);
+      const chosenSide = String(params.side || params.choice || "").toLowerCase().trim();
+      if (chosenSide !== "heads" && chosenSide !== "tails") {
         throw new Error("Choose heads or tails.");
       }
-      if (typeof bet !== "number" || isNaN(bet) || bet <= 0 || bet > userState.cash) {
+      if (typeof bet !== "number" || isNaN(bet) || bet <= 0 || bet > Number(userState.cash)) {
         throw new Error("Invalid bet amount or insufficient cash.");
       }
 
-      let resultSide: "heads" | "tails";
-      if (rigMode === "win") {
-        resultSide = chosenSide;
-      } else if (rigMode === "lose") {
-        resultSide = chosenSide === "heads" ? "tails" : "heads";
-      } else {
-        resultSide = secureRandomInt(0, 1) === 0 ? "heads" : "tails";
-      }
-
-      const won = resultSide === chosenSide;
-      let payout = 0;
-      let nextCash = userState.cash - bet;
-
-      if (won) {
-        payout = Math.floor(bet * 1.9);
-        nextCash += payout;
-      }
-
-      const updatedUser = await saveAuthoritativeUser(
-        user.userId,
-        {
-          cash: nextCash,
-          totalProfit: (userState.totalProfit || 0) + (won ? payout - bet : -bet),
-        },
-        user.jwt
+      return executeCoinflipCore(
+        user,
+        bet,
+        chosenSide as "heads" | "tails",
+        userState
       );
-
-      return {
-        game: "coinflip",
-        outcome: resultSide,
-        won,
-        payout,
-        profit: won ? payout - bet : -bet,
-        userStats: updatedUser,
-      };
     }
 
     // --- SLOTS ---
