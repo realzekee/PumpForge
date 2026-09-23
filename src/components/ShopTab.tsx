@@ -1,4 +1,6 @@
 import React, { useState } from "react";
+import { toast } from "sonner";
+import { formatErrorMessage } from "../utils/formatError";
 import {
   ShoppingBag,
   Gem,
@@ -164,17 +166,17 @@ export default function ShopTab({
         `Equipped custom ${name} username color style!`,
         "info",
       );
-      alert(
+      toast.success(
         `✨ COSMETIC PURCHASED! You bought and equipped "${name}". Check your name styling in the sidebar!`,
       );
     } catch (err: any) {
-      alert(err.message || "Failed to purchase color cosmetic.");
+      toast.error(formatErrorMessage(err, "Failed to purchase color cosmetic."));
     }
   };
 
   const openCrate = async (crateId: string, name: string, cost: number) => {
     if (userStats.gems < cost) {
-      alert("Insufficient Gems to open this chest!");
+      toast.error("Insufficient Gems to open this chest!");
       return;
     }
 
@@ -203,7 +205,7 @@ export default function ShopTab({
       }, 1500);
     } catch (err: any) {
       setUnboxingCrate(null);
-      alert(err.message || "Failed to open crate.");
+      toast.error(formatErrorMessage(err, "Failed to open crate."));
     }
   };
 

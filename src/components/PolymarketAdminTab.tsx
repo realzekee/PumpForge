@@ -6,6 +6,7 @@ import { CheckCircle, XCircle, Ban, Activity, Clock, Globe } from "lucide-react"
 import { SkeletonLoader } from "./SkeletonLoader";
 import { formatToDeviceTimezone, getDeviceTimezoneInfo } from "../utils/timezone";
 import { apiAdminResolveMarket } from "../api/gameClient";
+import { formatErrorMessage } from "../utils/formatError";
 
 export default function PolymarketAdminTab() {
   const [markets, setMarkets] = useState<any[]>([]);
@@ -43,7 +44,7 @@ export default function PolymarketAdminTab() {
       fetchMarkets();
     } catch (error: any) {
       console.error("Failed to resolve market", error);
-      toast.error("Error resolving market: " + (error.message || "Request failed"));
+      toast.error(formatErrorMessage(error, "Failed to resolve market."));
     } finally {
       setResolving(null);
     }

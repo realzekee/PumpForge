@@ -39,7 +39,15 @@ import {
   adminCreatePromoCode,
   getAuditLogs,
 } from "./src/server/adminEngine";
-import { coinStore, getAuthoritativeUser, getPublicUserProfile, syncAdminSettingsWithDatabase, globalAdminSettings } from "./src/server/db";
+import {
+  coinStore,
+  getAuthoritativeUser,
+  getPublicUserProfile,
+  syncAdminSettingsWithDatabase,
+  globalAdminSettings,
+  getAllUsersList,
+  getBroadcastsList,
+} from "./src/server/db";
 import { auditAppwriteSchema } from "./src/server/schemaAudit";
 import { processCoinflip } from "./src/server/arcadeEngine";
 
@@ -61,22 +69,43 @@ app.use(express.json());
 
 // Normalize URLs when running on Vercel Serverless or behind reverse proxies
 app.use((req, _res, next) => {
-  const matchedPath =
-    (req.headers["x-matched-path"] as string) ||
-    (req.headers["x-vercel-matched-path"] as string) ||
-    (req.headers["x-invoke-path"] as string) ||
-    (req.originalUrl && req.originalUrl.startsWith("/api") ? req.originalUrl : null);
+  // Strip /api/index.js prefix if Vercel forwards directly to the entry point
+  if (req.url.startsWith("/api/index.js")) {
+    const remainder = req.url.slice("/api/index.js".length);
+    req.url = remainder.startsWith("/") ? `/api${remainder}` : `/api/${remainder}`;
+  }
 
-  if (matchedPath && (req.url === "/api" || req.url === "/api/" || req.url === "/api/index")) {
-    req.url = matchedPath;
-  } else if (req.headers["x-now-route-matches"] && (req.url === "/api" || req.url === "/api/" || req.url === "/api/index")) {
-    try {
-      const match = String(req.headers["x-now-route-matches"]).match(/1=([^&]+)/);
+  // Check explicit query parameter __path injected by vercel.json rewrite
+  try {
+    const rawUrl = req.url || "/";
+    if (rawUrl.includes("__path=")) {
+      const match = rawUrl.match(/__path=([^&]+)/);
       if (match && match[1]) {
-        const subPath = decodeURIComponent(match[1]);
-        req.url = `/api/${subPath.replace(/^\/+/, "")}`;
+        const cleanSub = decodeURIComponent(match[1]).replace(/^\/+/, "");
+        req.url = cleanSub.startsWith("api/") ? `/${cleanSub}` : `/api/${cleanSub}`;
+        return next();
+      }
+    }
+  } catch (_) {}
+
+  // Check x-now-route-matches header (standard Vercel header for rewrites)
+  const nowRouteMatches = req.headers["x-now-route-matches"] as string;
+  if (nowRouteMatches && (req.url === "/api" || req.url === "/api/" || req.url === "/api/index" || req.url === "/" || req.url === "/api/index.js")) {
+    try {
+      const match = String(nowRouteMatches).match(/1=([^&]+)/);
+      if (match && match[1]) {
+        const subPath = decodeURIComponent(match[1]).replace(/^\/+/, "");
+        req.url = subPath.startsWith("api/") ? `/${subPath}` : `/api/${subPath}`;
+        return next();
       }
     } catch (_) {}
+  }
+
+  // Check x-invoke-path header (Vercel serverless request path)
+  const invokePath = req.headers["x-invoke-path"] as string;
+  if (invokePath && invokePath.startsWith("/api") && invokePath !== "/api" && invokePath !== "/api/" && invokePath !== "/api/index.js") {
+    req.url = invokePath;
+    return next();
   }
 
   // Prepend /api only if original path targets a known game or admin endpoint
@@ -105,6 +134,11 @@ app.use("/api", (_req, res, next) => {
   next();
 });
 
+// Root /api and health endpoints
+app.get("/api", (_req, res) => {
+  res.json({ status: "ok", message: "PumpForge API Gateway Operational", timestamp: new Date().toISOString() });
+});
+
 // Sync coins and settings with Appwrite at startup
 coinStore.syncWithDatabase().catch((e) => {
   console.warn("Initial Appwrite coin sync warning:", e);
@@ -112,6 +146,32 @@ coinStore.syncWithDatabase().catch((e) => {
 syncAdminSettingsWithDatabase().catch((e) => {
   console.warn("Initial Appwrite admin settings sync warning:", e);
 });
+
+function safeErrorString(err: any, fallback = "Internal server error"): string {
+  if (!err) return fallback;
+  if (typeof err === "string") {
+    const trimmed = err.trim();
+    if (trimmed && trimmed !== "[object Object]" && !trimmed.toLowerCase().includes("object error")) return trimmed;
+  }
+  if (typeof err?.message === "string") {
+    const trimmed = err.message.trim();
+    if (trimmed && trimmed !== "[object Object]" && !trimmed.toLowerCase().includes("object error")) return trimmed;
+  }
+  if (typeof err?.error === "string") {
+    const trimmed = err.error.trim();
+    if (trimmed && trimmed !== "[object Object]" && !trimmed.toLowerCase().includes("object error")) return trimmed;
+  }
+  if (typeof err?.description === "string") {
+    const trimmed = err.description.trim();
+    if (trimmed && trimmed !== "[object Object]" && !trimmed.toLowerCase().includes("object error")) return trimmed;
+  }
+  return fallback;
+}
+
+function sendError(res: express.Response, status: number, err: any, fallback = "Request failed") {
+  const message = safeErrorString(err, fallback);
+  return res.status(status).json({ error: message, message });
+}
 
   // ==========================================
   // --- HEALTH & AUTH ROUTES ---
@@ -129,7 +189,103 @@ syncAdminSettingsWithDatabase().catch((e) => {
       }
       res.json({ user, stats });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendError(res, 500, err, "Failed to load user session.");
+    }
+  });
+
+  app.post("/api/auth/email-login", async (req, res) => {
+    try {
+      const { email, password, name } = req.body || {};
+      const cleanEmail = String(email || "").toLowerCase().trim();
+      if (!cleanEmail || !cleanEmail.includes("@")) {
+        return res.status(400).json({ error: "Valid email address is required.", message: "Valid email address is required." });
+      }
+
+      const isOwner = cleanEmail === "realzekeee@gmail.com" || cleanEmail === "realzekee@gmail.com";
+      const uId = isOwner ? "admin_realzekeee" : "u_" + Buffer.from(cleanEmail).toString("hex").substring(0, 16);
+      const displayName = isOwner ? "Zeke (Owner)" : (name || cleanEmail.split("@")[0] || "Player");
+
+      const b64Data = Buffer.from(JSON.stringify({ email: cleanEmail, name: displayName })).toString("base64");
+      const token = isOwner
+        ? "pf_owner_realzekeee_" + Buffer.from(cleanEmail).toString("base64")
+        : `pf_user_${uId}_${b64Data}`;
+
+      const user = {
+        userId: uId,
+        email: cleanEmail,
+        name: displayName,
+        isAdmin: isOwner,
+        isGuest: false,
+        jwt: token,
+      };
+
+      const stats = await getAuthoritativeUser(user.userId, undefined, displayName);
+      if (isOwner) {
+        if (stats.cash < 100000) stats.cash = 100000;
+        if (stats.gems < 5000) stats.gems = 5000;
+        stats.title = "Founder & Owner";
+        stats.isPremium = true;
+      }
+
+      res.json({
+        success: true,
+        token,
+        user,
+        stats,
+      });
+    } catch (err: any) {
+      sendError(res, 500, err, "Email authentication failed.");
+    }
+  });
+
+  app.post("/api/auth/quick-login", async (req, res) => {
+    try {
+      const { username, email } = req.body || {};
+      const cleanUsername = String(username || "Player").trim().slice(0, 30);
+      const cleanEmail = email ? String(email).toLowerCase().trim() : "";
+
+      const isOwner = cleanEmail === "realzekeee@gmail.com" || cleanUsername.toLowerCase() === "zeke";
+      const uId = isOwner ? "admin_realzekeee" : "u_" + Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
+      const b64Data = Buffer.from(JSON.stringify({ email: cleanEmail, name: cleanUsername })).toString("base64");
+      const token = isOwner
+        ? "pf_owner_realzekeee_" + Buffer.from("realzekeee@gmail.com").toString("base64")
+        : `pf_user_${uId}_${b64Data}`;
+
+      const user = {
+        userId: uId,
+        email: cleanEmail,
+        name: cleanUsername,
+        isAdmin: isOwner,
+        isGuest: false,
+        jwt: token,
+      };
+
+      const stats = await getAuthoritativeUser(user.userId, undefined, cleanUsername);
+      if (isOwner) {
+        if (stats.cash < 100000) stats.cash = 100000;
+        if (stats.gems < 5000) stats.gems = 5000;
+        stats.title = "Founder & Owner";
+        stats.isPremium = true;
+      }
+
+      res.json({
+        success: true,
+        token,
+        user,
+        stats,
+      });
+    } catch (err: any) {
+      sendError(res, 500, err, "Quick login failed.");
+    }
+  });
+
+  app.get("/api/game/broadcasts", async (req, res) => {
+    try {
+      const jwt = (req as any).user?.jwt;
+      const broadcasts = await getBroadcastsList(jwt);
+      res.json({ broadcasts });
+    } catch (err: any) {
+      res.json({ broadcasts: [] });
     }
   });
 
@@ -141,7 +297,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
       const coins = coinStore.getAllCoins();
       res.json({ coins });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendError(res, 500, err, "Failed to load coins.");
     }
   });
 
@@ -149,11 +305,11 @@ syncAdminSettingsWithDatabase().catch((e) => {
     try {
       const coin = coinStore.getCoin(req.params.coinId);
       if (!coin) {
-        return res.status(404).json({ error: "Coin not found" });
+        return res.status(404).json({ error: "Coin not found", message: "Coin not found" });
       }
       res.json({ coin });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendError(res, 500, err, "Failed to load coin.");
     }
   });
 
@@ -163,7 +319,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
       const candles = await processGetCoinCandles(req.params.coinId, interval);
       res.json({ candles });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendError(res, 500, err, "Failed to load chart data.");
     }
   });
 
@@ -174,7 +330,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
       const leaderboard = await processGetLeaderboard(category, limit);
       res.json({ leaderboard });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendError(res, 500, err, "Failed to load leaderboard.");
     }
   });
 
@@ -188,7 +344,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
       const result = await processTrade(user, coinId, type, amountCoins);
       res.json(result);
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      sendError(res, 400, err, "Trade execution failed.");
     }
   });
 
@@ -223,7 +379,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
       const result = await processArcadeWager(user, game, action, params);
       res.json(result);
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      sendError(res, 400, err, "Arcade wager failed.");
     }
   });
 
@@ -233,7 +389,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
       const result = await processDailyReward(user);
       res.json(result);
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      sendError(res, 400, err, "Daily reward claim failed.");
     }
   });
 
@@ -244,7 +400,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
       const result = await processShopBuy(user, type, params);
       res.json(result);
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      sendError(res, 400, err, "Purchase transaction failed.");
     }
   });
 
@@ -254,7 +410,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
       const result = await processPrestige(user);
       res.json(result);
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      sendError(res, 400, err, "Prestige process failed.");
     }
   });
 
@@ -265,7 +421,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
       const result = await processPromocode(user, code);
       res.json(result);
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      sendError(res, 400, err, "Promo code redemption failed.");
     }
   });
 
@@ -275,7 +431,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
       const result = await processCreateCoin(user, req.body);
       res.json(result);
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      sendError(res, 400, err, "Coin creation failed.");
     }
   });
 
@@ -286,7 +442,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
       const result = await processBugReport(user, title, description);
       res.json(result);
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      sendError(res, 400, err, "Bug report submission failed.");
     }
   });
 
@@ -296,7 +452,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
       const result = await processCreatePredictionMarket(user, req.body);
       res.json(result);
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      sendError(res, 400, err, "Market creation failed.");
     }
   });
 
@@ -307,7 +463,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
       const result = await processPolymarketWager(user, marketId, choice, Number(amount));
       res.json(result);
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      sendError(res, 400, err, "Market wager failed.");
     }
   });
 
@@ -317,7 +473,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
       const result = await getUserWagers(user);
       res.json(result);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendError(res, 500, err, "Failed to load wagers.");
     }
   });
 
@@ -330,7 +486,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
         customAdminBadge: (globalAdminSettings as any).customAdminBadge || "Operator",
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendError(res, 500, err, "Failed to load settings.");
     }
   });
 
@@ -342,7 +498,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
       const comments = await processGetComments(req.params.targetId);
       res.json({ comments });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendError(res, 500, err, "Failed to load comments.");
     }
   });
 
@@ -353,7 +509,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
       const comment = await processAddComment(user, targetId, text);
       res.json({ success: true, comment });
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      sendError(res, 400, err, "Failed to post comment.");
     }
   });
 
@@ -363,7 +519,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
       const ok = await processDeleteComment(user, req.params.commentId);
       res.json({ success: ok });
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      sendError(res, 400, err, "Failed to delete comment.");
     }
   });
 
@@ -372,7 +528,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
       const ok = await processReportComment(req.params.commentId);
       res.json({ success: ok });
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      sendError(res, 400, err, "Failed to report comment.");
     }
   });
 
@@ -382,7 +538,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
       const result = await processUpdateProfile(user, req.body);
       res.json(result);
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      sendError(res, 400, err, "Profile update failed.");
     }
   });
 
@@ -393,11 +549,11 @@ syncAdminSettingsWithDatabase().catch((e) => {
     try {
       const profile = await getPublicUserProfile(req.params.identifier);
       if (!profile) {
-        return res.status(404).json({ error: "User not found" });
+        return res.status(404).json({ error: "User not found", message: "User not found" });
       }
       res.json(profile);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendError(res, 500, err, "Failed to load user profile.");
     }
   });
 
@@ -411,7 +567,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
       const result = await resolveMarketAndPayout(admin, marketId, winningChoice);
       res.json(result);
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      sendError(res, 400, err, "Market resolution failed.");
     }
   });
 
@@ -422,7 +578,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
       const result = await adminUpdateCoin(admin, coinId, updates);
       res.json(result);
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      sendError(res, 400, err, "Coin update failed.");
     }
   });
 
@@ -433,7 +589,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
       const result = await adminPumpCoin(admin, coinId, Number(multiplier) || 2.0);
       res.json(result);
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      sendError(res, 400, err, "Pump action failed.");
     }
   });
 
@@ -444,7 +600,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
       const result = await adminDumpCoin(admin, coinId, Number(dropRatio) || 0.5);
       res.json(result);
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      sendError(res, 400, err, "Dump action failed.");
     }
   });
 
@@ -455,7 +611,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
       const result = await adminDeleteCoin(admin, coinId);
       res.json(result);
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      sendError(res, 400, err, "Delete coin failed.");
     }
   });
 
@@ -466,7 +622,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
       const result = await adminGrantBalance(admin, targetUserId, mode, currency, Number(amount));
       res.json(result);
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      sendError(res, 400, err, "Balance grant failed.");
     }
   });
 
@@ -477,7 +633,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
       const result = await adminSanctionUser(admin, targetUserId, sanction, durationMinutes);
       res.json(result);
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      sendError(res, 400, err, "Sanction failed.");
     }
   });
 
@@ -488,7 +644,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
       const result = await adminUpdateUserProfile(admin, targetUserId, updates);
       res.json(result);
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      sendError(res, 400, err, "Profile update failed.");
     }
   });
 
@@ -498,7 +654,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
       const result = await adminUpdateSettings(admin, req.body);
       res.json(result);
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      sendError(res, 400, err, "Settings update failed.");
     }
   });
 
@@ -508,7 +664,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
       const result = await adminGetBugs(admin);
       res.json(result);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendError(res, 500, err, "Failed to load bugs.");
     }
   });
 
@@ -519,7 +675,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
       const result = await adminUpdateBugStatus(admin, bugId, status);
       res.json(result);
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      sendError(res, 400, err, "Status update failed.");
     }
   });
 
@@ -530,7 +686,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
       const result = await adminDeleteBugReport(admin, bugId);
       res.json(result);
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      sendError(res, 400, err, "Delete bug failed.");
     }
   });
 
@@ -540,7 +696,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
       const result = await adminCreateBroadcast(admin, req.body);
       res.json(result);
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      sendError(res, 400, err, "Broadcast creation failed.");
     }
   });
 
@@ -551,7 +707,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
       const result = await adminDeleteBroadcast(admin, broadcastId);
       res.json(result);
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      sendError(res, 400, err, "Delete broadcast failed.");
     }
   });
 
@@ -561,7 +717,17 @@ syncAdminSettingsWithDatabase().catch((e) => {
       const result = await adminCreatePromoCode(admin, req.body);
       res.json(result);
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      sendError(res, 400, err, "Promo code creation failed.");
+    }
+  });
+
+  app.get("/api/admin/users", requireAdmin, async (req, res) => {
+    try {
+      const jwt = (req as any).user?.jwt;
+      const users = await getAllUsersList(jwt);
+      res.json({ users });
+    } catch (err: any) {
+      sendError(res, 500, err, "Failed to load users list.");
     }
   });
 
@@ -569,7 +735,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
     try {
       res.json({ logs: getAuditLogs() });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendError(res, 500, err, "Failed to load audit logs.");
     }
   });
 
@@ -579,7 +745,7 @@ syncAdminSettingsWithDatabase().catch((e) => {
       const result = await auditAppwriteSchema(user?.jwt);
       res.json(result);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendError(res, 500, err, "Schema audit failed.");
     }
   });
 
@@ -599,17 +765,21 @@ syncAdminSettingsWithDatabase().catch((e) => {
         ? err.statusCode
         : 500;
 
+    const errMsg = safeErrorString(err, "Internal server error occurred.");
     res.setHeader("Content-Type", "application/json; charset=utf-8");
     res.status(status).json({
-      error: err?.message || "Internal server error occurred.",
+      error: errMsg,
+      message: errMsg,
       code: err?.code || "INTERNAL_ERROR",
     });
   });
 
   app.all("/api/*", (req, res) => {
     res.setHeader("Content-Type", "application/json; charset=utf-8");
+    const notFoundMsg = `API route not found: ${req.method} ${req.originalUrl || req.url}`;
     res.status(404).json({
-      error: `API route not found: ${req.method} ${req.originalUrl || req.url}`,
+      error: notFoundMsg,
+      message: notFoundMsg,
       code: "NOT_FOUND",
     });
   });

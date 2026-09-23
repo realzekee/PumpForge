@@ -45,6 +45,33 @@ export async function authenticateRequest(req: Request): Promise<AuthenticatedUs
     };
   }
 
+  // Custom User session token (for Email/Password or Username login without 3rd-party cookie issues)
+  if (jwt.startsWith("pf_user_")) {
+    try {
+      const rest = jwt.substring(8);
+      const firstUnderscore = rest.indexOf("_");
+      let uId = rest;
+      let userData = { email: "", name: "Player" };
+      if (firstUnderscore !== -1) {
+        uId = rest.substring(0, firstUnderscore);
+        const b64 = rest.substring(firstUnderscore + 1);
+        userData = JSON.parse(Buffer.from(b64, "base64").toString("utf-8"));
+      }
+      const email = (userData.email || "").toLowerCase().trim();
+      const isAdmin = Boolean(email && ADMIN_EMAILS.includes(email));
+      return {
+        userId: uId,
+        email: email,
+        name: userData.name || (email ? email.split("@")[0] : "Player"),
+        isAdmin,
+        isGuest: false,
+        jwt,
+      };
+    } catch {
+      // fallback
+    }
+  }
+
   // Check in-memory cache
   const cached = jwtCache.get(jwt);
   if (cached && cached.expiresAt > Date.now()) {

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { AlertTriangle, Send, X, ShieldAlert } from "lucide-react";
 import { UserStats } from "../types";
+import { formatErrorMessage } from "../utils/formatError";
 
 interface BugReportModalProps {
   userStats: UserStats;
@@ -54,7 +55,7 @@ export default function BugReportModal({
         setErrorMsg("Failed to submit report. Please check connection.");
       }
     } catch (err: any) {
-      setErrorMsg(err?.message || "Something went wrong. Let zeke know!");
+      setErrorMsg(formatErrorMessage(err, "Something went wrong. Let zeke know!"));
     } finally {
       setIsSubmitting(false);
     }

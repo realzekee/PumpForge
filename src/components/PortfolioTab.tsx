@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from "react";
+import { toast } from "sonner";
+import { formatErrorMessage } from "../utils/formatError";
 import {
   Briefcase,
   Wallet,
@@ -120,14 +122,14 @@ export default function PortfolioTab({
 
     const available = getSelectedAvailable();
     if (available < numericAmount) {
-      alert("Insufficient assets in your reserves!");
+      toast.error("Insufficient assets in your reserves!");
       return;
     }
 
     if (onSendMoney) {
       const result = await onSendMoney(sendHandle, numericAmount, sendType);
       if (!result.success) {
-        alert(result.message);
+        toast.error(formatErrorMessage(result.message, "Failed to send transfer."));
         return;
       }
     } else {

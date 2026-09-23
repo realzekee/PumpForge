@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { UserStats } from "../types";
 import { apiCreateCoin } from "../api/gameClient";
+import { formatErrorMessage } from "../utils/formatError";
 
 interface CreateCoinProps {
   setCoins: React.Dispatch<React.SetStateAction<any[]>>;
@@ -119,7 +120,7 @@ export default function CreateCoinTab({ setCoins, coins }: CreateCoinProps) {
     } catch (err: any) {
       console.error("Launch coin failed:", err);
       setErrorMsg(
-        err?.message || "An unexpected error occurred during database launch.",
+        formatErrorMessage(err, "An unexpected error occurred during database launch."),
       );
     } finally {
       setIsLaunching(false);

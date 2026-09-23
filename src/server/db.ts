@@ -16,7 +16,8 @@ export function createServerAppwriteClient(jwt?: string) {
 
   if (APPWRITE_API_KEY) {
     client.setKey(APPWRITE_API_KEY);
-  } else if (jwt) {
+  } else if (jwt && typeof jwt === "string" && jwt.split(".").length === 3) {
+    // Only pass real 3-part JWTs to Appwrite client
     client.setJWT(jwt);
   }
 
@@ -560,5 +561,68 @@ export async function syncAdminSettingsWithDatabase() {
   } catch (e) {
     console.warn("Server admin_settings sync notice:", e);
   }
+}
+
+export async function getAllUsersList(jwt?: string): Promise<UserStateCache[]> {
+  const usersMap = new Map<string, UserStateCache>();
+  for (const [id, user] of userCache.entries()) {
+    usersMap.set(id, user);
+  }
+
+  try {
+    const databases = getDatabases(jwt);
+    const docs = await databases.listDocuments("pumpforge", "users", [Query.limit(100)]);
+    for (const doc of docs.documents) {
+      const uid = doc.userId || doc.$id;
+      if (!usersMap.has(uid)) {
+        usersMap.set(uid, {
+          userId: uid,
+          playerId: doc.playerId,
+          username: doc.username || doc.name || `Player_${doc.playerId || ""}`,
+          handle: doc.handle || `@user${doc.playerId || ""}`,
+          title: doc.title || "Member",
+          isPremium: !!doc.isPremium,
+          cash: Number(doc.cash ?? 5000),
+          gems: Number(doc.gems ?? 90),
+          prestigeLevel: Number(doc.prestigeLevel ?? 0),
+          tradesCount: Number(doc.tradesCount ?? 0),
+          coinsCreatedCount: Number(doc.coinsCreatedCount ?? 0),
+          totalProfit: Number(doc.totalProfit ?? 0),
+          nameColor: doc.nameColor || "text-zinc-400 font-bold",
+          dailyStreak: Number(doc.dailyStreak ?? 1),
+          lastDailyRewardClaim: doc.lastDailyRewardClaim || "",
+          predictionWins: Number(doc.predictionWins ?? 0),
+          rugPullsCount: Number(doc.rugPullsCount ?? 0),
+          createdAt: doc.$createdAt || new Date().toISOString(),
+          updatedAt: Date.now(),
+        });
+      }
+    }
+  } catch (e) {
+    // Non-fatal if Appwrite users collection cannot be listed directly
+  }
+
+  return Array.from(usersMap.values());
+}
+
+export const inMemoryBroadcasts: any[] = [];
+
+export async function getBroadcastsList(jwt?: string): Promise<any[]> {
+  const list: any[] = [...inMemoryBroadcasts];
+  try {
+    const databases = getDatabases(jwt);
+    const res = await databases.listDocuments("pumpforge", "broadcasts", [
+      Query.orderDesc("timestamp"),
+      Query.limit(50),
+    ]);
+    for (const doc of res.documents) {
+      if (!list.some(b => (b.id && b.id === doc.$id) || (b.$id && b.$id === doc.$id))) {
+        list.push(doc);
+      }
+    }
+  } catch (e) {
+    // Non-fatal if Appwrite broadcasts collection cannot be listed directly
+  }
+  return list;
 }
 

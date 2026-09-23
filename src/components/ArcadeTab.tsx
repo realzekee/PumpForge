@@ -319,7 +319,7 @@ export default function ArcadeTab({
       }, 100);
     } catch (err: any) {
       setSlotIsSpinning(false);
-      triggerLocalNotice("Slots Error", err.message || "Failed to spin slots.", true);
+      triggerLocalNotice("Slots Error", formatErrorMessage(err, "Failed to spin slots."), true);
     }
   };
 
@@ -351,7 +351,7 @@ export default function ArcadeTab({
       setMinesSafeSelections(0);
       setMinesMultiplier(1);
     } catch (err: any) {
-      triggerLocalNotice("Mines Error", err.message || "Could not start Mines game.", true);
+      triggerLocalNotice("Mines Error", formatErrorMessage(err, "Could not start Mines game."), true);
     }
   };
 
@@ -403,7 +403,7 @@ export default function ArcadeTab({
         }
       }
     } catch (err: any) {
-      triggerLocalNotice("Mines Error", err.message || "Failed tile step.", true);
+      triggerLocalNotice("Mines Error", formatErrorMessage(err, "Failed tile step."), true);
     }
   };
 
@@ -431,7 +431,7 @@ export default function ArcadeTab({
         `You successfully cashed out $${res.winnings.toLocaleString()} at ${res.multiplier}x multiplier!`,
       );
     } catch (err: any) {
-      triggerLocalNotice("Mines Error", err.message || "Could not cash out.", true);
+      triggerLocalNotice("Mines Error", formatErrorMessage(err, "Could not cash out."), true);
     }
   };
 
@@ -544,7 +544,7 @@ export default function ArcadeTab({
       }, 1200);
     } catch (err: any) {
       setDiceIsRollingState(false);
-      triggerLocalNotice("Dice Error", err.message || "Failed dice roll.", true);
+      triggerLocalNotice("Dice Error", formatErrorMessage(err, "Failed dice roll."), true);
     }
   };
 
@@ -576,7 +576,7 @@ export default function ArcadeTab({
       setTowerReveal(false);
       setTowerActive(true);
     } catch (err: any) {
-      triggerLocalNotice("Tower Error", err.message || "Could not start Tower climb.", true);
+      triggerLocalNotice("Tower Error", formatErrorMessage(err, "Could not start Tower climb."), true);
     }
   };
 
@@ -627,7 +627,7 @@ export default function ArcadeTab({
         }
       }
     } catch (err: any) {
-      triggerLocalNotice("Tower Error", err.message || "Tower step error.", true);
+      triggerLocalNotice("Tower Error", formatErrorMessage(err, "Tower step error."), true);
     }
   };
 
@@ -680,7 +680,7 @@ export default function ArcadeTab({
         `🗼 Cashed out successfully for a return of $${res.winnings.toLocaleString()} (${res.multiplier}x)!`,
       );
     } catch (err: any) {
-      triggerLocalNotice("Tower Error", err.message || "Cashout failed.", true);
+      triggerLocalNotice("Tower Error", formatErrorMessage(err, "Cashout failed."), true);
     }
   };
 

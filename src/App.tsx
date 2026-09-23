@@ -27,6 +27,8 @@ import PolymarketAdminTab from "./components/PolymarketAdminTab";
 import OwnerDashboardTab from "./components/OwnerDashboardTab";
 import BugReportModal from "./components/BugReportModal";
 import PumpForgeLoadingScreen from "./components/PumpForgeLoadingScreen";
+import AppwriteSetupModal from "./components/AppwriteSetupModal";
+import { AuthModal } from "./components/AuthModal";
 import {
   MemeCoin,
   UserStats,
@@ -56,6 +58,7 @@ import {
   Crown,
   Skull,
   BellRing,
+  Key,
 } from "lucide-react";
 
 // Appwrite imports
@@ -77,6 +80,10 @@ import {
   apiUpdateProfile,
   apiGetUserWagers,
   apiCreateCoin,
+  apiGetBroadcasts,
+  clearAuthJwt,
+  getCustomAuthToken,
+  setCustomAuthToken,
 } from "./api/gameClient";
 
 const PRESTIGE_NAMES = [
@@ -744,6 +751,7 @@ export default function App() {
   const [signInReason, setSignInReason] = useState("");
   const [showPrestigeModal, setShowPrestigeModal] = useState(false);
   const [showBugReportModal, setShowBugReportModal] = useState(false);
+  const [showAppwriteGuideModal, setShowAppwriteGuideModal] = useState(false);
   const [coinToDelete, setCoinToDelete] = useState<string | null>(null);
   const [showSignOutConfirm, setShowSignOutConfirm] = useState<boolean>(false);
   const [isDailyRewardAvailable, setIsDailyRewardAvailable] = useState(() => {
@@ -821,7 +829,7 @@ export default function App() {
           );
           triggerToast(
             "Session Activation Error",
-            sessionErr?.message || String(sessionErr),
+            formatErrorMessage(sessionErr, "Failed to activate session."),
             true,
           );
         }
@@ -835,6 +843,48 @@ export default function App() {
       
       try {
         let user: any = null;
+
+        const customToken = getCustomAuthToken();
+        if (customToken) {
+          try {
+            const meRes = await apiGetMe();
+            if (meRes?.user && !meRes.user.isGuest) {
+              const u = {
+                $id: meRes.user.userId,
+                email: meRes.user.email,
+                name: meRes.user.name,
+              };
+              if (active) {
+                setCurrentUser(u);
+                if (meRes.stats) {
+                  setUserStats(meRes.stats);
+                  setIsStatsLoaded(true);
+                }
+                setIsLoading(false);
+                setIsCheckingRedirect(false);
+              }
+              return;
+            }
+          } catch (e) {
+            console.warn("Custom token session check notice:", e);
+            // Resilient fallback to cached user and stats
+            const cachedUserStr = safeStorage.getItem("cached_appwrite_user");
+            const cachedStatsStr = safeStorage.getItem("cached_appwrite_stats");
+            if (cachedUserStr && active) {
+              try {
+                const u = JSON.parse(cachedUserStr);
+                setCurrentUser(u);
+                if (cachedStatsStr) {
+                  setUserStats(JSON.parse(cachedStatsStr));
+                  setIsStatsLoaded(true);
+                }
+                setIsLoading(false);
+                setIsCheckingRedirect(false);
+                return;
+              } catch {}
+            }
+          }
+        }
 
         try {
           user = await account.get();
@@ -1068,24 +1118,8 @@ export default function App() {
   ]);
 
   // Authentication Callbacks
-  const handleGoogleSignIn = async () => {
-    setIsCheckingRedirect(true);
-    try {
-      // Clear legacy storage cache to guarantee fresh login
-      safeStorage.removeItem("cached_appwrite_user");
-      safeStorage.removeItem("cached_appwrite_stats");
-      account.createOAuth2Session(
-        "google" as any,
-        window.location.origin,
-        window.location.origin,
-      );
-    } catch (e: any) {
-      console.error("Appwrite Google sign-in failed:", e);
-      alert(
-        `Appwrite Auth Error: ${e?.message || "Failed to start OAuth session"}`,
-      );
-      setIsCheckingRedirect(false);
-    }
+  const handleGoogleSignIn = () => {
+    setShowSignInModal(true);
   };
 
   const handleSignOut = async () => {
@@ -1095,6 +1129,9 @@ export default function App() {
   const handleConfirmSignOut = async () => {
     setShowSignOutConfirm(false);
     toast.loading("Logging out...", { id: "logout-toast" });
+
+    // Clear server tokens & cookies
+    clearAuthJwt();
 
     // 1. Optimistically Update the UI Instantly
     setCurrentUser(null);
@@ -1490,6 +1527,30 @@ export default function App() {
     // Broadcasts global real-time listener & initial fetch
     const fetchBroadcasts = async () => {
       try {
+        const srvRes = await apiGetBroadcasts();
+        if (srvRes && Array.isArray(srvRes.broadcasts)) {
+          const now = Date.now();
+          const active = srvRes.broadcasts
+            .map((b: any) => ({
+              id: b.id || b.$id,
+              title: b.title || "Announcement",
+              message: b.message || "",
+              type: (b.type || "info") as "info" | "trade" | "crash" | "achievement",
+              timestamp: b.timestamp || b.$createdAt,
+              expiresAt: b.expiresAt,
+            }))
+            .filter((b: any) => {
+              if (b.expiresAt) {
+                return new Date(b.expiresAt).getTime() > now;
+              }
+              return true;
+            });
+          setBroadcasts(active);
+          return;
+        }
+      } catch (_) {}
+
+      try {
         const { Query } = await import("appwrite");
         const res = await databases.listDocuments("pumpforge", "broadcasts", [
           Query.orderDesc("timestamp"),
@@ -1512,8 +1573,8 @@ export default function App() {
             return true;
           });
         setBroadcasts(activeBroadcasts);
-      } catch (err) {
-        console.warn("Failed to fetch Appwrite broadcasts:", err);
+      } catch (_) {
+        // Appwrite collection not created yet or guest permissions restricted - graceful silent fallback
       }
     };
 
@@ -2158,7 +2219,7 @@ export default function App() {
       console.error("Critical Prestige system execution error:", e);
       triggerToast(
         "Prestige Error",
-        e.message || "Failed to complete prestige pipeline successfully.",
+        formatErrorMessage(e, "Failed to complete prestige pipeline successfully."),
         true,
       );
     } finally {
@@ -2473,6 +2534,7 @@ export default function App() {
         isDailyRewardAvailable={isDailyRewardAvailable}
         currentUser={currentUser}
         onGoogleSignIn={handleGoogleSignIn}
+        onOpenSetupGuide={() => setShowAppwriteGuideModal(true)}
         onSignOut={handleSignOut}
         coins={coins}
         holdings={holdings}
@@ -2636,12 +2698,20 @@ export default function App() {
                     a dynamic Google-authenticated profile to prevent session
                     loss and secure cash drops.
                   </p>
+                  <div className="flex flex-col sm:flex-row items-center justify-center gap-3 w-full max-w-md">
+                    <button
+                      onClick={handleGoogleSignIn}
+                      className="w-full bg-gradient-to-r from-orange-500 to-rose-600 hover:from-orange-600 hover:to-rose-700 text-white font-extrabold px-5 py-3 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-rose-950/20 active:scale-98 transition-all text-xs uppercase tracking-wider font-mono"
+                    >
+                      <LogIn className="w-4 h-4 text-white" />
+                      <span>Sign In / Connect Profile</span>
+                    </button>
+                  </div>
                   <button
-                    onClick={handleGoogleSignIn}
-                    className="bg-gradient-to-r from-orange-500 to-rose-600 hover:from-orange-600 hover:to-rose-700 text-white font-extrabold px-6 py-3.5 rounded-xl flex items-center gap-2.5 shadow-lg shadow-rose-950/20 active:scale-98 transition-all text-xs uppercase tracking-wider font-mono"
+                    onClick={() => setShowAppwriteGuideModal(true)}
+                    className="mt-4 text-[11px] text-zinc-500 hover:text-zinc-300 underline font-mono cursor-pointer"
                   >
-                    <LogIn className="w-4 h-4 text-white" />
-                    <span>Connect Google Profile</span>
+                    OAuth Domain Setup Instructions
                   </button>
                 </div>
               ) : (
@@ -2684,12 +2754,20 @@ export default function App() {
                     Crates requires a Cloud Sync Profile. Secure your progress
                     and sync with our Appwrite database.
                   </p>
+                  <div className="flex flex-col sm:flex-row items-center justify-center gap-3 w-full max-w-md">
+                    <button
+                      onClick={handleGoogleSignIn}
+                      className="w-full bg-gradient-to-r from-orange-500 to-rose-600 hover:from-orange-600 hover:to-rose-700 text-white font-extrabold px-5 py-3 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-rose-950/20 active:scale-98 transition-all text-xs uppercase tracking-wider font-mono"
+                    >
+                      <LogIn className="w-4 h-4 text-white" />
+                      <span>Sign In / Connect Profile</span>
+                    </button>
+                  </div>
                   <button
-                    onClick={handleGoogleSignIn}
-                    className="bg-gradient-to-r from-orange-500 to-rose-600 hover:from-orange-600 hover:to-rose-700 text-white font-extrabold px-6 py-3.5 rounded-xl flex items-center gap-2.5 shadow-lg shadow-rose-950/20 active:scale-98 transition-all text-xs uppercase tracking-wider font-mono"
+                    onClick={() => setShowAppwriteGuideModal(true)}
+                    className="mt-4 text-[11px] text-zinc-500 hover:text-zinc-300 underline font-mono cursor-pointer"
                   >
-                    <LogIn className="w-4 h-4 text-white" />
-                    <span>Connect Google Profile</span>
+                    OAuth Domain Setup Instructions
                   </button>
                 </div>
               ) : (
@@ -2749,12 +2827,20 @@ export default function App() {
                     volume, and execute strategic trades requires Google profile
                     credentials.
                   </p>
+                  <div className="flex flex-col sm:flex-row items-center justify-center gap-3 w-full max-w-md">
+                    <button
+                      onClick={handleGoogleSignIn}
+                      className="w-full bg-gradient-to-r from-orange-500 to-rose-600 hover:from-orange-600 hover:to-rose-700 text-white font-extrabold px-5 py-3 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-rose-950/20 active:scale-98 transition-all text-xs uppercase tracking-wider font-mono"
+                    >
+                      <LogIn className="w-4 h-4 text-white" />
+                      <span>Sign In / Connect Profile</span>
+                    </button>
+                  </div>
                   <button
-                    onClick={handleGoogleSignIn}
-                    className="bg-gradient-to-r from-orange-500 to-rose-600 hover:from-orange-600 hover:to-rose-700 text-white font-extrabold px-6 py-3.5 rounded-xl flex items-center gap-2.5 shadow-lg shadow-rose-950/20 active:scale-98 transition-all text-xs uppercase tracking-wider font-mono"
+                    onClick={() => setShowAppwriteGuideModal(true)}
+                    className="mt-4 text-[11px] text-zinc-500 hover:text-zinc-300 underline font-mono cursor-pointer"
                   >
-                    <LogIn className="w-4 h-4 text-white" />
-                    <span>Connect Google Profile</span>
+                    OAuth Domain Setup Instructions
                   </button>
                 </div>
               ) : (
@@ -2977,63 +3063,44 @@ export default function App() {
         </div>
       )}
 
-      {/* Google Sign-In Intercept Modal */}
+      {/* Unified PumpForge Authentication Hub Modal */}
       {showSignInModal && (
-        <div
-          className="fixed inset-0 bg-black/70 backdrop-blur-xl z-50 flex items-center justify-center p-4"
-          id="google-auth-intercept-modal"
-        >
-          <div className="glass-modal p-6 rounded-2xl max-w-sm w-full relative font-mono text-center select-none animate-slide-up">
-            <button
-              onClick={() => {
-                setShowSignInModal(false);
-                setSignInReason("");
-              }}
-              className="absolute top-4 right-4 text-zinc-400 hover:text-white cursor-pointer"
-            >
-              ✕
-            </button>
-            <div className="w-12 h-12 bg-rose-500/15 border border-rose-500/30 text-rose-400 rounded-xl flex items-center justify-center text-3xl mx-auto mb-3 shadow-lg animate-pulse">
-              🔒
-            </div>
-            <h3 className="text-sm font-extrabold text-white uppercase tracking-wider mb-2">
-              Authentication Required
-            </h3>
-            <p className="text-xs text-zinc-300 mb-6 leading-relaxed">
-              Google authentication is required to{" "}
-              <span className="text-rose-400 font-semibold">
-                {signInReason || "interact with this feature"}
-              </span>
-              . Sign in to link your progress, trade securely, and back up
-              assets!
-            </p>
-
-            <div className="flex flex-col gap-2">
-              <button
-                onClick={async () => {
-                  setShowSignInModal(false);
-                  setSignInReason("");
-                  await handleGoogleSignIn();
-                }}
-                className="w-full bg-gradient-to-r from-orange-500 to-rose-600 hover:from-orange-600 hover:to-rose-700 py-3 rounded-xl font-bold font-mono text-xs text-white shadow-lg border border-white/20 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-98"
-                id="modal-google-signin-btn"
-              >
-                <LogIn className="w-4 h-4 text-white" />
-                <span>Sign in with Google</span>
-              </button>
-              <button
-                onClick={() => {
-                  setShowSignInModal(false);
-                  setSignInReason("");
-                }}
-                className="w-full glass-card hover:bg-white/[0.08] py-2 rounded-xl text-zinc-400 hover:text-white border border-white/10 text-xs transition-colors cursor-pointer"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
+        <AuthModal
+          isOpen={showSignInModal}
+          reason={signInReason}
+          onClose={() => {
+            setShowSignInModal(false);
+            setSignInReason("");
+          }}
+          onSuccess={(user, stats) => {
+            if (user) {
+              const u = {
+                $id: user.userId || user.$id,
+                email: user.email || "",
+                name: user.name || "Player",
+              };
+              setCurrentUser(u);
+              safeStorage.setItem("cached_appwrite_user", JSON.stringify(u));
+            }
+            if (stats) {
+              setUserStats(stats);
+              setIsStatsLoaded(true);
+              safeStorage.setItem("cached_appwrite_stats", JSON.stringify(stats));
+            }
+            setShowSignInModal(false);
+            setSignInReason("");
+          }}
+          onOpenGuide={() => {
+            setShowSignInModal(false);
+            setShowAppwriteGuideModal(true);
+          }}
+        />
       )}
+
+      <AppwriteSetupModal
+        isOpen={showAppwriteGuideModal}
+        onClose={() => setShowAppwriteGuideModal(false)}
+      />
 
       {showBugReportModal && (
         <BugReportModal

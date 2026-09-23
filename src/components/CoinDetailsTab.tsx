@@ -332,7 +332,7 @@ export default function CoinDetailsTab({
         toast.success("Comment posted!");
       }
     } catch (err: any) {
-      toast.error(err.message || "Failed to post comment.");
+      toast.error(formatErrorMessage(err, "Failed to post comment."));
     } finally {
       setSubmittingComment(false);
     }
@@ -344,7 +344,7 @@ export default function CoinDetailsTab({
       setComments((prev) => prev.filter((c) => c.id !== commentId));
       toast.success("Comment deleted.");
     } catch (err: any) {
-      toast.error(err.message || "Could not delete comment.");
+      toast.error(formatErrorMessage(err, "Could not delete comment."));
     }
   };
 
@@ -353,7 +353,7 @@ export default function CoinDetailsTab({
       await apiReportComment(commentId);
       toast.success("Comment reported to moderators.");
     } catch (err: any) {
-      toast.error("Could not report comment.");
+      toast.error(formatErrorMessage(err, "Could not report comment."));
     }
   };
 

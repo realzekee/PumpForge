@@ -97,7 +97,10 @@ import {
   apiAdminCreatePromoCode,
   apiGetAuditLogs,
   apiGetSchemaAudit,
+  apiAdminGetUsers,
+  apiGetBroadcasts,
 } from "../api/gameClient";
+import { formatErrorMessage } from "../utils/formatError";
 
 interface OwnerDashboardProps {
   coins: MemeCoin[];
@@ -147,7 +150,7 @@ export default function OwnerDashboardTab({
       const res = await apiGetAuditLogs();
       setAuditLogs(res.logs || []);
     } catch (err: any) {
-      toast.error("Failed to load audit logs: " + err.message);
+      toast.error(formatErrorMessage(err, "Failed to load audit logs."));
     } finally {
       setIsLoadingLogs(false);
     }
@@ -164,7 +167,7 @@ export default function OwnerDashboardTab({
         toast.info("Schema audit completed with notes.");
       }
     } catch (err: any) {
-      toast.error("Schema audit error: " + err.message);
+      toast.error(formatErrorMessage(err, "Schema audit error."));
     } finally {
       setIsLoadingSchemaAudit(false);
     }
@@ -176,13 +179,18 @@ export default function OwnerDashboardTab({
     }
   }, [activeSubTab]);
 
-  // Registered users query from Appwrite
-  const { data: usersQueryData = [], isError: isUsersError, error: usersError } = useQuery({
+  // Registered users query from authoritative server
+  const { data: usersQueryData = [] } = useQuery({
     queryKey: ["registeredUsers"],
     queryFn: async () => {
-      const res = await databases.listDocuments("pumpforge", "users", [Query.limit(1000)]);
-      return res.documents;
+      try {
+        const res = await apiAdminGetUsers();
+        return res.users || [];
+      } catch (e) {
+        return [];
+      }
     },
+    retry: false,
   });
 
   // Creator minting controls
@@ -253,13 +261,6 @@ export default function OwnerDashboardTab({
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
   const [dropdownSearch, setDropdownSearch] = useState("");
 
-  // Permissions error toast effect
-  useEffect(() => {
-    if (isUsersError && (usersError as any)?.code === 403) {
-      toast.error("Owner Dashboard Error (403): Appwrite permissions restriction.");
-    }
-  }, [isUsersError, usersError]);
-
   // Fetch bugs from Server API (Zero-Trust Authoritative)
   useEffect(() => {
     let active = true;
@@ -279,14 +280,13 @@ export default function OwnerDashboardTab({
     };
   }, []);
 
-  // Fetch active broadcasts from Appwrite
+  // Fetch active broadcasts from Authoritative Server API
   const fetchActiveBroadcasts = async () => {
     try {
-      const res = await databases.listDocuments("pumpforge", "broadcasts", [
-        Query.orderDesc("timestamp"),
-        Query.limit(50),
-      ]);
-      setActiveBroadcastsList(res.documents);
+      const res = await apiGetBroadcasts();
+      if (res?.broadcasts) {
+        setActiveBroadcastsList(res.broadcasts);
+      }
     } catch (e) {
       // fresh collection
     }
@@ -546,7 +546,7 @@ export default function OwnerDashboardTab({
       );
     } catch (e: any) {
       console.error(e);
-      toast.error("Bot Raid failed: " + e.message, { id: "bot-raid" });
+      toast.error(formatErrorMessage(e, "Bot Raid failed."), { id: "bot-raid" });
     } finally {
       setBotRaidIsRunning(false);
     }
@@ -701,7 +701,7 @@ export default function OwnerDashboardTab({
       onAddNotification("🗑️ Coin Removed", "Coin permanently purged from database.", "trade");
     } catch (e: any) {
       console.error("Failed to delete coin:", e);
-      toast.error("Failed to delete coin: " + e.message);
+      toast.error(formatErrorMessage(e, "Failed to delete coin."));
     }
   };
 
@@ -789,7 +789,7 @@ export default function OwnerDashboardTab({
       fetchActiveBroadcasts();
     } catch (err: any) {
       console.error("Error dispatching broadcast:", err);
-      toast.error(`Broadcast failed: ${err.message}`, { id: "announcement" });
+      toast.error(formatErrorMessage(err, "Broadcast failed."), { id: "announcement" });
     } finally {
       setIsPublishingBroadcast(false);
     }
@@ -801,7 +801,7 @@ export default function OwnerDashboardTab({
       toast.success("Broadcast banner removed.");
       fetchActiveBroadcasts();
     } catch (e: any) {
-      toast.error("Failed to delete broadcast: " + e.message);
+      toast.error(formatErrorMessage(e, "Failed to delete broadcast."));
     }
   };
 
@@ -831,7 +831,7 @@ export default function OwnerDashboardTab({
       setPromoPubExpiresAt("");
     } catch (e: any) {
       console.error(e);
-      toast.error(`Failed to publish: ${e.message}`, { id: "promo-publish" });
+      toast.error(formatErrorMessage(e, "Failed to publish promo code."), { id: "promo-publish" });
     } finally {
       setPromoPubIsLoading(false);
     }
@@ -1030,7 +1030,7 @@ export default function OwnerDashboardTab({
         );
       } catch (err: any) {
         console.error(err);
-        toast.error("Cash update failed: " + err.message, { id: "mutate-" + playerHandle });
+        toast.error(formatErrorMessage(err, "Cash update failed."), { id: "mutate-" + playerHandle });
       } finally {
         setIsMutatingUser(null);
       }
@@ -1061,7 +1061,7 @@ export default function OwnerDashboardTab({
           { id: "mutate-" + playerHandle }
         );
       } catch (e: any) {
-        toast.error(`Update failed: ${e.message}`, { id: "mutate-" + playerHandle });
+        toast.error(formatErrorMessage(e, "Update failed."), { id: "mutate-" + playerHandle });
       } finally {
         setIsMutatingUser(null);
       }
@@ -1108,7 +1108,7 @@ export default function OwnerDashboardTab({
         );
       } catch (err: any) {
         console.error(err);
-        toast.error("Gems update failed: " + err.message, { id: "mutate-gems-" + playerHandle });
+        toast.error(formatErrorMessage(err, "Gems update failed."), { id: "mutate-gems-" + playerHandle });
       } finally {
         setIsMutatingUser(null);
       }
@@ -1139,7 +1139,7 @@ export default function OwnerDashboardTab({
           { id: "mutate-gems-" + playerHandle }
         );
       } catch (e: any) {
-        toast.error(`Update failed: ${e.message}`, { id: "mutate-gems-" + playerHandle });
+        toast.error(formatErrorMessage(e, "Update failed."), { id: "mutate-gems-" + playerHandle });
       } finally {
         setIsMutatingUser(null);
       }
@@ -1180,7 +1180,7 @@ export default function OwnerDashboardTab({
         });
         toast.success(`Prestige tier updated to Level ${level}!`, { id: "prestige-" + playerHandle });
       } catch (e: any) {
-        toast.error("Failed to update prestige: " + e.message, { id: "prestige-" + playerHandle });
+        toast.error(formatErrorMessage(e, "Failed to update prestige."), { id: "prestige-" + playerHandle });
       } finally {
         setIsMutatingUser(null);
       }
@@ -1202,7 +1202,7 @@ export default function OwnerDashboardTab({
         }
         toast.success(`Prestige set to Level ${level} for ${playerHandle}`, { id: "prestige-" + playerHandle });
       } catch (e: any) {
-        toast.error("Failed to set prestige: " + e.message, { id: "prestige-" + playerHandle });
+        toast.error(formatErrorMessage(e, "Failed to set prestige."), { id: "prestige-" + playerHandle });
       } finally {
         setIsMutatingUser(null);
       }
@@ -1242,7 +1242,7 @@ export default function OwnerDashboardTab({
         });
         toast.success(`User title set to "${title}"!`, { id: "title-" + playerHandle });
       } catch (e: any) {
-        toast.error("Failed to update title: " + e.message, { id: "title-" + playerHandle });
+        toast.error(formatErrorMessage(e, "Failed to update title."), { id: "title-" + playerHandle });
       } finally {
         setIsMutatingUser(null);
       }
@@ -1264,7 +1264,7 @@ export default function OwnerDashboardTab({
         }
         toast.success(`Title for ${playerHandle} updated to "${title}"`, { id: "title-" + playerHandle });
       } catch (e: any) {
-        toast.error("Failed to set title: " + e.message, { id: "title-" + playerHandle });
+        toast.error(formatErrorMessage(e, "Failed to set title."), { id: "title-" + playerHandle });
       } finally {
         setIsMutatingUser(null);
       }
@@ -1310,7 +1310,7 @@ export default function OwnerDashboardTab({
         });
         toast.success(`Admin permissions ${makeAdmin ? "granted" : "revoked"}!`, { id: "role-" + playerHandle });
       } catch (e: any) {
-        toast.error("Role update failed: " + e.message, { id: "role-" + playerHandle });
+        toast.error(formatErrorMessage(e, "Role update failed."), { id: "role-" + playerHandle });
       } finally {
         setIsMutatingUser(null);
       }
@@ -1341,7 +1341,7 @@ export default function OwnerDashboardTab({
           id: "role-" + playerHandle,
         });
       } catch (e: any) {
-        toast.error("Role update failed: " + e.message, { id: "role-" + playerHandle });
+        toast.error(formatErrorMessage(e, "Role update failed."), { id: "role-" + playerHandle });
       } finally {
         setIsMutatingUser(null);
       }
@@ -1401,7 +1401,7 @@ export default function OwnerDashboardTab({
         });
         toast.success("Profile restored to starting defaults.", { id: "reset-" + playerHandle });
       } catch (e: any) {
-        toast.error("Reset failed: " + e.message, { id: "reset-" + playerHandle });
+        toast.error(formatErrorMessage(e, "Reset failed."), { id: "reset-" + playerHandle });
       } finally {
         setIsMutatingUser(null);
       }
@@ -1443,7 +1443,7 @@ export default function OwnerDashboardTab({
         }
         toast.success(`Account data for ${playerHandle} restored to defaults.`, { id: "reset-" + playerHandle });
       } catch (e: any) {
-        toast.error("Reset failed: " + e.message, { id: "reset-" + playerHandle });
+        toast.error(formatErrorMessage(e, "Reset failed."), { id: "reset-" + playerHandle });
       } finally {
         setIsMutatingUser(null);
       }
@@ -1541,7 +1541,7 @@ export default function OwnerDashboardTab({
             : `Suspension applied to ${playerHandle} (${days}d)`
         );
       } catch (e: any) {
-        toast.error("Failed to apply sanction: " + e.message);
+        toast.error(formatErrorMessage(e, "Failed to apply sanction."));
       }
     }
   };
@@ -1554,7 +1554,7 @@ export default function OwnerDashboardTab({
       setBugReports((prev) => prev.map((b) => (b.id === bugId ? { ...b, status: nextStatus } : b)));
       toast.success(`Bug marked as ${nextStatus}!`);
     } catch (e: any) {
-      toast.error("Failed to update status: " + e.message);
+      toast.error(formatErrorMessage(e, "Failed to update bug status."));
     }
   };
 
@@ -1564,7 +1564,7 @@ export default function OwnerDashboardTab({
       setBugReports((prev) => prev.filter((b) => b.id !== bugId));
       toast.success("Bug report deleted.");
     } catch (e: any) {
-      toast.error("Failed to delete bug report: " + e.message);
+      toast.error(formatErrorMessage(e, "Failed to delete bug report."));
     }
   };
 
@@ -1582,7 +1582,7 @@ export default function OwnerDashboardTab({
       setBugReports((prev) => prev.filter((b) => b.status !== "resolved"));
       toast.success(`Pruned ${resolvedList.length} resolved bug reports.`);
     } catch (e: any) {
-      toast.error("Failed to prune bugs: " + e.message);
+      toast.error(formatErrorMessage(e, "Failed to prune bugs."));
     } finally {
       setIsPruningBugs(false);
     }

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { apiGetPublicUserProfile } from "../api/gameClient";
+import { formatErrorMessage } from "../utils/formatError";
 import {
   Award,
   Calendar,
@@ -40,7 +41,7 @@ export default function PublicProfileTab() {
       })
       .catch((err) => {
         if (isMounted) {
-          setError(err.message || "Failed to load player profile.");
+          setError(formatErrorMessage(err, "Failed to load player profile."));
           setLoading(false);
         }
       });

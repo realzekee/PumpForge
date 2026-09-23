@@ -4,6 +4,7 @@ import { Query } from "appwrite";
 import { toast } from "sonner";
 import { databases } from "../appwrite";
 import { apiRedeemPromocode } from "../api/gameClient";
+import { formatErrorMessage } from "../utils/formatError";
 import {
   Home,
   TrendingUp,
@@ -37,6 +38,8 @@ import {
   Code,
   ShieldAlert,
   Crown,
+  Key,
+  HelpCircle,
 } from "lucide-react";
 import {
   ActiveTab,
@@ -56,6 +59,7 @@ interface SidebarProps {
   isDailyRewardAvailable: boolean;
   currentUser: any;
   onGoogleSignIn: () => void;
+  onOpenSetupGuide?: () => void;
   onSignOut: () => void;
   coins?: MemeCoin[];
   holdings?: PortfolioHolding[];
@@ -76,6 +80,7 @@ export default function Sidebar({
   isDailyRewardAvailable,
   currentUser,
   onGoogleSignIn,
+  onOpenSetupGuide,
   onSignOut,
   coins = [],
   holdings = [],
@@ -210,7 +215,7 @@ export default function Sidebar({
       setPromoCode("");
     } catch (err: any) {
       console.error("Promo code processing error:", err);
-      const errMsg = err?.message || "Invalid or expired promo code.";
+      const errMsg = formatErrorMessage(err, "Invalid or expired promo code.");
       toast.error(errMsg, { id: "promo-claim" });
       setPromoError(errMsg);
     }
@@ -596,14 +601,28 @@ export default function Sidebar({
               {!currentUser ||
               userStats?.handle === "@player" ||
               userStats?.handle === "@guest_degen" ? (
-                <button
-                  onClick={onGoogleSignIn}
-                  className="w-full bg-gradient-to-r from-orange-500 to-rose-600 hover:from-orange-600 hover:to-rose-700 text-white font-extrabold p-3.5 rounded-2xl flex items-center justify-center gap-2.5 cursor-pointer shadow-lg active:scale-98 transition-transform font-mono text-xs uppercase tracking-wider border border-white/20"
-                  id="sidebar-google-signin-btn"
-                >
-                  <LogIn className="w-4 h-4 text-white animate-pulse" />
-                  <span>Google Sign-In</span>
-                </button>
+                <div className="flex flex-col gap-2">
+                  <button
+                    onClick={onGoogleSignIn}
+                    className="w-full bg-gradient-to-r from-orange-500 via-rose-600 to-red-600 hover:from-orange-600 hover:to-rose-700 text-white font-extrabold p-3 rounded-2xl flex items-center justify-center gap-2 cursor-pointer shadow-lg active:scale-98 transition-transform font-mono text-xs uppercase tracking-wider border border-white/20"
+                    id="sidebar-google-signin-btn"
+                  >
+                    <LogIn className="w-4 h-4 text-white" />
+                    <span>Sign In / Play</span>
+                  </button>
+
+                  {onOpenSetupGuide && (
+                    <button
+                      onClick={onOpenSetupGuide}
+                      className="w-full py-2 px-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white border border-zinc-700/50 hover:border-zinc-500 transition-all font-mono text-[10px] flex items-center justify-center gap-1.5"
+                      title="Appwrite & OAuth Setup Guide"
+                      id="sidebar-setup-guide-btn"
+                    >
+                      <HelpCircle className="w-3.5 h-3.5" />
+                      <span>Connection &amp; OAuth Guide</span>
+                    </button>
+                  )}
+                </div>
               ) : (
                 <div
                   onClick={() => setShowDropdown(!showDropdown)}
