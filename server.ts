@@ -69,17 +69,22 @@ app.use(express.json());
 
 // Normalize URLs when running on Vercel Serverless or behind reverse proxies
 app.use((req, _res, next) => {
-  // Strip /api/index.js prefix if Vercel forwards directly to the entry point
-  if (req.url.startsWith("/api/index.js")) {
-    const remainder = req.url.slice("/api/index.js".length);
+  // Strip /api/index prefix if Vercel forwards directly to the entry point
+  if (req.url.startsWith("/api/index.js") || req.url.startsWith("/api/index.ts") || req.url.startsWith("/api/index")) {
+    const matched = req.url.startsWith("/api/index.js")
+      ? "/api/index.js"
+      : req.url.startsWith("/api/index.ts")
+      ? "/api/index.ts"
+      : "/api/index";
+    const remainder = req.url.slice(matched.length);
     req.url = remainder.startsWith("/") ? `/api${remainder}` : `/api/${remainder}`;
   }
 
-  // Check explicit query parameter __path injected by vercel.json rewrite
+  // Check explicit query parameter path or __path injected by vercel.json rewrite
   try {
     const rawUrl = req.url || "/";
-    if (rawUrl.includes("__path=")) {
-      const match = rawUrl.match(/__path=([^&]+)/);
+    if (rawUrl.includes("path=") || rawUrl.includes("__path=")) {
+      const match = rawUrl.match(/(?:__)?path=([^&]+)/);
       if (match && match[1]) {
         const cleanSub = decodeURIComponent(match[1]).replace(/^\/+/, "");
         req.url = cleanSub.startsWith("api/") ? `/${cleanSub}` : `/api/${cleanSub}`;
