@@ -279,6 +279,50 @@ function sendError(res: express.Response, status: number, err: any, fallback = "
     }
   });
 
+  app.post("/api/auth/oauth-callback", async (req, res) => {
+    try {
+      const { userId, secret, email, name } = req.body || {};
+      const uId = String(userId || "").trim();
+      if (!uId) {
+        return res.status(400).json({ error: "Missing userId for OAuth verification." });
+      }
+
+      const cleanEmail = String(email || "").toLowerCase().trim();
+      const userName = String(name || "").trim() || (cleanEmail ? cleanEmail.split("@")[0] : "Player");
+      const isOwner = cleanEmail === "realzekeee@gmail.com" || cleanEmail === "realzekee@gmail.com";
+      const displayName = isOwner ? "Zeke (Owner)" : userName;
+
+      const b64Data = Buffer.from(JSON.stringify({ email: cleanEmail, name: displayName })).toString("base64");
+      const token = `pf_user_${uId}_${b64Data}`;
+
+      const user = {
+        userId: uId,
+        email: cleanEmail,
+        name: displayName,
+        isAdmin: isOwner,
+        isGuest: false,
+        jwt: token,
+      };
+
+      const stats = await getAuthoritativeUser(user.userId, undefined, displayName);
+      if (isOwner) {
+        if (stats.cash < 100000) stats.cash = 100000;
+        if (stats.gems < 5000) stats.gems = 5000;
+        stats.title = "Founder & Owner";
+        stats.isPremium = true;
+      }
+
+      res.json({
+        success: true,
+        token,
+        user,
+        stats,
+      });
+    } catch (err: any) {
+      sendError(res, 500, err, "OAuth callback processing failed.");
+    }
+  });
+
   app.get("/api/game/broadcasts", async (req, res) => {
     try {
       const jwt = (req as any).user?.jwt;
@@ -789,13 +833,17 @@ function sendError(res: express.Response, status: number, err: any, fallback = "
   // ==========================================
   async function startServer() {
     if (process.env.NODE_ENV !== "production") {
-      const { createServer: createViteServer } = await import("vite");
-      const vite = await createViteServer({
-        server: { middlewareMode: true },
-        appType: "spa",
-      });
-      app.use(vite.middlewares);
-    } else if (!process.env.VERCEL) {
+      try {
+        const { createServer: createViteServer } = await import("vite");
+        const vite = await createViteServer({
+          server: { middlewareMode: true },
+          appType: "spa",
+        });
+        app.use(vite.middlewares);
+      } catch (e) {
+        console.warn("Vite middleware not loaded:", e);
+      }
+    } else {
       const distPath = path.join(process.cwd(), "dist");
       app.use(express.static(distPath));
       app.get("*", (_req, res) => {
@@ -803,27 +851,22 @@ function sendError(res: express.Response, status: number, err: any, fallback = "
       });
     }
 
-    if (!process.env.VERCEL) {
-      app.listen(PORT, "0.0.0.0", () => {
-        console.log(`PumpForge authoritative game server running on http://localhost:${PORT}`);
-      });
-    }
-  }
-
-  // Safe fallback for Vercel Serverless Function invocations
-  if (process.env.VERCEL) {
-    app.all("*", (req, res) => {
-      res.setHeader("Content-Type", "application/json; charset=utf-8");
-      res.status(404).json({
-        error: `Endpoint not found: ${req.method} ${req.originalUrl || req.url}`,
-        code: "NOT_FOUND",
-      });
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`PumpForge authoritative game server running on http://localhost:${PORT}`);
     });
   }
 
   export default app;
 
-  if (!process.env.VERCEL && !process.env.VERCEL_ENV && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
+  const isServerless = Boolean(
+    process.env.VERCEL ||
+    process.env.VERCEL_ENV ||
+    process.env.AWS_LAMBDA_FUNCTION_NAME ||
+    process.env.LAMBDA_TASK_ROOT ||
+    process.env.NETLIFY
+  );
+
+  if (!isServerless && typeof process.send !== "function" && process.env.NODE_ENV !== "test") {
     startServer().catch((err) => {
       console.error("PumpForge startup error:", err);
     });

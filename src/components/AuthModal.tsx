@@ -140,11 +140,21 @@ export function AuthModal({
 
     setIsLoading(true);
     try {
-      account.createOAuth2Session(
-        "google" as any,
-        window.location.origin,
-        window.location.origin
-      );
+      const redirectUri = window.location.origin + window.location.pathname;
+      try {
+        await account.createOAuth2Token(
+          "google" as any,
+          redirectUri,
+          redirectUri
+        );
+      } catch (tokenErr) {
+        console.warn("createOAuth2Token fallback to createOAuth2Session:", tokenErr);
+        account.createOAuth2Session(
+          "google" as any,
+          redirectUri,
+          redirectUri
+        );
+      }
     } catch (err: any) {
       const msg = formatErrorMessage(err, "Google OAuth failed to start.");
       setStatusMessage({ type: "error", text: msg });

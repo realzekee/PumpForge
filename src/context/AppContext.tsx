@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { account, databases, client } from "../appwrite";
 import { Permission, Role } from "appwrite";
-import { apiGetSettings } from "../api/gameClient";
+import { apiGetSettings, apiGetMe, getCustomAuthToken } from "../api/gameClient";
 
 export type ArcadeRigMode = "fair" | "win" | "lose";
 
@@ -74,6 +74,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
 
         // Fetch user account session if logged in
+        const token = getCustomAuthToken();
+        if (token) {
+          try {
+            const meRes = await apiGetMe();
+            if (meRes?.user && !meRes.user.isGuest) {
+              const u = {
+                $id: meRes.user.userId,
+                email: meRes.user.email,
+                name: meRes.user.name,
+              };
+              setCurrentUser(u);
+              setUserId(meRes.user.userId);
+              if (meRes.stats) {
+                setUserStats(meRes.stats);
+                setCash(meRes.stats.cash ?? 5000);
+                setGems(meRes.stats.gems ?? 90);
+                setPrestigeLevel(meRes.stats.prestigeLevel ?? 0);
+              }
+              return;
+            }
+          } catch (_) {}
+        }
+
         try {
           const user = await account.get();
           if (user && user.$id) {
@@ -94,7 +117,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               localStorage.setItem("pf_session_valid", "true");
               localStorage.setItem("pf_fallback_userId", user.$id);
             } catch (docErr) {
-              console.warn("User document not yet initialized in users table:", docErr);
+              console.warn("User document notice:", docErr);
             }
           }
         } catch (authErr) {

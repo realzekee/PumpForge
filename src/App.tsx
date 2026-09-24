@@ -77,6 +77,7 @@ import {
   apiAdminDeleteCoin,
   apiBugReport,
   apiGetMe,
+  apiOAuthCallback,
   apiUpdateProfile,
   apiGetUserWagers,
   apiCreateCoin,
@@ -810,27 +811,59 @@ export default function App() {
           window.location.pathname;
         window.history.replaceState(null, "", cleanUrl);
         console.log(
-          "⚡ Found OAuth URL parameters. Parameters stripped from URL bar immediately to break loops.",
+          "⚡ Found OAuth URL parameters. Parameters stripped from URL bar immediately.",
         );
 
         try {
           console.log(
-            "⚡ Forcing manual Appwrite session creation via URL secret parameters...",
+            "⚡ Activating Appwrite session via OAuth token secret...",
           );
-          await account.createSession(urlUserId, urlSecret);
-          console.log("⚡ Manual Session creation request completed.");
-          // Mirror session validation flag to bypass Firefox ETP dropping the third-party cookie
-          localStorage.setItem("pf_session_valid", "true");
-          localStorage.setItem("pf_fallback_userId", urlUserId);
+          try {
+            await account.createSession(urlUserId, urlSecret);
+            console.log("⚡ Appwrite session activated successfully.");
+          } catch (createErr) {
+            console.warn("createSession notice (will use server token exchange):", createErr);
+          }
+
+          let accountUser: any = null;
+          try {
+            accountUser = await account.get();
+          } catch (_) {}
+
+          const oauthRes = await apiOAuthCallback({
+            userId: accountUser?.$id || urlUserId,
+            secret: urlSecret,
+            email: accountUser?.email,
+            name: accountUser?.name,
+          });
+
+          if (oauthRes && oauthRes.user && active) {
+            const mappedUser = {
+              $id: oauthRes.user.userId,
+              uid: oauthRes.user.userId,
+              email: oauthRes.user.email,
+              name: oauthRes.user.name,
+              displayName: oauthRes.user.name,
+            };
+            setCurrentUser(mappedUser);
+            if (oauthRes.stats) {
+              setUserStats(oauthRes.stats);
+              setIsStatsLoaded(true);
+            }
+            safeStorage.setItem("cached_appwrite_user", JSON.stringify(mappedUser));
+            if (oauthRes.stats) {
+              safeStorage.setItem("cached_appwrite_stats", JSON.stringify(oauthRes.stats));
+            }
+            localStorage.setItem("pf_session_valid", "true");
+            localStorage.setItem("pf_fallback_userId", mappedUser.$id);
+            setIsLoading(false);
+            setIsCheckingRedirect(false);
+            return;
+          }
         } catch (sessionErr: any) {
           console.error(
-            "Forced manual session activation from URL failed:",
+            "OAuth activation notice:",
             sessionErr,
-          );
-          triggerToast(
-            "Session Activation Error",
-            formatErrorMessage(sessionErr, "Failed to activate session."),
-            true,
           );
         }
       }

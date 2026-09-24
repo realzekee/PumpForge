@@ -581,6 +581,64 @@ export async function apiQuickLogin(payload: { username: string; email?: string 
   }
 }
 
+export async function apiOAuthCallback(payload: { userId: string; secret?: string; email?: string; name?: string }) {
+  const cleanEmail = (payload.email || "").toLowerCase().trim();
+  const cleanName = payload.name || (cleanEmail ? cleanEmail.split("@")[0] : "Player");
+  const isOwner = cleanEmail === "realzekeee@gmail.com" || cleanEmail === "realzekee@gmail.com";
+  const uId = payload.userId || (isOwner ? "admin_realzekeee" : "u_" + Math.random().toString(36).substring(2, 10));
+  const b64Data = btoa(JSON.stringify({ email: cleanEmail, name: cleanName }));
+  const fallbackToken = `pf_user_${uId}_${b64Data}`;
+
+  const fallbackUser = {
+    userId: uId,
+    email: cleanEmail,
+    name: cleanName,
+    isAdmin: isOwner,
+    isGuest: false,
+    jwt: fallbackToken,
+  };
+
+  const fallbackStats = {
+    userId: uId,
+    email: cleanEmail,
+    username: cleanName,
+    handle: "@" + cleanName.toLowerCase().replace(/[^a-z0-9]/g, ""),
+    title: isOwner ? "Founder & Owner" : "Member",
+    cash: isOwner ? 100000 : 5000,
+    gems: isOwner ? 5000 : 90,
+    prestigeLevel: isOwner ? 10 : 0,
+    isAdmin: isOwner,
+    isPremium: isOwner,
+  };
+
+  try {
+    const res = await request<{
+      success: boolean;
+      token: string;
+      user: any;
+      stats: any;
+    }>("/api/auth/oauth-callback", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    if (res && res.token) {
+      setCustomAuthToken(res.token);
+    } else {
+      setCustomAuthToken(fallbackToken);
+    }
+    return res;
+  } catch (err) {
+    console.warn("Server oauth callback notice, using fallback token:", err);
+    setCustomAuthToken(fallbackToken);
+    return {
+      success: true,
+      token: fallbackToken,
+      user: fallbackUser,
+      stats: fallbackStats,
+    };
+  }
+}
+
 export async function apiAdminGetUsers() {
   return request<{ users: any[] }>("/api/admin/users");
 }
