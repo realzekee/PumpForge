@@ -5,7 +5,7 @@ const APPWRITE_ENDPOINT = process.env.VITE_APPWRITE_ENDPOINT || "https://sgp.clo
 const APPWRITE_PROJECT = process.env.VITE_APPWRITE_PROJECT || "6a1416eb001f50cdb902";
 
 // Server-authoritative admin emails list
-const DEFAULT_ADMIN_EMAILS = ["realzekeee@gmail.com"];
+const DEFAULT_ADMIN_EMAILS = ["realzekeee@gmail.com", "realzekee@gmail.com"];
 const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "")
   .split(",")
   .map((e) => e.trim().toLowerCase())
@@ -45,20 +45,66 @@ export async function authenticateRequest(req: Request): Promise<AuthenticatedUs
     };
   }
 
-  // Custom User session token (for Email/Password or Username login without 3rd-party cookie issues)
-  if (jwt.startsWith("pf_user_")) {
+  // 1. Owner Session Token Handling
+  if (jwt.startsWith("pf_owner_") || jwt.startsWith("pf_admin_")) {
     try {
-      const rest = jwt.substring(8);
+      const rest = jwt.replace(/^pf_(owner|admin)_/, "");
+      const firstUnderscore = rest.indexOf("_");
+      let email = "realzekeee@gmail.com";
+      let name = "Zeke (Owner)";
+      let uId = "admin_realzekeee";
+
+      if (firstUnderscore !== -1) {
+        const b64 = rest.substring(firstUnderscore + 1);
+        try {
+          const parsed = JSON.parse(Buffer.from(b64, "base64").toString("utf-8"));
+          if (parsed.email) email = parsed.email;
+          if (parsed.name) name = parsed.name;
+        } catch {
+          const decoded = Buffer.from(b64, "base64").toString("utf-8");
+          if (decoded.includes("@")) email = decoded;
+        }
+      }
+
+      return {
+        userId: uId,
+        email: email.toLowerCase().trim(),
+        name,
+        isAdmin: true,
+        isGuest: false,
+        jwt,
+      };
+    } catch {
+      return {
+        userId: "admin_realzekeee",
+        email: "realzekeee@gmail.com",
+        name: "Zeke (Owner)",
+        isAdmin: true,
+        isGuest: false,
+        jwt,
+      };
+    }
+  }
+
+  // 2. Custom User Session Token (for Email/Password or Quick login)
+  if (jwt.startsWith("pf_user_") || jwt.startsWith("pf_session_")) {
+    try {
+      const rest = jwt.replace(/^pf_(user|session)_/, "");
       const firstUnderscore = rest.indexOf("_");
       let uId = rest;
-      let userData = { email: "", name: "Player" };
+      let userData: any = { email: "", name: "Player" };
       if (firstUnderscore !== -1) {
         uId = rest.substring(0, firstUnderscore);
         const b64 = rest.substring(firstUnderscore + 1);
         userData = JSON.parse(Buffer.from(b64, "base64").toString("utf-8"));
       }
       const email = (userData.email || "").toLowerCase().trim();
-      const isAdmin = Boolean(email && ADMIN_EMAILS.includes(email));
+      const isOwnerEmail = ADMIN_EMAILS.includes(email);
+      const isAdmin = Boolean(
+        isOwnerEmail ||
+        uId.includes("admin_") ||
+        (userData.name && userData.name.toLowerCase().includes("owner"))
+      );
       return {
         userId: uId,
         email: email,

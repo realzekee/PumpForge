@@ -69,18 +69,11 @@ app.use(express.json());
 
 // Normalize URLs when running on Vercel Serverless or behind reverse proxies
 app.use((req, _res, next) => {
-  // Strip /api/index prefix if Vercel forwards directly to the entry point
-  if (req.url.startsWith("/api/index.js") || req.url.startsWith("/api/index.ts") || req.url.startsWith("/api/index")) {
-    const matched = req.url.startsWith("/api/index.js")
-      ? "/api/index.js"
-      : req.url.startsWith("/api/index.ts")
-      ? "/api/index.ts"
-      : "/api/index";
-    const remainder = req.url.slice(matched.length);
-    req.url = remainder.startsWith("/") ? `/api${remainder}` : `/api/${remainder}`;
-  }
+  let url = req.url || "/";
+  const [pathname, searchStr] = url.split("?");
+  const search = searchStr ? `?${searchStr}` : "";
 
-  // Check explicit query parameter path or __path injected by vercel.json rewrite
+  // 1. Check explicit query parameter path or __path injected by vercel.json rewrite
   try {
     const rawUrl = req.url || "/";
     if (rawUrl.includes("path=") || rawUrl.includes("__path=")) {
@@ -93,36 +86,51 @@ app.use((req, _res, next) => {
     }
   } catch (_) {}
 
-  // Check x-now-route-matches header (standard Vercel header for rewrites)
+  // 2. Strip /api/index.js, /api/index.ts, /api/index prefix
+  if (pathname.startsWith("/api/index.js") || pathname.startsWith("/api/index.ts") || pathname.startsWith("/api/index")) {
+    const prefix = pathname.startsWith("/api/index.js")
+      ? "/api/index.js"
+      : pathname.startsWith("/api/index.ts")
+      ? "/api/index.ts"
+      : "/api/index";
+    const remainder = pathname.slice(prefix.length).replace(/^\/+/, "");
+    if (remainder.length > 0) {
+      req.url = `/api/${remainder}${search}`;
+      return next();
+    }
+  }
+
+  // 3. Check x-now-route-matches header (standard Vercel header for rewrites)
   const nowRouteMatches = req.headers["x-now-route-matches"] as string;
-  if (nowRouteMatches && (req.url === "/api" || req.url === "/api/" || req.url === "/api/index" || req.url === "/" || req.url === "/api/index.js")) {
+  if (nowRouteMatches && (pathname === "/api" || pathname === "/api/" || pathname === "/api/index" || pathname === "/" || pathname === "/api/index.js")) {
     try {
       const match = String(nowRouteMatches).match(/1=([^&]+)/);
       if (match && match[1]) {
         const subPath = decodeURIComponent(match[1]).replace(/^\/+/, "");
-        req.url = subPath.startsWith("api/") ? `/${subPath}` : `/api/${subPath}`;
+        req.url = subPath.startsWith("api/") ? `/${subPath}${search}` : `/api/${subPath}${search}`;
         return next();
       }
     } catch (_) {}
   }
 
-  // Check x-invoke-path header (Vercel serverless request path)
-  const invokePath = req.headers["x-invoke-path"] as string;
-  if (invokePath && invokePath.startsWith("/api") && invokePath !== "/api" && invokePath !== "/api/" && invokePath !== "/api/index.js") {
-    req.url = invokePath;
+  // 4. Check x-matched-path header
+  const matchedPath = (req.headers["x-matched-path"] || req.headers["x-vercel-matched-path"]) as string;
+  if (typeof matchedPath === "string" && matchedPath.startsWith("/api/") && !matchedPath.startsWith("/api/index")) {
+    req.url = `${matchedPath}${search}`;
     return next();
   }
 
-  // Prepend /api only if original path targets a known game or admin endpoint
+  // 5. Prepend /api only if original path targets a known game or admin endpoint
   if (
-    !req.url.startsWith("/api") &&
-    (req.url.startsWith("/game/") ||
-      req.url.startsWith("/arcade/") ||
-      req.url.startsWith("/auth/") ||
-      req.url.startsWith("/admin/") ||
-      req.url.startsWith("/health"))
+    !pathname.startsWith("/api") &&
+    (pathname.startsWith("/game") ||
+      pathname.startsWith("/arcade") ||
+      pathname.startsWith("/auth") ||
+      pathname.startsWith("/admin") ||
+      pathname.startsWith("/health"))
   ) {
-    req.url = `/api${req.url.startsWith("/") ? "" : "/"}${req.url}`;
+    req.url = `/api${pathname.startsWith("/") ? "" : "/"}${pathname}${search}`;
+    return next();
   }
 
   next();

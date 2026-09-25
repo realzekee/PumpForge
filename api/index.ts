@@ -1,59 +1,65 @@
 import app from "../server";
 
+export function resolveVercelUrl(req: any): string {
+  let url = req.url || "/";
+  const [pathname, searchStr] = url.split("?");
+  const search = searchStr ? `?${searchStr}` : "";
+
+  // 1. If path is provided via query parameter ?path= or ?__path= from rewrite
+  const queryPath = req.query?.path || req.query?.__path;
+  if (queryPath) {
+    const clean = Array.isArray(queryPath) ? queryPath.join("/") : String(queryPath);
+    const sub = clean.replace(/^\/+/, "");
+    return sub.startsWith("api/") ? `/${sub}${search}` : `/api/${sub}${search}`;
+  }
+
+  // 2. Strip /api/index.js, /api/index.ts, /api/index prefix
+  if (pathname.startsWith("/api/index.js") || pathname.startsWith("/api/index.ts") || pathname.startsWith("/api/index")) {
+    const prefix = pathname.startsWith("/api/index.js")
+      ? "/api/index.js"
+      : pathname.startsWith("/api/index.ts")
+      ? "/api/index.ts"
+      : "/api/index";
+    const remainder = pathname.slice(prefix.length).replace(/^\/+/, "");
+    if (remainder.length > 0) {
+      return `/api/${remainder}${search}`;
+    }
+  }
+
+  // 3. Check Vercel routing headers
+  const matchedPath = req.headers["x-matched-path"] || req.headers["x-vercel-matched-path"];
+  if (typeof matchedPath === "string" && matchedPath.startsWith("/api/") && !matchedPath.startsWith("/api/index")) {
+    return `${matchedPath}${search}`;
+  }
+
+  if (req.headers["x-now-route-matches"]) {
+    const match = String(req.headers["x-now-route-matches"]).match(/1=([^&]+)/);
+    if (match && match[1]) {
+      const sub = decodeURIComponent(match[1]).replace(/^\/+/, "");
+      return sub.startsWith("api/") ? `/${sub}${search}` : `/api/${sub}${search}`;
+    }
+  }
+
+  // 4. Ensure /api prefix if targeting known endpoints
+  if (
+    !pathname.startsWith("/api") &&
+    (pathname.startsWith("/game") ||
+      pathname.startsWith("/arcade") ||
+      pathname.startsWith("/auth") ||
+      pathname.startsWith("/admin") ||
+      pathname.startsWith("/health"))
+  ) {
+    return `/api${pathname.startsWith("/") ? "" : "/"}${pathname}${search}`;
+  }
+
+  return url;
+}
+
 export default function handler(req: any, res: any) {
-  // Normalize URL for Vercel Serverless Function routing
   try {
-    let targetUrl = req.url || "/";
-
-    // 1. If path is provided via query parameter (?path= or ?__path= from vercel.json rewrite)
-    const queryPath = req.query?.path || req.query?.__path;
-    if (queryPath) {
-      const clean = Array.isArray(queryPath) ? queryPath.join("/") : String(queryPath);
-      targetUrl = clean.startsWith("api/") ? `/${clean}` : `/api/${clean.replace(/^\/+/, "")}`;
-    } else {
-      // 2. Check Vercel routing headers
-      const matchedHeader =
-        req.headers["x-matched-path"] ||
-        req.headers["x-vercel-matched-path"] ||
-        req.headers["x-invoke-path"];
-
-      if (typeof matchedHeader === "string" && matchedHeader.startsWith("/api") && matchedHeader !== "/api" && matchedHeader !== "/api/") {
-        targetUrl = matchedHeader;
-      } else if (req.headers["x-now-route-matches"]) {
-        const match = String(req.headers["x-now-route-matches"]).match(/1=([^&]+)/);
-        if (match && match[1]) {
-          const sub = decodeURIComponent(match[1]).replace(/^\/+/, "");
-          targetUrl = sub.startsWith("api/") ? `/${sub}` : `/api/${sub}`;
-        }
-      }
-    }
-
-    // Strip /api/index.js or /api/index prefix
-    if (targetUrl.startsWith("/api/index.js") || targetUrl.startsWith("/api/index.ts") || targetUrl.startsWith("/api/index")) {
-      const prefix = targetUrl.startsWith("/api/index.js")
-        ? "/api/index.js"
-        : targetUrl.startsWith("/api/index.ts")
-        ? "/api/index.ts"
-        : "/api/index";
-      const remainder = targetUrl.slice(prefix.length);
-      targetUrl = remainder.startsWith("/") ? `/api${remainder}` : `/api/${remainder}`;
-    }
-
-    // Ensure URL has /api prefix if targeting known endpoints
-    if (
-      !targetUrl.startsWith("/api") &&
-      (targetUrl.startsWith("/game") ||
-        targetUrl.startsWith("/arcade") ||
-        targetUrl.startsWith("/auth") ||
-        targetUrl.startsWith("/admin") ||
-        targetUrl.startsWith("/health"))
-    ) {
-      targetUrl = `/api${targetUrl.startsWith("/") ? "" : "/"}${targetUrl}`;
-    }
-
-    req.url = targetUrl;
+    req.url = resolveVercelUrl(req);
   } catch (err) {
-    console.error("Vercel API URL normalization error:", err);
+    console.error("Vercel URL resolution error:", err);
   }
 
   return app(req, res);

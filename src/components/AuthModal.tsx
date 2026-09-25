@@ -1,18 +1,14 @@
 import React, { useState } from "react";
 import {
-  LogIn,
-  Mail,
-  User,
   Shield,
   HelpCircle,
   X,
   Sparkles,
-  CheckCircle2,
   AlertCircle,
-  Eye,
-  EyeOff,
+  ExternalLink,
+  CheckCircle2,
+  Lock,
 } from "lucide-react";
-import { apiEmailLogin, apiQuickLogin } from "../api/gameClient";
 import { account } from "../appwrite";
 import { formatErrorMessage } from "../utils/formatError";
 import { toast } from "sonner";
@@ -29,116 +25,27 @@ export function AuthModal({
   isOpen,
   reason,
   onClose,
-  onSuccess,
   onOpenGuide,
 }: AuthModalProps) {
-  const [activeTab, setActiveTab] = useState<"email" | "google" | "quick">("email");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [username, setUsername] = useState("");
-  const [isRegisterMode, setIsRegisterMode] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: "error" | "success"; text: string } | null>(null);
 
   if (!isOpen) return null;
 
-  const handleEmailAuth = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const cleanEmail = email.trim().toLowerCase();
-    if (!cleanEmail || !cleanEmail.includes("@")) {
-      setStatusMessage({ type: "error", text: "Please enter a valid email address." });
-      return;
-    }
-    if (password && password.length < 6) {
-      setStatusMessage({ type: "error", text: "Password should be at least 6 characters." });
-      return;
-    }
-
-    setIsLoading(true);
-    setStatusMessage(null);
-    const toastId = toast.loading(isRegisterMode ? "Creating account..." : "Signing in with Email...");
-    try {
-      // 1. Try Appwrite Native Email/Password if available in current context
-      if (password) {
-        try {
-          if (isRegisterMode) {
-            const { ID } = await import("appwrite");
-            await account.create(ID.unique(), cleanEmail, password, username.trim() || cleanEmail.split("@")[0]);
-          }
-          await account.createEmailPasswordSession(cleanEmail, password);
-        } catch (appwriteErr: any) {
-          console.warn("Appwrite native email session notice:", appwriteErr?.message || appwriteErr);
-        }
-      }
-
-      // 2. Authoritative API / Session Verification
-      const res = await apiEmailLogin({
-        email: cleanEmail,
-        password,
-        name: username.trim() || cleanEmail.split("@")[0],
-      });
-
-      if (res && res.success && res.user) {
-        toast.success(`Signed in as ${res.user.name || cleanEmail}`, { id: toastId });
-        onSuccess(res.user, res.stats);
-        onClose();
-      } else {
-        throw new Error("Could not complete email login.");
-      }
-    } catch (err: any) {
-      const msg = formatErrorMessage(err, "Email sign-in failed.");
-      setStatusMessage({ type: "error", text: msg });
-      toast.error(msg, { id: toastId });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleQuickAuth = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const cleanName = username.trim();
-    if (!cleanName) {
-      setStatusMessage({ type: "error", text: "Please choose a player username." });
-      return;
-    }
-
-    setIsLoading(true);
-    setStatusMessage(null);
-    const toastId = toast.loading("Setting up player profile...");
-    try {
-      const res = await apiQuickLogin({
-        username: cleanName,
-        email: email.trim().toLowerCase(),
-      });
-
-      if (res && res.success && res.user) {
-        toast.success(`Welcome to PumpForge, ${res.user.name}!`, { id: toastId });
-        onSuccess(res.user, res.stats);
-        onClose();
-      } else {
-        throw new Error("Failed to initialize player session.");
-      }
-    } catch (err: any) {
-      const msg = formatErrorMessage(err, "Quick player login failed.");
-      setStatusMessage({ type: "error", text: msg });
-      toast.error(msg, { id: toastId });
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const isInsideIframe = typeof window !== "undefined" && window.self !== window.top;
 
   const handleGoogleAuth = async () => {
-    if (typeof window !== "undefined" && window.self !== window.top) {
-      toast.error(
-        "Google OAuth cannot open inside an embedded preview iframe. Please sign in via Email or open the app directly in a full browser tab.",
-        { duration: 7000 }
-      );
-      onOpenGuide();
+    if (isInsideIframe) {
+      // In an iframe, standard OAuth redirect is blocked by sandbox headers
+      toast.info("Opening app in a new window for secure Google Authentication...");
+      window.open(window.location.href, "_blank");
       return;
     }
 
     setIsLoading(true);
+    setStatusMessage(null);
+    const toastId = toast.loading("Connecting to Google OAuth...");
+
     try {
       const redirectUri = window.location.origin + window.location.pathname;
       try {
@@ -158,89 +65,49 @@ export function AuthModal({
     } catch (err: any) {
       const msg = formatErrorMessage(err, "Google OAuth failed to start.");
       setStatusMessage({ type: "error", text: msg });
-      toast.error(msg);
+      toast.error(msg, { id: toastId });
       setIsLoading(false);
     }
   };
 
   return (
     <div
-      className="fixed inset-0 bg-black/80 backdrop-blur-xl z-50 flex items-center justify-center p-3 sm:p-4 animate-fade-in"
+      className="fixed inset-0 bg-black/85 backdrop-blur-xl z-50 flex items-center justify-center p-3 sm:p-4 animate-fade-in"
       id="pumpforge-auth-modal"
     >
-      <div className="glass-modal border border-white/15 bg-zinc-950/95 p-5 sm:p-6 rounded-2xl max-w-md w-full relative font-mono text-left select-none shadow-2xl shadow-rose-950/20 animate-slide-up overflow-hidden">
+      <div className="glass-modal border border-white/15 bg-zinc-950/95 p-6 sm:p-7 rounded-3xl max-w-md w-full relative font-mono text-left select-none shadow-2xl shadow-rose-950/30 animate-slide-up overflow-hidden">
         {/* Decorative Top Accent Bar */}
-        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-orange-500 via-rose-500 to-amber-400" />
+        <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-orange-500 via-rose-500 to-amber-400" />
 
         {/* Close Button */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+          className="absolute top-4 right-4 p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
           title="Close modal"
           id="auth-modal-close-btn"
         >
           <X className="w-4 h-4" />
         </button>
 
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-500/20 to-orange-500/20 border border-rose-500/30 flex items-center justify-center text-rose-400 shadow-inner shrink-0">
-            <Shield className="w-5 h-5" />
+        <div className="flex items-center gap-3.5 mb-5">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-rose-500/20 to-orange-500/20 border border-rose-500/30 flex items-center justify-center text-rose-400 shadow-inner shrink-0">
+            <Shield className="w-6 h-6 text-rose-400" />
           </div>
           <div>
-            <h3 className="text-sm font-black text-white uppercase tracking-wider flex items-center gap-1.5">
-              <span>Sign In / Authentication</span>
-              <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+            <h3 className="text-base font-black text-white uppercase tracking-wider flex items-center gap-1.5">
+              <span>Google Sign In</span>
+              <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
             </h3>
-            <p className="text-[11px] text-zinc-400">
-              {reason || "Unlock full trading, leaderboards, and persistent portfolio sync"}
+            <p className="text-xs text-zinc-400 mt-0.5">
+              {reason || "Sign in with Google to start playing PumpForge"}
             </p>
           </div>
-        </div>
-
-        {/* Tabs Bar */}
-        <div className="grid grid-cols-3 gap-1 p-1 bg-zinc-900/90 rounded-xl border border-white/10 mb-4 text-[10px] font-bold">
-          <button
-            onClick={() => { setActiveTab("email"); setStatusMessage(null); }}
-            className={`py-2 px-1 rounded-lg text-center transition-all flex flex-col items-center gap-1 cursor-pointer ${
-              activeTab === "email"
-                ? "bg-gradient-to-r from-orange-500 to-rose-600 text-white shadow-md font-black"
-                : "text-zinc-400 hover:text-white hover:bg-white/5"
-            }`}
-            id="tab-email-login"
-          >
-            <Mail className="w-3.5 h-3.5" />
-            <span>Email</span>
-          </button>
-          <button
-            onClick={() => { setActiveTab("google"); setStatusMessage(null); }}
-            className={`py-2 px-1 rounded-lg text-center transition-all flex flex-col items-center gap-1 cursor-pointer ${
-              activeTab === "google"
-                ? "bg-zinc-800 text-white shadow-md font-black border border-white/20"
-                : "text-zinc-400 hover:text-white hover:bg-white/5"
-            }`}
-            id="tab-google-login"
-          >
-            <LogIn className="w-3.5 h-3.5" />
-            <span>Google</span>
-          </button>
-          <button
-            onClick={() => { setActiveTab("quick"); setStatusMessage(null); }}
-            className={`py-2 px-1 rounded-lg text-center transition-all flex flex-col items-center gap-1 cursor-pointer ${
-              activeTab === "quick"
-                ? "bg-cyan-600 text-white shadow-md font-black"
-                : "text-zinc-400 hover:text-white hover:bg-white/5"
-            }`}
-            id="tab-quick-login"
-          >
-            <User className="w-3.5 h-3.5" />
-            <span>Quick Play</span>
-          </button>
         </div>
 
         {/* Status Alerts */}
         {statusMessage && (
           <div
-            className={`p-2.5 rounded-xl text-[11px] mb-3 flex items-start gap-2 border ${
+            className={`p-3 rounded-2xl text-xs mb-4 flex items-start gap-2.5 border ${
               statusMessage.type === "error"
                 ? "bg-rose-950/40 border-rose-500/40 text-rose-300"
                 : "bg-emerald-950/40 border-emerald-500/40 text-emerald-300"
@@ -255,168 +122,78 @@ export function AuthModal({
           </div>
         )}
 
-        {/* TAB 1: EMAIL & PASSWORD */}
-        {activeTab === "email" && (
-          <form onSubmit={handleEmailAuth} className="space-y-3">
-            <div>
-              <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1">
-                Email Address
-              </label>
-              <div className="relative">
-                <Mail className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-3" />
-                <input
-                  type="email"
-                  required
-                  placeholder="you@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-zinc-900 border border-white/10 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-orange-500 font-mono"
-                  id="auth-email-input"
-                />
-              </div>
+        {/* Main Google Action Card */}
+        <div className="space-y-4">
+          <div className="p-4 rounded-2xl bg-zinc-900/80 border border-white/10 space-y-2.5">
+            <div className="text-xs text-zinc-300 leading-relaxed font-sans">
+              Connect your verified Google account to play, trade meme coins, enter prediction markets, and track your rank on the live global leaderboard.
             </div>
 
-            {isRegisterMode && (
-              <div>
-                <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1">
-                  Display Name
-                </label>
-                <div className="relative">
-                  <User className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-3" />
-                  <input
-                    type="text"
-                    placeholder="Trader101"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    className="w-full bg-zinc-900 border border-white/10 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-orange-500 font-mono"
-                    id="auth-register-name-input"
-                  />
-                </div>
+            <div className="grid grid-cols-2 gap-2 pt-1 text-[11px] text-zinc-400 font-mono">
+              <div className="flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span>Authoritative Balances</span>
               </div>
-            )}
-
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
-                  Password
-                </label>
-                <span className="text-[9px] text-zinc-500 font-mono">
-                  {isRegisterMode ? "Min 6 characters" : "Required for login"}
-                </span>
+              <div className="flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span>Leaderboard Ranks</span>
               </div>
-              <div className="relative">
-                <input
-                  type={showPassword ? "text" : "password"}
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-zinc-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-orange-500 font-mono pr-9"
-                  id="auth-password-input"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-2.5 top-2.5 text-zinc-400 hover:text-white"
-                >
-                  {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                </button>
+              <div className="flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span>Zero Gas Trading</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span>Cloud Sync</span>
               </div>
             </div>
-
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full bg-gradient-to-r from-orange-500 to-rose-600 hover:from-orange-400 hover:to-rose-500 text-white font-extrabold py-2.5 rounded-xl text-xs uppercase tracking-wider shadow-lg border border-white/20 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-98 disabled:opacity-50"
-              id="auth-submit-email-btn"
-            >
-              <LogIn className="w-3.5 h-3.5 text-white" />
-              <span>{isLoading ? "Processing..." : isRegisterMode ? "Create Account & Sign In" : "Sign In with Email"}</span>
-            </button>
-
-            <div className="text-center pt-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsRegisterMode(!isRegisterMode);
-                  setStatusMessage(null);
-                }}
-                className="text-[11px] text-zinc-400 hover:text-white underline cursor-pointer transition-colors"
-              >
-                {isRegisterMode
-                  ? "Already have an account? Sign in"
-                  : "Need a new account? Register here"}
-              </button>
-            </div>
-          </form>
-        )}
-
-        {/* TAB 2: GOOGLE OAUTH */}
-        {activeTab === "google" && (
-          <div className="space-y-3">
-            <div className="p-3 rounded-xl bg-zinc-900 border border-white/10 text-xs text-zinc-300">
-              <p className="text-[11px] leading-relaxed mb-1.5">
-                Authenticates directly via your Google Account OAuth2.
-              </p>
-              <div className="text-[10px] text-zinc-400 leading-tight">
-                Connects with Appwrite authentication for secure trading and profile sync.
-              </div>
-            </div>
-
-            <button
-              type="button"
-              disabled={isLoading}
-              onClick={handleGoogleAuth}
-              className="w-full bg-white hover:bg-zinc-100 text-zinc-950 font-extrabold py-2.5 rounded-xl text-xs uppercase tracking-wider shadow-lg border border-white/40 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-98 disabled:opacity-50"
-              id="auth-submit-google-btn"
-            >
-              <LogIn className="w-4 h-4 text-zinc-950" />
-              <span>Continue with Google</span>
-            </button>
           </div>
-        )}
 
-        {/* TAB 3: QUICK PLAYER LOGIN */}
-        {activeTab === "quick" && (
-          <form onSubmit={handleQuickAuth} className="space-y-3">
-            <div className="p-3 rounded-xl bg-cyan-950/30 border border-cyan-500/20 text-xs text-zinc-300">
-              <p className="text-[11px] leading-relaxed">
-                Choose any custom handle to jump right in. Your balance and trades are saved automatically!
-              </p>
+          {/* Primary Google Button */}
+          <button
+            type="button"
+            disabled={isLoading}
+            onClick={handleGoogleAuth}
+            className="w-full bg-white hover:bg-zinc-100 text-zinc-950 font-black py-3.5 px-4 rounded-2xl text-xs uppercase tracking-wider shadow-xl border border-white/50 flex items-center justify-center gap-3 cursor-pointer transition-all active:scale-98 disabled:opacity-50 group hover:shadow-white/10"
+            id="auth-submit-google-btn"
+          >
+            {/* Google Multicolored G SVG Logo */}
+            <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
+              <path
+                fill="#4285F4"
+                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+              />
+              <path
+                fill="#34A853"
+                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+              />
+              <path
+                fill="#FBBC05"
+                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+              />
+              <path
+                fill="#EA4335"
+                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+              />
+            </svg>
+            <span>{isLoading ? "Signing in..." : "Continue with Google"}</span>
+          </button>
+
+          {isInsideIframe && (
+            <div className="p-3 rounded-2xl bg-amber-950/30 border border-amber-500/30 text-amber-200 text-[11px] leading-tight flex items-start gap-2">
+              <ExternalLink className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <span>
+                Running in an embedded preview. Click above to open in a full window where Google authentication will complete.
+              </span>
             </div>
-
-            <div>
-              <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1">
-                Your Username / Handle
-              </label>
-              <div className="relative">
-                <span className="text-zinc-500 text-xs absolute left-3 top-2.5 font-bold">@</span>
-                <input
-                  type="text"
-                  required
-                  placeholder="crypto_whale"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="w-full bg-zinc-900 border border-white/10 rounded-xl pl-7 pr-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-cyan-500 font-mono"
-                  id="auth-quick-username-input"
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-extrabold py-2.5 rounded-xl text-xs uppercase tracking-wider shadow-lg border border-cyan-400/30 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-98 disabled:opacity-50"
-              id="auth-submit-quick-btn"
-            >
-              <User className="w-3.5 h-3.5 text-white" />
-              <span>{isLoading ? "Joining..." : "Start Playing as @" + (username.trim() || "Player")}</span>
-            </button>
-          </form>
-        )}
+          )}
+        </div>
 
         {/* Footer info link */}
-        <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between text-[10px] text-zinc-500">
-          <span>PumpForge v2.8 • Secure Session Hub</span>
+        <div className="mt-5 pt-3.5 border-t border-white/10 flex items-center justify-between text-[10px] text-zinc-500">
+          <span className="flex items-center gap-1">
+            <Lock className="w-3 h-3 text-zinc-400" /> Secure Appwrite OAuth
+          </span>
           <button
             type="button"
             onClick={() => {
@@ -426,7 +203,7 @@ export function AuthModal({
             className="text-zinc-400 hover:text-white flex items-center gap-1 cursor-pointer transition-colors"
           >
             <HelpCircle className="w-3 h-3" />
-            <span>OAuth &amp; Appwrite Guide</span>
+            <span>Connection Guide</span>
           </button>
         </div>
       </div>
