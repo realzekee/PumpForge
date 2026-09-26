@@ -65,6 +65,18 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use((req, _res, next) => {
+  if (req.body !== undefined && req.body !== null) {
+    (req as any)._body = true;
+    if (typeof req.body === "string" && req.body.trim().startsWith("{")) {
+      try {
+        req.body = JSON.parse(req.body);
+      } catch (_) {}
+    }
+  }
+  next();
+});
+
 app.use(express.json());
 
 // Normalize URLs when running on Vercel Serverless or behind reverse proxies

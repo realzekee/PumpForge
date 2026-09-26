@@ -58,6 +58,16 @@ export function resolveVercelUrl(req: any): string {
 export default function handler(req: any, res: any) {
   try {
     req.url = resolveVercelUrl(req);
+
+    // Prevent body-parser from hanging on pre-consumed Vercel streams
+    if (req.body !== undefined && req.body !== null) {
+      req._body = true;
+      if (typeof req.body === "string" && req.body.trim().startsWith("{")) {
+        try {
+          req.body = JSON.parse(req.body);
+        } catch (_) {}
+      }
+    }
   } catch (err) {
     console.error("Vercel URL resolution error:", err);
   }
