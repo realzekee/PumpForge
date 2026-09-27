@@ -5,6 +5,7 @@ import { databases } from "../appwrite";
 import { Query } from "appwrite";
 import { MemeCoin } from "../types";
 import { UserHoverCard } from "./UserHoverCard";
+import { apiGetTrades } from "../api/gameClient";
 
 export function TradesHistoryTab({
   coins,
@@ -20,18 +21,33 @@ export function TradesHistoryTab({
     let active = true;
     const fetchHistory = async () => {
       try {
-        const res = await databases.listDocuments("pumpforge", "trades", [
-          Query.equal("isSimulated", false),
-          Query.orderDesc("$createdAt"),
-          Query.limit(100)
-        ]);
-        if (active) {
-           setTrades(res.documents);
+        let list: any[] = [];
+        let fetched = false;
+        try {
+          const apiRes = await apiGetTrades({ limit: 100 });
+          if (apiRes && Array.isArray(apiRes.trades)) {
+            list = apiRes.trades;
+            fetched = true;
+          }
+        } catch (_err) {}
+
+        if (!fetched) {
+          try {
+            const res = await databases.listDocuments("pumpforge", "trades", [
+              Query.equal("isSimulated", false),
+              Query.orderDesc("$createdAt"),
+              Query.limit(100)
+            ]);
+            list = res.documents || [];
+          } catch (_dbErr) {}
         }
-      } catch(e) {
-        console.error("fetch history error", e);
+
+        if (active) {
+          setTrades(list);
+        }
+      } catch (_e) {
       } finally {
-         if (active) setLoading(false);
+        if (active) setLoading(false);
       }
     };
     fetchHistory();

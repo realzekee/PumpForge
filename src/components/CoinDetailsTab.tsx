@@ -102,21 +102,37 @@ export default function CoinDetailsTab({
     const fetchTopHolders = async () => {
       try {
         if (!activeCoin?.id) return;
-        const { Query } = await import("appwrite");
-        const { databases } = await import("../appwrite");
-        const res = await databases.listDocuments("pumpforge", "holdings", [
-          Query.equal("coinId", activeCoin.id),
-          Query.orderDesc("tokenAmount"),
-          Query.limit(5)
-        ]);
-        if (active) {
-          const list = await Promise.all(res.documents.map(async (d, index) => {
-             const tokenCount = Number(d.tokenAmount) || 0;
+        let docs: any[] = [];
+        try {
+          const { apiGetHoldings } = await import("../api/gameClient");
+          const apiRes = await apiGetHoldings({ coinId: activeCoin.id });
+          if (apiRes && Array.isArray(apiRes.holdings)) {
+            docs = apiRes.holdings;
+          }
+        } catch (_apiErr) {}
+
+        if (docs.length === 0) {
+          try {
+            const { Query } = await import("appwrite");
+            const { databases } = await import("../appwrite");
+            const res = await databases.listDocuments("pumpforge", "holdings", [
+              Query.equal("coinId", activeCoin.id),
+              Query.orderDesc("tokenAmount"),
+              Query.limit(5)
+            ]);
+            docs = res.documents || [];
+          } catch (_dbErr) {}
+        }
+
+        if (active && docs.length > 0) {
+          const list = await Promise.all(docs.slice(0, 5).map(async (d, index) => {
+             const tokenCount = Number(d.tokenAmount || d.amount) || 0;
              const totalSupply = Number(activeCoin.supply) || 1;
              
-             let handleStr = "@" + d.userId.substring(0, 8);
-             let nameStr = "User " + d.userId.substring(0, 4);
+             let handleStr = "@" + (d.userId || "").substring(0, 8);
+             let nameStr = "User " + (d.userId || "").substring(0, 4);
              try {
+                const { databases } = await import("../appwrite");
                 const userDoc = await databases.getDocument("pumpforge", "users", d.userId);
                 if (userDoc.handle) handleStr = userDoc.handle;
                 if (userDoc.username) nameStr = userDoc.username;
@@ -134,8 +150,7 @@ export default function CoinDetailsTab({
           }));
           if (active) setTopHolders(list);
         }
-      } catch (err) {
-        console.error("Failed to fetch holders:", err);
+      } catch (_err) {
       }
     };
     fetchTopHolders();
@@ -277,14 +292,31 @@ export default function CoinDetailsTab({
     if (!activeCoin?.id) return;
     try {
       setTradesLoading(true);
-      const { Query } = await import("appwrite");
-      const { databases } = await import("../appwrite");
-      const res = await databases.listDocuments("pumpforge", "trades", [
-        Query.equal("coinId", activeCoin.id),
-        Query.orderDesc("timestamp"),
-        Query.limit(20),
-      ]);
-      setCoinTrades(res.documents || []);
+      let list: any[] = [];
+      let fetched = false;
+      try {
+        const { apiGetTrades } = await import("../api/gameClient");
+        const apiRes = await apiGetTrades({ coinId: activeCoin.id, limit: 20 });
+        if (apiRes && Array.isArray(apiRes.trades)) {
+          list = apiRes.trades;
+          fetched = true;
+        }
+      } catch (_apiErr) {}
+
+      if (!fetched) {
+        try {
+          const { Query } = await import("appwrite");
+          const { databases } = await import("../appwrite");
+          const res = await databases.listDocuments("pumpforge", "trades", [
+            Query.equal("coinId", activeCoin.id),
+            Query.orderDesc("timestamp"),
+            Query.limit(20),
+          ]);
+          list = res.documents || [];
+        } catch (_dbErr) {}
+      }
+
+      setCoinTrades(list);
     } catch {
       // ignore
     } finally {

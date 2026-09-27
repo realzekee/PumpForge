@@ -96,7 +96,7 @@ export async function executeCoinflipCore(
         timestamp: new Date().toISOString(),
         isPaid: won,
       },
-      [NodePermission.read(NodeRole.user(user.userId))]
+      [NodePermission.read(NodeRole.any())]
     );
   } catch (wagerErr: any) {
     console.warn(

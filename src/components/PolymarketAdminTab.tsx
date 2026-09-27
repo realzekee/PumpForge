@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { CheckCircle, XCircle, Ban, Activity, Clock, Globe } from "lucide-react";
 import { SkeletonLoader } from "./SkeletonLoader";
 import { formatToDeviceTimezone, getDeviceTimezoneInfo } from "../utils/timezone";
-import { apiAdminResolveMarket } from "../api/gameClient";
+import { apiAdminResolveMarket, apiGetPolymarkets } from "../api/gameClient";
 import { formatErrorMessage } from "../utils/formatError";
 
 export default function PolymarketAdminTab() {
@@ -20,14 +20,28 @@ export default function PolymarketAdminTab() {
 
   const fetchMarkets = async () => {
     try {
-      const res = await databases.listDocuments("pumpforge", "polymarkets", [
-        Query.notEqual("status", "closed"),
-        Query.limit(100),
-      ]);
-      setMarkets(res.documents);
-    } catch (error) {
-      console.error("Failed to fetch polymarkets", error);
-      toast.error("Failed to load active markets.");
+      let list: any[] = [];
+      let fetched = false;
+      try {
+        const apiRes = await apiGetPolymarkets();
+        if (apiRes && Array.isArray(apiRes.polymarkets)) {
+          list = apiRes.polymarkets.filter((m: any) => m.status !== "closed" && !m.resolved);
+          fetched = true;
+        }
+      } catch (_err) {}
+
+      if (!fetched) {
+        try {
+          const res = await databases.listDocuments("pumpforge", "polymarkets", [
+            Query.notEqual("status", "closed"),
+            Query.limit(100),
+          ]);
+          list = res.documents || [];
+        } catch (_dbErr) {}
+      }
+
+      setMarkets(list);
+    } catch (_error) {
     } finally {
       setLoading(false);
     }

@@ -68,9 +68,16 @@ export default function handler(req: any, res: any) {
         } catch (_) {}
       }
     }
-  } catch (err) {
-    console.error("Vercel URL resolution error:", err);
-  }
 
-  return app(req, res);
+    return app(req, res);
+  } catch (err: any) {
+    console.error("Vercel top-level invocation error:", err);
+    if (!res.headersSent) {
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.status(500).json({
+        error: err?.message || "Internal server error occurred.",
+        message: err?.message || "Internal server error occurred.",
+      });
+    }
+  }
 }

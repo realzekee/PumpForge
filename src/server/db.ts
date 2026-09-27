@@ -301,25 +301,24 @@ export async function getAuthoritativeUser(userId: string, jwt?: string, default
     // Bootstrap in Appwrite via server key
     try {
       const serverDatabases = getDatabases();
+      // Only include attributes that exist in the Appwrite schema
+      const basePayload: any = {
+        userId,
+        username: initial.username,
+        cash: initial.cash,
+        gems: initial.gems,
+        prestigeLevel: initial.prestigeLevel,
+        totalProfit: initial.totalProfit,
+        tradesCount: 0,
+        coinsCreatedCount: 0,
+        lastDailyRewardClaim: "",
+      };
+
       await serverDatabases.createDocument(
         "pumpforge",
         "users",
         userId,
-        {
-          userId,
-          playerId: assignedPlayerId,
-          username: initial.username,
-          handle: initial.handle,
-          cash: initial.cash,
-          gems: initial.gems,
-          prestigeLevel: initial.prestigeLevel,
-          totalProfit: initial.totalProfit,
-          tradesCount: 0,
-          coinsCreatedCount: 0,
-          nameColor: initial.nameColor,
-          dailyStreak: 1,
-          lastDailyRewardClaim: "",
-        },
+        basePayload,
         [Permission.read(Role.any())]
       );
     } catch (createErr) {
@@ -349,30 +348,22 @@ export async function saveAuthoritativeUser(
 
   try {
     const databases = getDatabases(jwt);
+    // Only send attributes that exist in the Appwrite collection schema
     const payload: any = {};
     if (updates.cash !== undefined) payload.cash = Number(updates.cash.toFixed(2));
     if (updates.gems !== undefined) payload.gems = Math.floor(updates.gems);
-    if (updates.playerId !== undefined) payload.playerId = updates.playerId;
     if (updates.username !== undefined) payload.username = updates.username;
-    if (updates.handle !== undefined) payload.handle = updates.handle;
-    if (updates.title !== undefined) payload.title = updates.title;
-    if (updates.nameColor !== undefined) payload.nameColor = updates.nameColor;
-    if (updates.isPremium !== undefined) payload.isPremium = updates.isPremium;
     if (updates.prestigeLevel !== undefined) payload.prestigeLevel = updates.prestigeLevel;
     if (updates.tradesCount !== undefined) payload.tradesCount = updates.tradesCount;
     if (updates.coinsCreatedCount !== undefined) payload.coinsCreatedCount = updates.coinsCreatedCount;
     if (updates.totalProfit !== undefined) payload.totalProfit = Number(updates.totalProfit.toFixed(2));
-    if (updates.dailyStreak !== undefined) payload.dailyStreak = updates.dailyStreak;
     if (updates.lastDailyRewardClaim !== undefined) payload.lastDailyRewardClaim = updates.lastDailyRewardClaim;
-    if (updates.predictionWins !== undefined) payload.predictionWins = updates.predictionWins;
-    if (updates.rugPullsCount !== undefined) payload.rugPullsCount = updates.rugPullsCount;
-    if (updates.isBanned !== undefined) payload.isBanned = updates.isBanned;
-    if (updates.isSuspended !== undefined) payload.isSuspended = updates.isSuspended;
-    if (updates.suspendedUntil !== undefined) payload.suspendedUntil = updates.suspendedUntil;
 
-    await databases.updateDocument("pumpforge", "users", userId, payload);
-  } catch (err) {
-    console.warn("Could not sync user to Appwrite directly (cached state preserved):", err);
+    if (Object.keys(payload).length > 0) {
+      await databases.updateDocument("pumpforge", "users", userId, payload);
+    }
+  } catch (err: any) {
+    console.warn("Could not sync user to Appwrite directly (cached state preserved):", err?.message || err);
   }
 
   return updated;
@@ -625,4 +616,160 @@ export async function getBroadcastsList(jwt?: string): Promise<any[]> {
   }
   return list;
 }
+
+// In-Memory Authoritative Polymarkets Store
+export const inMemoryPolymarkets: any[] = [];
+
+export function recordPolymarket(market: any) {
+  const existingIdx = inMemoryPolymarkets.findIndex(m => (m.id || m.$id) === (market.id || market.$id));
+  if (existingIdx >= 0) {
+    inMemoryPolymarkets[existingIdx] = { ...inMemoryPolymarkets[existingIdx], ...market };
+  } else {
+    inMemoryPolymarkets.unshift(market);
+  }
+}
+
+export async function getPolymarketsList(jwt?: string): Promise<any[]> {
+  const list: any[] = [...inMemoryPolymarkets];
+  try {
+    const databases = getDatabases(jwt);
+    const res = await databases.listDocuments("pumpforge", "polymarkets", [
+      Query.limit(100),
+      Query.orderDesc("$createdAt"),
+    ]);
+    for (const doc of res.documents) {
+      const idx = list.findIndex(m => (m.id || m.$id) === doc.$id);
+      if (idx >= 0) {
+        list[idx] = doc;
+      } else {
+        list.push(doc);
+      }
+    }
+  } catch (e) {
+    // Non-fatal, use cached state
+  }
+  return list;
+}
+
+// In-Memory Authoritative Trades Store
+export const inMemoryTrades: any[] = [];
+
+export function recordTradeLog(trade: any) {
+  inMemoryTrades.unshift(trade);
+  if (inMemoryTrades.length > 500) {
+    inMemoryTrades.pop();
+  }
+}
+
+export async function getTradesList(options: { coinId?: string; limit?: number; jwt?: string } = {}): Promise<any[]> {
+  const limit = options.limit || 50;
+  const list: any[] = [...inMemoryTrades];
+  try {
+    const databases = getDatabases(options.jwt);
+    const queries: any[] = [
+      Query.orderDesc("$createdAt"),
+      Query.limit(limit),
+    ];
+    if (options.coinId) {
+      queries.push(Query.equal("coinId", options.coinId));
+    }
+    const res = await databases.listDocuments("pumpforge", "trades", queries);
+    for (const doc of res.documents) {
+      if (!list.some(t => (t.id || t.$id) === doc.$id)) {
+        list.push(doc);
+      }
+    }
+  } catch (e) {
+    // Non-fatal, use cached trades
+  }
+  let filtered = list;
+  if (options.coinId) {
+    filtered = filtered.filter(t => t.coinId === options.coinId);
+  }
+  return filtered.slice(0, limit);
+}
+
+// In-Memory Authoritative Wagers Store
+export const inMemoryWagers: any[] = [];
+
+export function recordWagerLog(wager: any) {
+  inMemoryWagers.unshift(wager);
+  if (inMemoryWagers.length > 500) {
+    inMemoryWagers.pop();
+  }
+}
+
+// In-Memory Authoritative Holdings Store
+export const inMemoryHoldings: any[] = [];
+
+export function recordHoldingLog(holding: any) {
+  const idx = inMemoryHoldings.findIndex(
+    h => h.userId === holding.userId && h.coinId === holding.coinId
+  );
+  if (idx >= 0) {
+    inMemoryHoldings[idx] = { ...inMemoryHoldings[idx], ...holding };
+  } else {
+    inMemoryHoldings.push(holding);
+  }
+}
+
+export async function getHoldingsList(options: { userId?: string; coinId?: string; jwt?: string } = {}): Promise<any[]> {
+  const list: any[] = [...inMemoryHoldings];
+  try {
+    const databases = getDatabases(options.jwt);
+    const queries: any[] = [Query.limit(100)];
+    if (options.userId) queries.push(Query.equal("userId", options.userId));
+    if (options.coinId) queries.push(Query.equal("coinId", options.coinId));
+    const res = await databases.listDocuments("pumpforge", "holdings", queries);
+    for (const doc of res.documents) {
+      const idx = list.findIndex(h => (h.id || h.$id) === doc.$id);
+      if (idx >= 0) {
+        list[idx] = doc;
+      } else {
+        list.push(doc);
+      }
+    }
+  } catch (e) {
+    // Non-fatal, use cached holdings
+  }
+  let filtered = list;
+  if (options.userId) filtered = filtered.filter(h => h.userId === options.userId);
+  if (options.coinId) filtered = filtered.filter(h => h.coinId === options.coinId);
+  return filtered;
+}
+
+// In-Memory Authoritative Notifications Store
+export const inMemoryNotifications: any[] = [];
+
+export function recordNotification(notif: any) {
+  inMemoryNotifications.unshift(notif);
+  if (inMemoryNotifications.length > 200) {
+    inMemoryNotifications.pop();
+  }
+}
+
+export async function getNotificationsList(userId?: string, jwt?: string): Promise<any[]> {
+  const list: any[] = userId
+    ? inMemoryNotifications.filter(n => n.userId === userId || n.userId === "all")
+    : [...inMemoryNotifications];
+  if (userId) {
+    try {
+      const databases = getDatabases(jwt);
+      const res = await databases.listDocuments("pumpforge", "notifications", [
+        Query.equal("userId", userId),
+        Query.orderDesc("timestamp"),
+        Query.limit(50),
+      ]);
+      for (const doc of res.documents) {
+        if (!list.some(n => (n.id || n.$id) === doc.$id)) {
+          list.push(doc);
+        }
+      }
+    } catch (e) {
+      // Non-fatal, use in-memory notifications
+    }
+  }
+  return list;
+}
+
 

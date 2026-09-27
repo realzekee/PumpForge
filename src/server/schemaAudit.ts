@@ -185,36 +185,21 @@ export const APPWRITE_SCHEMA_SPEC: Record<string, CollectionSchemaDefinition> = 
     permissions: ["read(any)"],
   },
 
-  referrals: {
-    id: "referrals",
-    name: "Referral Tracking",
+  notifications: {
+    id: "notifications",
+    name: "User Notifications",
     attributes: [
-      { key: "referrerId", type: "string", required: true, size: 64 },
-      { key: "refereeId", type: "string", required: true, size: 64 },
-      { key: "rewardGiven", type: "boolean", required: true, default: true },
+      { key: "userId", type: "string", required: true, size: 64 },
+      { key: "title", type: "string", required: true, size: 128 },
+      { key: "message", type: "string", required: true, size: 1000 },
+      { key: "type", type: "string", required: false, size: 32, default: "info" },
+      { key: "read", type: "boolean", required: false, default: false },
       { key: "timestamp", type: "string", required: true, size: 64 },
     ],
     indexes: [
-      { key: "idx_referrerId", type: "key", attributes: ["referrerId"] },
-      { key: "idx_refereeId", type: "unique", attributes: ["refereeId"] },
+      { key: "idx_userId_timestamp", type: "key", attributes: ["userId", "timestamp"] },
     ],
     permissions: ["read(user)"],
-  },
-
-  cosmetics: {
-    id: "cosmetics",
-    name: "Shop & Crates Inventory",
-    attributes: [
-      { key: "itemType", type: "string", required: true, size: 32 }, // color | crate
-      { key: "itemId", type: "string", required: true, size: 64 },
-      { key: "name", type: "string", required: true, size: 64 },
-      { key: "costGems", type: "integer", required: true },
-      { key: "rarity", type: "string", required: false, size: 32 },
-    ],
-    indexes: [
-      { key: "idx_itemType", type: "key", attributes: ["itemType"] },
-    ],
-    permissions: ["read(any)"],
   },
 
   bugs: {

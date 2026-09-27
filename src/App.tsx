@@ -82,6 +82,9 @@ import {
   apiGetUserWagers,
   apiCreateCoin,
   apiGetBroadcasts,
+  apiGetTrades,
+  apiGetPolymarkets,
+  apiGetHoldings,
   clearAuthJwt,
   getCustomAuthToken,
   setCustomAuthToken,
@@ -1029,25 +1032,38 @@ export default function App() {
 
           
 
-          // Fetch holdings from Appwrite
+          // Fetch holdings from API Gateway or Appwrite
           try {
-             const { databases } = await import("./appwrite");
-             const { Query } = await import("appwrite");
              const uid = user.$id;
-             
-             // Fetch holdings
-             const hDocs = await databases.listDocuments("pumpforge", "holdings", [
-                Query.equal("userId", uid)
-             ]);
-             if (active) {
-                setHoldings(hDocs.documents.map(d => ({
+             let hList: any[] = [];
+             let fetchedHoldings = false;
+             try {
+                const apiRes = await apiGetHoldings({ userId: uid });
+                if (apiRes && Array.isArray(apiRes.holdings)) {
+                  hList = apiRes.holdings;
+                  fetchedHoldings = true;
+                }
+             } catch (_apiErr) {}
+
+             if (!fetchedHoldings) {
+                try {
+                  const { databases } = await import("./appwrite");
+                  const { Query } = await import("appwrite");
+                  const hDocs = await databases.listDocuments("pumpforge", "holdings", [
+                     Query.equal("userId", uid)
+                  ]);
+                  hList = hDocs.documents || [];
+                } catch (_dbErr) {}
+             }
+
+             if (active && hList.length > 0) {
+                setHoldings(hList.map(d => ({
                    coinId: d.coinId,
                    amount: d.tokenAmount ?? d.amount ?? 0,
                    avgBuyPrice: d.avgBuyPrice ?? d.avgPrice ?? d.price ?? 0
                 })));
              }
-          } catch(e) {
-             console.error("Failed to fetch holdings from Appwrite", e);
+          } catch(_e) {
           }
         } else {
           // If search for standard session failed, but we ALREADY have a valid safeStorage cached session,
@@ -1392,17 +1408,32 @@ export default function App() {
        fetchCoins();
     });
 
-    // Prediction markets live feed Appwrite Real-Time
+    // Prediction markets live feed via Authoritative API Gateway & Appwrite Real-Time
     const fetchPredictionMarkets = async () => {
       try {
-        const { Query } = await import("appwrite");
-        const res = await databases.listDocuments("pumpforge", "polymarkets", [
-          Query.limit(100),
-          Query.orderDesc("$createdAt"),
-        ]);
+        let rawDocs: any[] = [];
+        let fetchedMarkets = false;
+        try {
+          const apiRes = await apiGetPolymarkets();
+          if (apiRes && Array.isArray(apiRes.polymarkets)) {
+            rawDocs = apiRes.polymarkets;
+            fetchedMarkets = true;
+          }
+        } catch (_apiErr) {}
 
-        if (res.documents.length > 0) {
-          const list: PredictionMarket[] = res.documents.map((d: any) => {
+        if (!fetchedMarkets) {
+          try {
+            const { Query } = await import("appwrite");
+            const res = await databases.listDocuments("pumpforge", "polymarkets", [
+              Query.limit(100),
+              Query.orderDesc("$createdAt"),
+            ]);
+            rawDocs = res.documents || [];
+          } catch (_dbErr) {}
+        }
+
+        if (rawDocs.length > 0) {
+          const list: PredictionMarket[] = rawDocs.map((d: any) => {
             const parts = (d.question || "").split(" --- ");
             const question = parts[0] || d.question || "Untitled Prediction";
             const description = parts[1] || "";
@@ -1498,61 +1529,83 @@ export default function App() {
           ];
           setMarkets(DEFAULT_MARKETS as any[]);
         }
-      } catch (err) {
-        console.error("Failed to fetch Appwrite polymarkets:", err);
+      } catch (_err) {
+        // Safe fallback without error logging
       }
     };
 
     fetchPredictionMarkets();
 
-    const polymarketsUnsub = client.subscribe(
-      "databases.pumpforge.collections.polymarkets.documents",
-      () => {
-        fetchPredictionMarkets();
-      }
-    );
+    let polymarketsUnsub = () => {};
+    try {
+      polymarketsUnsub = client.subscribe(
+        "databases.pumpforge.collections.polymarkets.documents",
+        () => {
+          fetchPredictionMarkets();
+        }
+      );
+    } catch (_subErr) {}
           
-    // Trades live feed Appwrite Real-Time
+    // Trades live feed via Authoritative API Gateway & Appwrite Real-Time
     const fetchTrades = async () => {
       try {
-        const { Query } = await import("appwrite");
-        const res = await databases.listDocuments("pumpforge", "trades", [
-          Query.equal("isSimulated", false),
-          Query.orderDesc("$createdAt"),
-          Query.limit(15)
-        ]);
-        
-        const list: LiveTrade[] = res.documents.map((d: any) => {
-             const coinDetails = coins.find(c => c.id === d.coinId);
-             
-             return {
-                 id: d.$id,
-                 timestamp: new Date(d.$createdAt).toLocaleTimeString(),
-                 type: d.type as any,
-                 coinId: d.coinId,
-                 coinSymbol: d.coinTicker || coinDetails?.symbol || "UNKNOWN",
-                 coinTicker: d.coinTicker,
-                 coinName: coinDetails?.name || "Unknown",
-                 amountTokens: 0,
-                 amountUsd: d.amount, 
-                 userHandle: d.userName || d.userId, // use userName if available
-                 userName: d.userName,
-                 userId: d.userId
-             };
-        });
-        
-        setLiveTrades(list);
+        let rawDocs: any[] = [];
+        let fetchedTrades = false;
+        try {
+          const apiRes = await apiGetTrades({ limit: 15 });
+          if (apiRes && Array.isArray(apiRes.trades)) {
+            rawDocs = apiRes.trades;
+            fetchedTrades = true;
+          }
+        } catch (_apiErr) {}
 
-      } catch (err) {
-        console.error("Failed to fetch Appwrite trades:", err);
+        if (!fetchedTrades) {
+          try {
+            const { Query } = await import("appwrite");
+            const res = await databases.listDocuments("pumpforge", "trades", [
+              Query.equal("isSimulated", false),
+              Query.orderDesc("$createdAt"),
+              Query.limit(15)
+            ]);
+            rawDocs = res.documents || [];
+          } catch (_dbErr) {}
+        }
+        
+        if (rawDocs.length > 0) {
+          const list: LiveTrade[] = rawDocs.map((d: any) => {
+               const coinDetails = coins.find(c => c.id === d.coinId);
+               
+               return {
+                   id: d.$id || d.id,
+                   timestamp: new Date(d.$createdAt || d.timestamp || Date.now()).toLocaleTimeString(),
+                   type: (d.type || "BUY") as any,
+                   coinId: d.coinId,
+                   coinSymbol: d.coinSymbol || d.coinTicker || coinDetails?.symbol || "UNKNOWN",
+                   coinTicker: d.coinTicker || d.coinSymbol,
+                   coinName: coinDetails?.name || d.coinName || "Unknown",
+                   amountTokens: d.amountCoins || d.amountTokens || 0,
+                   amountUsd: d.totalCash || d.amountUsd || d.amount || 0, 
+                   userHandle: d.userHandle || d.userName || d.userId || "Trader",
+                   userName: d.userName || d.userHandle || "Trader",
+                   userId: d.userId
+               };
+          });
+          
+          setLiveTrades(list);
+        }
+      } catch (_err) {
+        // Safe fallback without error logging
       }
     };
     
     fetchTrades();
     
-    const tradesUnsub = client.subscribe("databases.pumpforge.collections.trades.documents", (response) => {
-       fetchTrades();
-    });
+    let tradesUnsub = () => {};
+    try {
+      tradesUnsub = client.subscribe("databases.pumpforge.collections.trades.documents", () => {
+         fetchTrades();
+      });
+    } catch (_subErr) {}
 
     // Real-time dynamic synced participants list from database
     const usersUnsub = () => {}; setRegisteredUsers([]);

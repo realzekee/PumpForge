@@ -647,3 +647,34 @@ export async function apiGetBroadcasts() {
   return request<{ broadcasts: any[] }>("/api/game/broadcasts");
 }
 
+export async function apiGetTrades(options?: { coinId?: string; limit?: number }) {
+  const query = new URLSearchParams();
+  if (options?.coinId) query.set("coinId", options.coinId);
+  if (options?.limit) query.set("limit", String(options.limit));
+  const queryString = query.toString();
+  const endpoint = `/api/game/trades${queryString ? `?${queryString}` : ""}`;
+  return request<{ trades: any[] }>(endpoint);
+}
+
+export async function apiGetPolymarkets() {
+  return request<{ polymarkets: any[] }>("/api/game/polymarkets");
+}
+
+export async function apiGetHoldings(options?: { userId?: string; coinId?: string }) {
+  const query = new URLSearchParams();
+  if (options?.userId) query.set("userId", options.userId);
+  if (options?.coinId) query.set("coinId", options.coinId);
+  const queryString = query.toString();
+  const endpoint = `/api/game/holdings${queryString ? `?${queryString}` : ""}`;
+  return request<{ holdings: any[] }>(endpoint);
+}
+
+export async function apiGetNotifications(userId?: string) {
+  const query = new URLSearchParams();
+  if (userId) query.set("userId", userId);
+  const queryString = query.toString();
+  const endpoint = `/api/game/notifications${queryString ? `?${queryString}` : ""}`;
+  return request<{ notifications: any[] }>(endpoint);
+}
+
+
