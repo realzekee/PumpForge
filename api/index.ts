@@ -56,28 +56,59 @@ export function resolveVercelUrl(req: any): string {
 }
 
 export default function handler(req: any, res: any) {
-  try {
-    req.url = resolveVercelUrl(req);
+  return new Promise((resolve) => {
+    try {
+      req.url = resolveVercelUrl(req);
 
-    // Prevent body-parser from hanging on pre-consumed Vercel streams
-    if (req.body !== undefined && req.body !== null) {
-      req._body = true;
-      if (typeof req.body === "string" && req.body.trim().startsWith("{")) {
-        try {
-          req.body = JSON.parse(req.body);
-        } catch (_) {}
+      // Prevent body-parser from hanging on pre-consumed Vercel streams
+      if (req.body !== undefined && req.body !== null) {
+        req._body = true;
+        if (typeof req.body === "string" && req.body.trim().startsWith("{")) {
+          try {
+            req.body = JSON.parse(req.body);
+          } catch (_) {}
+        }
       }
-    }
 
-    return app(req, res);
-  } catch (err: any) {
-    console.error("Vercel top-level invocation error:", err);
-    if (!res.headersSent) {
-      res.setHeader("Content-Type", "application/json; charset=utf-8");
-      res.status(500).json({
-        error: err?.message || "Internal server error occurred.",
-        message: err?.message || "Internal server error occurred.",
+      // Track completion so Vercel keeps the lambda alive until response flushes
+      let completed = false;
+      const onDone = () => {
+        if (!completed) {
+          completed = true;
+          resolve(undefined);
+        }
+      };
+
+      res.on("finish", onDone);
+      res.on("close", onDone);
+      res.on("error", (err: any) => {
+        console.error("Vercel stream response error:", err);
+        onDone();
       });
+
+      app(req, res, (err: any) => {
+        if (err) {
+          console.error("Express unhandled middleware error in Vercel:", err);
+          if (!res.headersSent) {
+            res.setHeader("Content-Type", "application/json; charset=utf-8");
+            res.status(500).json({
+              error: err?.message || "Internal server error occurred.",
+              message: err?.message || "Internal server error occurred.",
+            });
+          }
+        }
+        onDone();
+      });
+    } catch (err: any) {
+      console.error("Vercel top-level invocation error:", err);
+      if (!res.headersSent) {
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+        res.status(500).json({
+          error: err?.message || "Internal server error occurred.",
+          message: err?.message || "Internal server error occurred.",
+        });
+      }
+      resolve(undefined);
     }
-  }
+  });
 }
