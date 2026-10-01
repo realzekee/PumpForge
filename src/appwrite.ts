@@ -33,6 +33,17 @@ const rawClient = new Client()
   .setEndpoint("https://sgp.cloud.appwrite.io/v1")
   .setProject("6a1416eb001f50cdb902");
 
+// Suppress Appwrite SDK's repetitive Realtime disconnect logs in preview/development
+if (typeof window !== "undefined") {
+  const origConsoleError = console.error.bind(console);
+  console.error = function (...args: any[]) {
+    if (typeof args[0] === "string" && args[0].includes("Realtime got disconnected")) {
+      return;
+    }
+    origConsoleError(...args);
+  };
+}
+
 // Wrap client.subscribe so realtime payloads never contain BigInts & doesn't throw if websocket fails
 const origSubscribe = rawClient.subscribe.bind(rawClient);
 rawClient.subscribe = function (channels: any, callback: any) {

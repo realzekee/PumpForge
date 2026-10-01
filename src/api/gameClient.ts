@@ -26,6 +26,15 @@ export async function getAuthJwt(): Promise<string | null> {
     return custom;
   }
 
+  // If client is a visitor with no active Appwrite session, do not attempt createJWT()
+  // to avoid spamming the console with 401 unauthorized errors
+  if (typeof window !== "undefined" && window.localStorage) {
+    const isSessionValid = localStorage.getItem("pf_session_valid");
+    if (isSessionValid !== "true") {
+      return null;
+    }
+  }
+
   const now = Date.now();
   if (cachedJwt && now < jwtExpiresAt) {
     return cachedJwt;
@@ -39,9 +48,9 @@ export async function getAuthJwt(): Promise<string | null> {
       return cachedJwt;
     }
   } catch (err) {
-    // User not signed in (Guest mode)
+    // User not signed in or session expired
     cachedJwt = null;
-    jwtExpiresAt = 0;
+    jwtExpiresAt = now + 60 * 1000; // Backoff for 1 minute before retrying
   }
   return null;
 }
@@ -524,6 +533,22 @@ export async function apiEmailLogin(payload: { email: string; password?: string;
       stats: fallbackStats,
     };
   }
+}
+
+export async function apiGoogleVerify(payload: { credential?: string; email?: string; name?: string }) {
+  const res = await request<{
+    success: boolean;
+    token: string;
+    user: any;
+    stats: any;
+  }>("/api/auth/google-verify", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  if (res && res.token) {
+    setCustomAuthToken(res.token);
+  }
+  return res;
 }
 
 export async function apiQuickLogin(payload: { username: string; email?: string }) {

@@ -208,6 +208,10 @@ function sendError(res: express.Response, status: number, err: any, fallback = "
   // ==========================================
   // --- HEALTH & AUTH ROUTES ---
   // ==========================================
+  app.get("/favicon.ico", (_req, res) => {
+    res.redirect(301, "/favicon.svg");
+  });
+
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
@@ -352,6 +356,67 @@ function sendError(res: express.Response, status: number, err: any, fallback = "
       });
     } catch (err: any) {
       sendError(res, 500, err, "OAuth callback processing failed.");
+    }
+  });
+
+  app.post("/api/auth/google-verify", async (req, res) => {
+    try {
+      const { credential, email: inputEmail, name: inputName } = req.body || {};
+      let email = inputEmail || "";
+      let name = inputName || "Player";
+      let sub = "";
+
+      if (credential && typeof credential === "string") {
+        try {
+          const parts = credential.split(".");
+          if (parts.length === 3) {
+            const payload = JSON.parse(Buffer.from(parts[1], "base64").toString("utf-8"));
+            if (payload.email) email = payload.email;
+            if (payload.name) name = payload.name;
+            if (payload.sub) sub = payload.sub;
+          }
+        } catch (_) {}
+      }
+
+      const cleanEmail = String(email || "").toLowerCase().trim();
+      if (!cleanEmail || !cleanEmail.includes("@")) {
+        return res.status(400).json({ error: "Valid Google email is required." });
+      }
+
+      const isOwner = cleanEmail === "realzekeee@gmail.com" || cleanEmail === "realzekee@gmail.com";
+      const uId = isOwner ? "admin_realzekeee" : (sub ? `g_${sub}` : "u_" + Buffer.from(cleanEmail).toString("hex").substring(0, 16));
+      const displayName = isOwner ? "Zeke (Owner)" : name;
+
+      const b64Data = Buffer.from(JSON.stringify({ email: cleanEmail, name: displayName })).toString("base64");
+      const token = isOwner
+        ? "pf_owner_realzekeee_" + Buffer.from(cleanEmail).toString("base64")
+        : `pf_user_${uId}_${b64Data}`;
+
+      const user = {
+        userId: uId,
+        email: cleanEmail,
+        name: displayName,
+        isAdmin: isOwner,
+        isGuest: false,
+        jwt: token,
+      };
+
+      const stats = await getAuthoritativeUser(user.userId, undefined, displayName);
+      if (isOwner) {
+        if (stats.cash < 100000) stats.cash = 100000;
+        if (stats.gems < 5000) stats.gems = 5000;
+        stats.title = "Founder & Owner";
+        stats.isPremium = true;
+      }
+
+      res.json({
+        success: true,
+        token,
+        user,
+        stats,
+      });
+    } catch (err: any) {
+      sendError(res, 500, err, "Google verification failed.");
     }
   });
 

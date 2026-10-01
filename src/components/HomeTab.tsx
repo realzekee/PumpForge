@@ -64,9 +64,9 @@ export default function HomeTab({
   return (
     <div className="flex flex-col gap-6 animate-fade-in">
       {/* Personalized Direct Admin Notices */}
-      {manualNotices.map((notice) => (
+      {manualNotices.map((notice, index) => (
         <div
-          key={notice.id}
+          key={notice.id ? `${notice.id}-${index}` : `notice-${index}`}
           className="relative overflow-hidden rounded-2xl border border-indigo-500/40 bg-indigo-950/20 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-lg animate-fade-in text-indigo-100"
         >
           {/* Subtle decoration gradient */}
@@ -184,9 +184,9 @@ export default function HomeTab({
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {(hotCoins || []).map((coin) => (
+            {(hotCoins || []).map((coin, index) => (
               <div
-                key={coin.id}
+                key={coin.id ? `${coin.id}-${index}` : `hot-coin-${index}`}
                 className="glass-card-interactive p-4 rounded-2xl flex flex-col justify-between select-none cursor-pointer group border border-white/[0.08]"
                 onClick={() => onTradeCoin(coin.id)}
               >

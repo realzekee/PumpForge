@@ -248,13 +248,13 @@ export default function MarketTab({
                   </td>
                 </tr>
               ) : (
-                filteredCoins.map((coin) => {
+                filteredCoins.map((coin, index) => {
                   const holds = getUserHolding(coin.id);
                   const isCreator = coin.creator === userStats.handle;
 
                   return (
                     <tr
-                      key={coin.id}
+                      key={coin.id ? `${coin.id}-${index}` : `coin-row-${index}`}
                       onClick={() => navigate(`/coin/${coin.id}`)}
                       className="hover:bg-white/[0.08] transition-colors cursor-pointer group"
                       role="button"
@@ -409,13 +409,13 @@ export default function MarketTab({
               No simulated meme coins found. Launch one!
             </div>
           ) : (
-            filteredCoins.map((coin) => {
+            filteredCoins.map((coin, index) => {
               const holds = getUserHolding(coin.id);
               const isCreator = coin.creator === userStats.handle;
 
               return (
                 <div
-                  key={coin.id}
+                  key={coin.id ? `${coin.id}-${index}` : `coin-card-${index}`}
                   onClick={() => navigate(`/coin/${coin.id}`)}
                   className="p-3.5 flex items-center justify-between gap-2.5 hover:bg-white/[0.08] transition-colors cursor-pointer group"
                   role="button"

@@ -97,32 +97,34 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           } catch (_) {}
         }
 
-        try {
-          const user = await account.get();
-          if (user && user.$id) {
-            setCurrentUser(user);
-            setUserId(user.$id);
-            try {
-              const doc = await databases.getDocument("pumpforge", "users", user.$id);
-              setUserStats(doc);
-              setCash(doc.cash ?? 5000);
-              setGems(doc.gems ?? 90);
-              setPrestigeLevel(doc.prestigeLevel ?? 0);
-              
-              const lastC = doc.lastClaimed || doc.lastDailyRewardClaim;
-              if (lastC) {
-                localStorage.setItem("pf_last_claimed", lastC);
-              }
+        const isSessionValid = localStorage.getItem("pf_session_valid");
+        if (isSessionValid === "true") {
+          try {
+            const user = await account.get();
+            if (user && user.$id) {
+              setCurrentUser(user);
+              setUserId(user.$id);
+              try {
+                const doc = await databases.getDocument("pumpforge", "users", user.$id);
+                setUserStats(doc);
+                setCash(doc.cash ?? 5000);
+                setGems(doc.gems ?? 90);
+                setPrestigeLevel(doc.prestigeLevel ?? 0);
+                
+                const lastC = doc.lastClaimed || doc.lastDailyRewardClaim;
+                if (lastC) {
+                  localStorage.setItem("pf_last_claimed", lastC);
+                }
 
-              localStorage.setItem("pf_session_valid", "true");
-              localStorage.setItem("pf_fallback_userId", user.$id);
-            } catch (docErr) {
-              console.warn("User document notice:", docErr);
+                localStorage.setItem("pf_session_valid", "true");
+                localStorage.setItem("pf_fallback_userId", user.$id);
+              } catch (docErr) {
+                console.warn("User document notice:", docErr);
+              }
             }
+          } catch (authErr) {
+            localStorage.removeItem("pf_session_valid");
           }
-        } catch (authErr) {
-          // Normal guest state: user is not yet logged in with Appwrite
-          console.log("Active guest session (unauthenticated visitor)");
         }
       } catch (e: any) {
         console.warn("Appwrite init error in context:", e);

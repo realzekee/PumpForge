@@ -922,25 +922,23 @@ export default function App() {
           }
         }
 
-        try {
-          user = await account.get();
-        } catch (getErr: any) {
-          console.warn(
-            "Standard account.get() failed. Active Appwrite session not detected.",
-            getErr,
-          );
-          // Chrome 3rd-party cookie fallback hydration
-          const isSessionValid = localStorage.getItem("pf_session_valid");
-          const fallbackId = localStorage.getItem("pf_fallback_userId");
-          if (isSessionValid === "true" && fallbackId) {
-            console.log(
-              "Hydrating minimal user from localStorage fallback in App.tsx",
-            );
-            user = {
-              $id: fallbackId,
-              email: "", // We might not have it, but we can bypass the null check
-              name: "Player",
-            };
+        const isSessionValid = localStorage.getItem("pf_session_valid");
+        if (isSessionValid === "true" || (urlUserId && urlSecret)) {
+          try {
+            user = await account.get();
+          } catch (getErr: any) {
+            // Chrome 3rd-party cookie fallback hydration
+            const fallbackId = localStorage.getItem("pf_fallback_userId");
+            if (fallbackId) {
+              console.log(
+                "Hydrating minimal user from localStorage fallback in App.tsx",
+              );
+              user = {
+                $id: fallbackId,
+                email: "", // We might not have it, but we can bypass the null check
+                name: "Player",
+              };
+            }
           }
         }
 

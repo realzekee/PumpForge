@@ -11,9 +11,9 @@ import { getAuthoritativeUser, saveAuthoritativeUser, globalAdminSettings, UserS
 import { withUserLock } from "./locks";
 import { arcadeLimiter } from "./rateLimit";
 
-const APPWRITE_ENDPOINT = process.env.VITE_APPWRITE_ENDPOINT || "https://sgp.cloud.appwrite.io/v1";
-const APPWRITE_PROJECT = process.env.VITE_APPWRITE_PROJECT || "6a1416eb001f50cdb902";
-const APPWRITE_API_KEY = process.env.APPWRITE_API_KEY || "";
+const APPWRITE_ENDPOINT = (process.env.VITE_APPWRITE_ENDPOINT || "https://sgp.cloud.appwrite.io/v1").trim();
+const APPWRITE_PROJECT = (process.env.VITE_APPWRITE_PROJECT || "6a1416eb001f50cdb902").trim();
+const APPWRITE_API_KEY = (process.env.APPWRITE_API_KEY || "").trim();
 
 /**
  * Initializes a privileged server-side Appwrite Databases client using node-appwrite and APPWRITE_API_KEY.

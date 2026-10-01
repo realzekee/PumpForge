@@ -2,9 +2,9 @@ import { Client, Databases, Query, ID, Permission, Role } from "node-appwrite";
 import { INITIAL_COINS } from "../data/memeCoins";
 import { MemeCoin } from "../types";
 
-const APPWRITE_ENDPOINT = process.env.VITE_APPWRITE_ENDPOINT || "https://sgp.cloud.appwrite.io/v1";
-const APPWRITE_PROJECT = process.env.VITE_APPWRITE_PROJECT || "6a1416eb001f50cdb902";
-const APPWRITE_API_KEY = process.env.APPWRITE_API_KEY || "";
+const APPWRITE_ENDPOINT = (process.env.VITE_APPWRITE_ENDPOINT || "https://sgp.cloud.appwrite.io/v1").trim();
+const APPWRITE_PROJECT = (process.env.VITE_APPWRITE_PROJECT || "6a1416eb001f50cdb902").trim();
+const APPWRITE_API_KEY = (process.env.APPWRITE_API_KEY || "").trim();
 
 /**
  * Creates an Appwrite Client configured for server operations.
