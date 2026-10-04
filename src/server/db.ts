@@ -358,6 +358,7 @@ export async function saveAuthoritativeUser(
     if (updates.coinsCreatedCount !== undefined) payload.coinsCreatedCount = updates.coinsCreatedCount;
     if (updates.totalProfit !== undefined) payload.totalProfit = Number(updates.totalProfit.toFixed(2));
     if (updates.lastDailyRewardClaim !== undefined) payload.lastDailyRewardClaim = updates.lastDailyRewardClaim;
+    if (updates.dailyStreak !== undefined) payload.dailyStreak = Math.max(1, Math.floor(updates.dailyStreak));
 
     if (Object.keys(payload).length > 0) {
       await databases.updateDocument("pumpforge", "users", userId, payload);

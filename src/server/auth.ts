@@ -1,8 +1,10 @@
 import { Request, Response, NextFunction } from "express";
+import crypto from "crypto";
 import { AuthenticatedUser } from "./types";
 
 const APPWRITE_ENDPOINT = process.env.VITE_APPWRITE_ENDPOINT || "https://sgp.cloud.appwrite.io/v1";
 const APPWRITE_PROJECT = process.env.VITE_APPWRITE_PROJECT || "6a1416eb001f50cdb902";
+const TOKEN_SECRET = (process.env.APPWRITE_API_KEY || process.env.SESSION_SECRET || "pumpforge_authoritative_secret_key_v1").trim();
 
 // Server-authoritative admin emails list
 const DEFAULT_ADMIN_EMAILS = ["realzekeee@gmail.com", "realzekee@gmail.com"];
@@ -11,6 +13,49 @@ const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "")
   .map((e) => e.trim().toLowerCase())
   .filter(Boolean)
   .concat(DEFAULT_ADMIN_EMAILS);
+
+/**
+ * Creates a cryptographically signed HMAC-SHA256 session token.
+ */
+export function signCustomToken(payload: { userId: string; email: string; name: string; isAdmin: boolean }): string {
+  const data = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const signature = crypto.createHmac("sha256", TOKEN_SECRET).update(data).digest("base64url");
+  return `pf_${data}.${signature}`;
+}
+
+/**
+ * Validates the HMAC-SHA256 signature of a custom session token.
+ */
+export function verifyCustomToken(token: string): AuthenticatedUser | null {
+  if (!token || !token.startsWith("pf_")) return null;
+  const parts = token.slice(3).split(".");
+  if (parts.length !== 2) return null;
+
+  const [data, signature] = parts;
+  try {
+    const expectedSig = crypto.createHmac("sha256", TOKEN_SECRET).update(data).digest("base64url");
+    const sigBuf = Buffer.from(signature);
+    const expBuf = Buffer.from(expectedSig);
+    if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+      return null;
+    }
+
+    const parsed = JSON.parse(Buffer.from(data, "base64url").toString("utf-8"));
+    const email = (parsed.email || "").toLowerCase().trim();
+    const isOwnerEmail = ADMIN_EMAILS.includes(email);
+
+    return {
+      userId: parsed.userId,
+      email,
+      name: parsed.name || (email ? email.split("@")[0] : "Player"),
+      isAdmin: Boolean(parsed.isAdmin && isOwnerEmail),
+      isGuest: false,
+      jwt: token,
+    };
+  } catch {
+    return null;
+  }
+}
 
 // Cache verified JWTs briefly (60 seconds) to reduce remote latency
 interface CachedAuth {
@@ -45,71 +90,33 @@ export async function authenticateRequest(req: Request): Promise<AuthenticatedUs
     };
   }
 
-  // 1. Owner Session Token Handling
-  if (jwt.startsWith("pf_owner_") || jwt.startsWith("pf_admin_")) {
-    try {
-      const rest = jwt.replace(/^pf_(owner|admin)_/, "");
-      const firstUnderscore = rest.indexOf("_");
-      let email = "realzekeee@gmail.com";
-      let name = "Zeke (Owner)";
-      let uId = "admin_realzekeee";
-
-      if (firstUnderscore !== -1) {
-        const b64 = rest.substring(firstUnderscore + 1);
-        try {
-          const parsed = JSON.parse(Buffer.from(b64, "base64").toString("utf-8"));
-          if (parsed.email) email = parsed.email;
-          if (parsed.name) name = parsed.name;
-        } catch {
-          const decoded = Buffer.from(b64, "base64").toString("utf-8");
-          if (decoded.includes("@")) email = decoded;
-        }
-      }
-
-      return {
-        userId: uId,
-        email: email.toLowerCase().trim(),
-        name,
-        isAdmin: true,
-        isGuest: false,
-        jwt,
-      };
-    } catch {
-      return {
-        userId: "admin_realzekeee",
-        email: "realzekeee@gmail.com",
-        name: "Zeke (Owner)",
-        isAdmin: true,
-        isGuest: false,
-        jwt,
-      };
-    }
+  // 1. Cryptographically verify HMAC-signed tokens first
+  const verifiedUser = verifyCustomToken(jwt);
+  if (verifiedUser) {
+    return verifiedUser;
   }
 
-  // 2. Custom User Session Token (for Email/Password or Quick login)
-  if (jwt.startsWith("pf_user_") || jwt.startsWith("pf_session_")) {
+  // 2. Legacy token fallback for standard players (non-admin operations only)
+  // STRICT SECURITY INVARIANT: Unsigned legacy tokens are NEVER granted admin privileges
+  if (jwt.startsWith("pf_user_") || jwt.startsWith("pf_session_") || jwt.startsWith("pf_owner_") || jwt.startsWith("pf_admin_")) {
     try {
-      const rest = jwt.replace(/^pf_(user|session)_/, "");
+      const rest = jwt.replace(/^pf_(user|session|owner|admin)_/, "");
       const firstUnderscore = rest.indexOf("_");
       let uId = rest;
       let userData: any = { email: "", name: "Player" };
       if (firstUnderscore !== -1) {
         uId = rest.substring(0, firstUnderscore);
         const b64 = rest.substring(firstUnderscore + 1);
-        userData = JSON.parse(Buffer.from(b64, "base64").toString("utf-8"));
+        try {
+          userData = JSON.parse(Buffer.from(b64, "base64").toString("utf-8"));
+        } catch {}
       }
       const email = (userData.email || "").toLowerCase().trim();
-      const isOwnerEmail = ADMIN_EMAILS.includes(email);
-      const isAdmin = Boolean(
-        isOwnerEmail ||
-        uId.includes("admin_") ||
-        (userData.name && userData.name.toLowerCase().includes("owner"))
-      );
       return {
-        userId: uId,
+        userId: uId || "player_user",
         email: email,
         name: userData.name || (email ? email.split("@")[0] : "Player"),
-        isAdmin,
+        isAdmin: false, // Invariant: Unsigned legacy tokens can NEVER receive admin rights
         isGuest: false,
         jwt,
       };

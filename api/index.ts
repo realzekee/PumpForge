@@ -1,4 +1,4 @@
-import app from "../server";
+import app from "../server.ts";
 
 export function resolveVercelUrl(req: any): string {
   let url = req.url || "/";

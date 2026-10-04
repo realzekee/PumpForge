@@ -1,6 +1,6 @@
 import express from "express";
 import path from "path";
-import { authMiddleware, requireAdmin, requireAuth } from "./src/server/auth";
+import { authMiddleware, requireAdmin, requireAuth, signCustomToken } from "./src/server/auth";
 import {
   processDailyReward,
   processTrade,
@@ -241,10 +241,12 @@ function sendError(res: express.Response, status: number, err: any, fallback = "
       const uId = isOwner ? "admin_realzekeee" : "u_" + Buffer.from(cleanEmail).toString("hex").substring(0, 16);
       const displayName = isOwner ? "Zeke (Owner)" : (name || cleanEmail.split("@")[0] || "Player");
 
-      const b64Data = Buffer.from(JSON.stringify({ email: cleanEmail, name: displayName })).toString("base64");
-      const token = isOwner
-        ? "pf_owner_realzekeee_" + Buffer.from(cleanEmail).toString("base64")
-        : `pf_user_${uId}_${b64Data}`;
+      const token = signCustomToken({
+        userId: uId,
+        email: cleanEmail,
+        name: displayName,
+        isAdmin: isOwner,
+      });
 
       const user = {
         userId: uId,
@@ -280,12 +282,14 @@ function sendError(res: express.Response, status: number, err: any, fallback = "
       const cleanUsername = String(username || "Player").trim().slice(0, 30);
       const cleanEmail = email ? String(email).toLowerCase().trim() : "";
 
-      const isOwner = cleanEmail === "realzekeee@gmail.com" || cleanUsername.toLowerCase() === "zeke";
+      const isOwner = cleanEmail === "realzekeee@gmail.com" && cleanUsername.toLowerCase().includes("zeke");
       const uId = isOwner ? "admin_realzekeee" : "u_" + Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
-      const b64Data = Buffer.from(JSON.stringify({ email: cleanEmail, name: cleanUsername })).toString("base64");
-      const token = isOwner
-        ? "pf_owner_realzekeee_" + Buffer.from("realzekeee@gmail.com").toString("base64")
-        : `pf_user_${uId}_${b64Data}`;
+      const token = signCustomToken({
+        userId: uId,
+        email: cleanEmail,
+        name: cleanUsername,
+        isAdmin: isOwner,
+      });
 
       const user = {
         userId: uId,
@@ -328,8 +332,12 @@ function sendError(res: express.Response, status: number, err: any, fallback = "
       const isOwner = cleanEmail === "realzekeee@gmail.com" || cleanEmail === "realzekee@gmail.com";
       const displayName = isOwner ? "Zeke (Owner)" : userName;
 
-      const b64Data = Buffer.from(JSON.stringify({ email: cleanEmail, name: displayName })).toString("base64");
-      const token = `pf_user_${uId}_${b64Data}`;
+      const token = signCustomToken({
+        userId: uId,
+        email: cleanEmail,
+        name: displayName,
+        isAdmin: isOwner,
+      });
 
       const user = {
         userId: uId,
@@ -387,10 +395,12 @@ function sendError(res: express.Response, status: number, err: any, fallback = "
       const uId = isOwner ? "admin_realzekeee" : (sub ? `g_${sub}` : "u_" + Buffer.from(cleanEmail).toString("hex").substring(0, 16));
       const displayName = isOwner ? "Zeke (Owner)" : name;
 
-      const b64Data = Buffer.from(JSON.stringify({ email: cleanEmail, name: displayName })).toString("base64");
-      const token = isOwner
-        ? "pf_owner_realzekeee_" + Buffer.from(cleanEmail).toString("base64")
-        : `pf_user_${uId}_${b64Data}`;
+      const token = signCustomToken({
+        userId: uId,
+        email: cleanEmail,
+        name: displayName,
+        isAdmin: isOwner,
+      });
 
       const user = {
         userId: uId,
