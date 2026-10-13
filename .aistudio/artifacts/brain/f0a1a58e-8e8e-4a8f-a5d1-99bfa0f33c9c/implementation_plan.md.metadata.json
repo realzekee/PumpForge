@@ -1,6 +1,0 @@
-{
-  "summary":  "Implementation plan to eliminate Vercel serverless crashes by decoupling the Express API router from local dev-server dependencies, establishing 30-second edge caching for the leaderboard, and producing a self-contained serverless bundle.",
-  "updatedAt":  "2026-10-12T10:29:27.091418603Z",
-  "requestFeedback":  true,
-  "userFacing":  true
-}
