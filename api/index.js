@@ -1,6 +1,5 @@
-// server.ts
+// src/server/app.ts
 import express from "express";
-import path from "path";
 
 // src/server/auth.ts
 import crypto from "crypto";
@@ -3363,9 +3362,8 @@ async function auditAppwriteSchema(jwt) {
   };
 }
 
-// server.ts
+// src/server/app.ts
 var app = express();
-var PORT = 3e3;
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
@@ -3744,6 +3742,7 @@ app.get("/api/game/leaderboard", async (req, res) => {
   try {
     const category = req.query.category || "gains";
     const limit = Number(req.query.limit) || 50;
+    res.setHeader("Cache-Control", "public, s-maxage=30, stale-while-revalidate=60");
     const leaderboard = await processGetLeaderboard(category, limit);
     res.json({ leaderboard });
   } catch (err) {
@@ -4243,40 +4242,7 @@ app.all("/api/*", (req, res) => {
     code: "NOT_FOUND"
   });
 });
-async function startServer() {
-  if (process.env.NODE_ENV !== "production") {
-    try {
-      const { createServer: createViteServer } = await import("vite");
-      const vite = await createViteServer({
-        server: { middlewareMode: true },
-        appType: "spa"
-      });
-      app.use(vite.middlewares);
-    } catch (e) {
-      console.warn("Vite middleware not loaded:", e);
-    }
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (_req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
-  }
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`PumpForge authoritative game server running on http://localhost:${PORT}`);
-  });
-}
-var server_default = app;
-var isServerless = Boolean(
-  process.env.VERCEL || process.env.VERCEL_ENV || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.LAMBDA_TASK_ROOT || process.env.NETLIFY
-);
-var scriptPath = process.argv[1] || "";
-var isMain = scriptPath.endsWith("server.ts") || scriptPath.endsWith("server.js") || scriptPath.endsWith("server.cjs");
-if (!isServerless && isMain && typeof process.send !== "function" && process.env.NODE_ENV !== "test") {
-  startServer().catch((err) => {
-    console.error("PumpForge startup error:", err);
-  });
-}
+var app_default = app;
 
 // src/server/vercelEntry.ts
 function resolveVercelUrl(req) {
@@ -4338,7 +4304,7 @@ function handler(req, res) {
         console.error("Vercel stream response error:", err);
         onDone();
       });
-      server_default(req, res, (err) => {
+      app_default(req, res, (err) => {
         if (err) {
           console.error("Express unhandled middleware error in Vercel:", err);
           if (!res.headersSent) {
