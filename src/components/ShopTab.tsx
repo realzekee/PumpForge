@@ -153,7 +153,7 @@ export default function ShopTab({
     }
 
     try {
-      const res = await apiShopBuy("color", { colorClass, cost });
+      const res = await apiShopBuy("color", { colorClass, costGems: cost, cost });
       if (res.userStats) {
         onUpdateStats((stats) => {
           stats.gems = res.userStats.gems;
@@ -184,7 +184,7 @@ export default function ShopTab({
     setUnboxReward(null);
 
     try {
-      const res = await apiShopBuy("crate", { crateId, cost });
+      const res = await apiShopBuy("crate", { crateId, costGems: cost, cost });
 
       setTimeout(() => {
         if (res.userStats) {
@@ -194,12 +194,14 @@ export default function ShopTab({
           });
         }
 
-        setUnboxReward({ cash: res.cashReward, gems: res.gemReward });
+        const gemsWon = res.bonusGems ?? res.gemReward ?? 0;
+        const cashWon = res.cashReward ?? 0;
+        setUnboxReward({ cash: cashWon, gems: gemsWon });
         setUnboxingCrate(null);
 
         onAddNotification(
           "Loot Box Opened",
-          `Unboxed ${name}! Gained $${res.cashReward.toLocaleString()} and 💎 ${res.gemReward}!`,
+          `Unboxed ${name}! Gained $${cashWon.toLocaleString()} and 💎 ${gemsWon}!`,
           "achievement",
         );
       }, 1500);

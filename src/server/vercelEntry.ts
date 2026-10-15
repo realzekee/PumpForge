@@ -60,15 +60,31 @@ export default function handler(req: any, res: any) {
     try {
       req.url = resolveVercelUrl(req);
 
-      // Prevent body-parser from hanging on pre-consumed Vercel streams
-      if (req.body !== undefined && req.body !== null) {
-        req._body = true;
-        if (typeof req.body === "string" && req.body.trim().startsWith("{")) {
+      // Safely handle pre-consumed Vercel request bodies without crashing on read-only getters
+      try {
+        const method = String(req.method || "GET").toUpperCase();
+        if (method !== "GET" && method !== "HEAD" && req.body !== undefined && req.body !== null) {
+          req._body = true;
+          let parsedBody = req.body;
+          if (Buffer.isBuffer(parsedBody)) {
+            parsedBody = parsedBody.toString("utf-8");
+          }
+          if (typeof parsedBody === "string" && parsedBody.trim().startsWith("{")) {
+            try {
+              parsedBody = JSON.parse(parsedBody);
+            } catch (_) {}
+          }
           try {
-            req.body = JSON.parse(req.body);
-          } catch (_) {}
+            req.body = parsedBody;
+          } catch (_) {
+            Object.defineProperty(req, "body", {
+              value: parsedBody,
+              writable: true,
+              configurable: true,
+            });
+          }
         }
-      }
+      } catch (_) {}
 
       // Track completion so Vercel keeps the lambda alive until response flushes
       let completed = false;

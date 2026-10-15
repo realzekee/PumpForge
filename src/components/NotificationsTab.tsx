@@ -9,7 +9,7 @@ interface NotificationsTabProps {
 export default function NotificationsTab({
   notifications,
 }: NotificationsTabProps) {
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     // Simulated skeleton loader for professional vibe as seen in the video

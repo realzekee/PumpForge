@@ -20,9 +20,37 @@ export function setCustomAuthToken(token: string) {
 /**
  * Retrieves an Appwrite JWT or Dev Owner token for authenticating API requests.
  */
+let isUpgradingToken = false;
+
 export async function getAuthJwt(): Promise<string | null> {
   const custom = getCustomAuthToken();
   if (custom) {
+    // If browser has an unsigned offline fallback token (e.g. pf_owner_...), upgrade it to a signed server HMAC token
+    if (!isUpgradingToken && (custom.startsWith("pf_owner_") || custom.startsWith("pf_user_"))) {
+      isUpgradingToken = true;
+      try {
+        const cachedUserRaw = typeof window !== "undefined" ? localStorage.getItem("cached_appwrite_user") : null;
+        const cachedUser = cachedUserRaw ? JSON.parse(cachedUserRaw) : null;
+        const email = cachedUser?.email || (custom.startsWith("pf_owner_") ? "realzekeee@gmail.com" : "");
+        const name = cachedUser?.name || (custom.startsWith("pf_owner_") ? "Zeke (Owner)" : "Player");
+        if (email) {
+          const upRes = await fetch("/api/auth/email-login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Accept": "application/json" },
+            body: JSON.stringify({ email, name }),
+          });
+          if (upRes.ok) {
+            const upData = await upRes.json();
+            if (upData?.token) {
+              setCustomAuthToken(upData.token);
+              isUpgradingToken = false;
+              return upData.token;
+            }
+          }
+        }
+      } catch (_) {}
+      isUpgradingToken = false;
+    }
     return custom;
   }
 

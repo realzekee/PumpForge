@@ -1,4 +1,4 @@
-import { Client, Databases, Query, ID, Permission, Role } from "node-appwrite";
+import { Client, Databases, Query, ID, Permission, Role } from "./appwriteServer";
 import { INITIAL_COINS } from "../data/memeCoins";
 import { MemeCoin } from "../types";
 
@@ -272,23 +272,24 @@ export async function getAuthoritativeUser(userId: string, jwt?: string, default
     // If not found in Appwrite, provide clean initial state and persist via server key
     if (cached) return cached;
 
-    const assignedPlayerId = nextPlayerId++;
-    const fallbackUsername = defaultName || `Player_${assignedPlayerId}`;
-    const fallbackHandle = `@${fallbackUsername.toLowerCase().replace(/[^a-z0-9]/g, "")}` || `@user${assignedPlayerId}`;
+    const isOwnerAccount = userId === "admin_realzekeee";
+    const assignedPlayerId = isOwnerAccount ? 1 : nextPlayerId++;
+    const fallbackUsername = defaultName || (isOwnerAccount ? "Zeke (Owner)" : `Player_${assignedPlayerId}`);
+    const fallbackHandle = isOwnerAccount ? "@zeke" : (`@${fallbackUsername.toLowerCase().replace(/[^a-z0-9]/g, "")}` || `@user${assignedPlayerId}`);
     const initial: UserStateCache = {
       userId,
       playerId: assignedPlayerId,
       username: fallbackUsername,
       handle: fallbackHandle,
-      title: "Member",
-      isPremium: false,
-      cash: 5000.0,
-      gems: 90,
+      title: isOwnerAccount ? "Founder & Owner" : "Member",
+      isPremium: isOwnerAccount,
+      cash: isOwnerAccount ? 100000.0 : 5000.0,
+      gems: isOwnerAccount ? 5000 : 90,
       prestigeLevel: 0,
       tradesCount: 0,
       coinsCreatedCount: 0,
       totalProfit: 0,
-      nameColor: "text-zinc-400 font-bold",
+      nameColor: isOwnerAccount ? "text-rose-500 font-extrabold text-glow tracking-wider" : "text-zinc-400 font-bold",
       dailyStreak: 1,
       lastDailyRewardClaim: "",
       predictionWins: 0,
@@ -350,18 +351,52 @@ export async function saveAuthoritativeUser(
     const databases = getDatabases(jwt);
     // Only send attributes that exist in the Appwrite collection schema
     const payload: any = {};
-    if (updates.cash !== undefined) payload.cash = Number(updates.cash.toFixed(2));
-    if (updates.gems !== undefined) payload.gems = Math.floor(updates.gems);
-    if (updates.username !== undefined) payload.username = updates.username;
-    if (updates.prestigeLevel !== undefined) payload.prestigeLevel = updates.prestigeLevel;
-    if (updates.tradesCount !== undefined) payload.tradesCount = updates.tradesCount;
-    if (updates.coinsCreatedCount !== undefined) payload.coinsCreatedCount = updates.coinsCreatedCount;
-    if (updates.totalProfit !== undefined) payload.totalProfit = Number(updates.totalProfit.toFixed(2));
-    if (updates.lastDailyRewardClaim !== undefined) payload.lastDailyRewardClaim = updates.lastDailyRewardClaim;
-    if (updates.dailyStreak !== undefined) payload.dailyStreak = Math.max(1, Math.floor(updates.dailyStreak));
+    if (updates.cash !== undefined) payload.cash = Number(Number(updates.cash).toFixed(2));
+    if (updates.gems !== undefined) payload.gems = Math.floor(Number(updates.gems));
+    if (updates.username !== undefined) payload.username = String(updates.username).slice(0, 64);
+    if (updates.handle !== undefined) payload.handle = String(updates.handle).slice(0, 64);
+    if (updates.nameColor !== undefined) payload.nameColor = String(updates.nameColor).slice(0, 64);
+    if (updates.title !== undefined) payload.title = String(updates.title).slice(0, 64);
+    if (updates.prestigeLevel !== undefined) payload.prestigeLevel = Math.floor(Number(updates.prestigeLevel));
+    if (updates.tradesCount !== undefined) payload.tradesCount = Math.floor(Number(updates.tradesCount));
+    if (updates.coinsCreatedCount !== undefined) payload.coinsCreatedCount = Math.floor(Number(updates.coinsCreatedCount));
+    if (updates.totalProfit !== undefined) payload.totalProfit = Number(Number(updates.totalProfit).toFixed(2));
+    if (updates.lastDailyRewardClaim !== undefined) payload.lastDailyRewardClaim = String(updates.lastDailyRewardClaim).slice(0, 64);
+    if (updates.dailyStreak !== undefined) payload.dailyStreak = Math.max(1, Math.floor(Number(updates.dailyStreak)));
+    if (updates.isBanned !== undefined) payload.isBanned = Boolean(updates.isBanned);
+    if (updates.isSuspended !== undefined) payload.isSuspended = Boolean(updates.isSuspended);
+    if (updates.suspendedUntil !== undefined) payload.suspendedUntil = updates.suspendedUntil ? Math.floor(Number(updates.suspendedUntil)) : null;
 
     if (Object.keys(payload).length > 0) {
-      await databases.updateDocument("pumpforge", "users", userId, payload);
+      try {
+        await databases.updateDocument("pumpforge", "users", userId, payload);
+      } catch (updateErr: any) {
+        if (updateErr?.code === 404 || updateErr?.status === 404) {
+          await databases.createDocument(
+            "pumpforge",
+            "users",
+            userId,
+            {
+              userId,
+              username: updated.username || "Player",
+              handle: updated.handle || "@player",
+              cash: Number(Number(updated.cash ?? 5000).toFixed(2)),
+              gems: Math.floor(Number(updated.gems ?? 90)),
+              prestigeLevel: Math.floor(Number(updated.prestigeLevel ?? 0)),
+              totalProfit: Number(Number(updated.totalProfit ?? 0).toFixed(2)),
+              tradesCount: Math.floor(Number(updated.tradesCount ?? 0)),
+              coinsCreatedCount: Math.floor(Number(updated.coinsCreatedCount ?? 0)),
+              dailyStreak: Math.max(1, Math.floor(Number(updated.dailyStreak ?? 1))),
+              lastDailyRewardClaim: updated.lastDailyRewardClaim || "",
+              nameColor: String(updated.nameColor || "text-zinc-400 font-bold").slice(0, 64),
+              title: String(updated.title || "Member").slice(0, 64),
+            },
+            [Permission.read(Role.any())]
+          );
+        } else {
+          throw updateErr;
+        }
+      }
     }
   } catch (err: any) {
     console.warn("Could not sync user to Appwrite directly (cached state preserved):", err?.message || err);

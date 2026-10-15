@@ -42,6 +42,7 @@ import {
 import {
   coinStore,
   getAuthoritativeUser,
+  saveAuthoritativeUser,
   getPublicUserProfile,
   syncAdminSettingsWithDatabase,
   globalAdminSettings,
@@ -73,14 +74,30 @@ app.use((req, res, next) => {
 });
 
 app.use((req, _res, next) => {
-  if (req.body !== undefined && req.body !== null) {
-    (req as any)._body = true;
-    if (typeof req.body === "string" && req.body.trim().startsWith("{")) {
+  try {
+    const method = String(req.method || "GET").toUpperCase();
+    if (method !== "GET" && method !== "HEAD" && req.body !== undefined && req.body !== null) {
+      (req as any)._body = true;
+      let parsedBody = req.body;
+      if (Buffer.isBuffer(parsedBody)) {
+        parsedBody = parsedBody.toString("utf-8");
+      }
+      if (typeof parsedBody === "string" && parsedBody.trim().startsWith("{")) {
+        try {
+          parsedBody = JSON.parse(parsedBody);
+        } catch (_) {}
+      }
       try {
-        req.body = JSON.parse(req.body);
-      } catch (_) {}
+        req.body = parsedBody;
+      } catch (_) {
+        Object.defineProperty(req, "body", {
+          value: parsedBody,
+          writable: true,
+          configurable: true,
+        });
+      }
     }
-  }
+  } catch (_) {}
   next();
 });
 
@@ -259,10 +276,13 @@ function sendError(res: express.Response, status: number, err: any, fallback = "
 
       const stats = await getAuthoritativeUser(user.userId, undefined, displayName);
       if (isOwner) {
-        if (stats.cash < 100000) stats.cash = 100000;
-        if (stats.gems < 5000) stats.gems = 5000;
+        const nextCash = Math.max(stats.cash || 0, 100000);
+        const nextGems = Math.max(stats.gems || 0, 5000);
+        stats.cash = nextCash;
+        stats.gems = nextGems;
         stats.title = "Founder & Owner";
         stats.isPremium = true;
+        await saveAuthoritativeUser(user.userId, { cash: nextCash, gems: nextGems, title: "Founder & Owner" });
       }
 
       res.json({
@@ -302,10 +322,13 @@ function sendError(res: express.Response, status: number, err: any, fallback = "
 
       const stats = await getAuthoritativeUser(user.userId, undefined, cleanUsername);
       if (isOwner) {
-        if (stats.cash < 100000) stats.cash = 100000;
-        if (stats.gems < 5000) stats.gems = 5000;
+        const nextCash = Math.max(stats.cash || 0, 100000);
+        const nextGems = Math.max(stats.gems || 0, 5000);
+        stats.cash = nextCash;
+        stats.gems = nextGems;
         stats.title = "Founder & Owner";
         stats.isPremium = true;
+        await saveAuthoritativeUser(user.userId, { cash: nextCash, gems: nextGems, title: "Founder & Owner" });
       }
 
       res.json({
@@ -350,10 +373,13 @@ function sendError(res: express.Response, status: number, err: any, fallback = "
 
       const stats = await getAuthoritativeUser(user.userId, undefined, displayName);
       if (isOwner) {
-        if (stats.cash < 100000) stats.cash = 100000;
-        if (stats.gems < 5000) stats.gems = 5000;
+        const nextCash = Math.max(stats.cash || 0, 100000);
+        const nextGems = Math.max(stats.gems || 0, 5000);
+        stats.cash = nextCash;
+        stats.gems = nextGems;
         stats.title = "Founder & Owner";
         stats.isPremium = true;
+        await saveAuthoritativeUser(user.userId, { cash: nextCash, gems: nextGems, title: "Founder & Owner" });
       }
 
       res.json({
@@ -413,10 +439,13 @@ function sendError(res: express.Response, status: number, err: any, fallback = "
 
       const stats = await getAuthoritativeUser(user.userId, undefined, displayName);
       if (isOwner) {
-        if (stats.cash < 100000) stats.cash = 100000;
-        if (stats.gems < 5000) stats.gems = 5000;
+        const nextCash = Math.max(stats.cash || 0, 100000);
+        const nextGems = Math.max(stats.gems || 0, 5000);
+        stats.cash = nextCash;
+        stats.gems = nextGems;
         stats.title = "Founder & Owner";
         stats.isPremium = true;
+        await saveAuthoritativeUser(user.userId, { cash: nextCash, gems: nextGems, title: "Founder & Owner" });
       }
 
       res.json({
@@ -954,19 +983,28 @@ function sendError(res: express.Response, status: number, err: any, fallback = "
     try {
       const user = (req as any).user;
       const { title, message, type } = req.body || {};
+      const notifId = "notif_" + Date.now().toString(36) + Math.random().toString(36).substring(2, 6);
       const notif = {
-        id: "notif_" + Date.now().toString(36) + Math.random().toString(36).substring(2, 6),
-        userId: user?.userId || "all",
-        title: title || "Notification",
-        message: message || "",
-        type: type || "info",
+        $id: notifId,
+        id: notifId,
+        userId: String(user?.userId || "all").slice(0, 64),
+        title: String(title || "Notification").slice(0, 128),
+        message: String(message || "").slice(0, 1000),
+        type: String(type || "info").slice(0, 32),
         timestamp: new Date().toISOString(),
         read: false,
       };
       recordNotification(notif);
       try {
         const db = getDatabases();
-        await db.createDocument("pumpforge", "notifications", notif.id, notif);
+        await db.createDocument("pumpforge", "notifications", notifId, {
+          userId: notif.userId,
+          title: notif.title,
+          message: notif.message,
+          type: notif.type,
+          timestamp: notif.timestamp,
+          read: false,
+        });
       } catch (_) {}
       res.json({ success: true, notification: notif });
     } catch (err: any) {

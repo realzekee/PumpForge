@@ -5,7 +5,7 @@ import {
   ID as NodeID,
   Permission as NodePermission,
   Role as NodeRole,
-} from "node-appwrite";
+} from "./appwriteServer";
 import { AuthenticatedUser } from "./types";
 import { getAuthoritativeUser, saveAuthoritativeUser, globalAdminSettings, UserStateCache } from "./db";
 import { withUserLock } from "./locks";

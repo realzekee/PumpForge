@@ -65,6 +65,7 @@ import {
 import { account, databases, client } from "./appwrite";
 import { ID, Permission, Role } from "appwrite";
 import { useQueryClient } from "@tanstack/react-query";
+import { useAppContext } from "./context/AppContext";
 import {
   apiGetCoins,
   apiGetCoin,
@@ -85,6 +86,7 @@ import {
   apiGetTrades,
   apiGetPolymarkets,
   apiGetHoldings,
+  apiGetNotifications,
   clearAuthJwt,
   getCustomAuthToken,
   setCustomAuthToken,
@@ -347,6 +349,14 @@ function CoinRouteWrapper({
 export default function App() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const {
+    setCurrentUser: setContextCurrentUser,
+    setUserStats: setContextUserStats,
+    setCash: setContextCash,
+    setGems: setContextGems,
+    setPrestigeLevel: setContextPrestigeLevel,
+    setUserId: setContextUserId,
+  } = useAppContext();
   const [selectedCoinIdForMarket, setSelectedCoinIdForMarket] = useState<
     string | null
   >(null);
@@ -1096,27 +1106,18 @@ export default function App() {
           }
         }
       } catch (err: any) {
-        console.log(
-          "No Appwrite session found or failed to fetch session:",
-          err,
-        );
-
-        // Exclude generic 401 unauthenticated signals to avoid popping up alerts on regular guest players,
-        // but alert all other unexpected system/network/database errors or oauth failures.
-        const isNormalUnauthenticated =
-          err?.code === 401 ||
-          err?.message?.includes("unauthorized") ||
-          String(err).includes("401") ||
-          err?.message?.includes("No active session found");
-        if (!isNormalUnauthenticated) {
-          triggerToast("Diagnostic Error", formatErrorMessage(err, "Authentication check failed."), true);
-        }
-
-        // Clean up session caches on standard session failures
-        safeStorage.removeItem("cached_appwrite_user");
-        safeStorage.removeItem("cached_appwrite_stats");
-
-        if (active) {
+        const cachedUserStr = safeStorage.getItem("cached_appwrite_user");
+        const cachedStatsStr = safeStorage.getItem("cached_appwrite_stats");
+        if (cachedUserStr && active) {
+          try {
+            const parsedUser = JSON.parse(cachedUserStr);
+            setCurrentUser(parsedUser);
+            if (cachedStatsStr) {
+              setUserStats(JSON.parse(cachedStatsStr));
+              setIsStatsLoaded(true);
+            }
+          } catch {}
+        } else if (active) {
           setCurrentUser(null);
           setIsStatsLoaded(false);
           setUserStats({
@@ -1154,14 +1155,30 @@ export default function App() {
     };
   }, []);
 
-  // Keep stats storage cache up-to-date with current state modifications
+  // Keep AppContext and localStorage in sync with App.tsx currentUser & userStats
   useEffect(() => {
+    setContextCurrentUser(currentUser);
+    const uid = currentUser?.$id || currentUser?.uid || currentUser?.userId || null;
+    setContextUserId(uid);
+  }, [currentUser, setContextCurrentUser, setContextUserId]);
+
+  useEffect(() => {
+    if (userStats) {
+      setContextUserStats(userStats);
+      if (userStats.cash !== undefined) setContextCash(Number(userStats.cash));
+      if (userStats.gems !== undefined) setContextGems(Number(userStats.gems));
+      if (userStats.prestigeLevel !== undefined) setContextPrestigeLevel(Number(userStats.prestigeLevel));
+    }
     if (!currentUser || !isStatsLoaded) return;
     safeStorage.setItem("cached_appwrite_stats", JSON.stringify(userStats));
   }, [
     userStats,
     currentUser,
     isStatsLoaded,
+    setContextUserStats,
+    setContextCash,
+    setContextGems,
+    setContextPrestigeLevel,
   ]);
 
   // Authentication Callbacks
@@ -1258,7 +1275,8 @@ export default function App() {
 
         let appwriteCoins: MemeCoin[] = [];
         try {
-          const srvCoins = await apiGetCoins();
+          const srvRes = await apiGetCoins();
+          const srvCoins = Array.isArray(srvRes) ? srvRes : srvRes?.coins;
           if (Array.isArray(srvCoins) && srvCoins.length > 0) {
             appwriteCoins = srvCoins.filter((d: any) => !deletedIds.includes(d.id) && !deletedIds.includes(d.coinId));
           }
@@ -1444,7 +1462,7 @@ export default function App() {
             const resolvedAt = d.resolvedAt || (d.status === "closed" ? d.$updatedAt : undefined);
 
             return {
-              id: d.$id,
+              id: d.$id || d.id,
               question,
               description,
               yesPool,
@@ -1561,7 +1579,6 @@ export default function App() {
           try {
             const { Query } = await import("appwrite");
             const res = await databases.listDocuments("pumpforge", "trades", [
-              Query.equal("isSimulated", false),
               Query.orderDesc("$createdAt"),
               Query.limit(15)
             ]);
@@ -1783,6 +1800,25 @@ export default function App() {
       };
 
       fetchUserWagers();
+      apiGetNotifications(uid)
+        .then((res) => {
+          if (res && Array.isArray(res.notifications) && res.notifications.length > 0) {
+            setNotifications((prev) => {
+              const existingIds = new Set(prev.map((n) => n.id));
+              const mapped = res.notifications
+                .map((n: any) => ({
+                  id: n.id || n.$id || `notif_${Math.random()}`,
+                  title: n.title || "Notification",
+                  message: n.message || "",
+                  timestamp: n.timestamp ? new Date(n.timestamp).toLocaleTimeString() : "Recent",
+                  type: (n.type || "info") as any,
+                }))
+                .filter((n: any) => !existingIds.has(n.id));
+              return [...mapped, ...prev];
+            });
+          }
+        })
+        .catch(() => {});
     }
     return () => {
       unsub();
@@ -1892,13 +1928,15 @@ export default function App() {
       if (res.userStats) {
         setUserStats((prev) => ({
           ...prev,
-          cash: res.userStats.cash,
-          lastClaimed: res.userStats.lastClaimed,
-          prestigeLevel: res.userStats.prestigeLevel,
+          cash: res.userStats.cash ?? prev.cash,
+          gems: res.userStats.gems ?? prev.gems,
+          lastClaimed: res.userStats.lastClaimed || res.userStats.lastDailyRewardClaim,
+          lastDailyRewardClaim: res.userStats.lastDailyRewardClaim || res.userStats.lastClaimed,
+          prestigeLevel: res.userStats.prestigeLevel ?? prev.prestigeLevel,
         }));
       }
 
-      const nextClaim = res.userStats?.lastClaimed || new Date().toISOString();
+      const nextClaim = res.userStats?.lastDailyRewardClaim || res.userStats?.lastClaimed || new Date().toISOString();
       localStorage.setItem("pf_last_claimed", nextClaim);
 
       toast.success(`Claimed $${(res.rewardCash || 1500).toLocaleString()} daily reward!`);
@@ -3024,7 +3062,7 @@ export default function App() {
                 );
               }
 
-              return <PolymarketAdminTab />;
+              return <PolymarketAdminTab markets={markets} setMarkets={setMarkets} />;
             })()}
           />
 

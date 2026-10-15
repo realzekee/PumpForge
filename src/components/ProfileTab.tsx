@@ -49,7 +49,7 @@ export default function ProfileTab({
   onOpenPrestigeModal,
 }: ProfileProps) {
   const { adminSettings } = useAppContext();
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [wins, setWins] = useState(72.14);
   const [losses, setLosses] = useState(40.0);
 

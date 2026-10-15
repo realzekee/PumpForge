@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { account, databases, client } from "../appwrite";
-import { Permission, Role } from "appwrite";
 import { apiGetSettings, apiGetMe, getCustomAuthToken } from "../api/gameClient";
 
 export type ArcadeRigMode = "fair" | "win" | "lose";
@@ -14,7 +13,9 @@ interface AdminSettings {
 
 interface AppContextType {
   currentUser: any;
+  setCurrentUser: React.Dispatch<React.SetStateAction<any>>;
   userStats: any;
+  setUserStats: React.Dispatch<React.SetStateAction<any>>;
   cash: number;
   setCash: React.Dispatch<React.SetStateAction<number>>;
   gems: number;
@@ -22,19 +23,60 @@ interface AppContextType {
   prestigeLevel: number;
   setPrestigeLevel: React.Dispatch<React.SetStateAction<number>>;
   userId: string | null;
+  setUserId: React.Dispatch<React.SetStateAction<string | null>>;
   adminSettings: AdminSettings;
   setAdminSettings: React.Dispatch<React.SetStateAction<AdminSettings>>;
 }
 
+const DEFAULT_GUEST_STATS = {
+  username: "Guest Player",
+  handle: "@guest_degen",
+  title: "Member",
+  isPremium: false,
+  nameColor: "text-zinc-400 font-extrabold",
+  cash: 5000.0,
+  gems: 90,
+  prestigeLevel: 0,
+  totalProfit: 0,
+  coinsCreatedCount: 0,
+  tradesCount: 0,
+  lastDailyRewardClaim: null,
+  email: "",
+  createdAt: "2026-05-24T06:40:00Z",
+};
+
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [currentUser, setCurrentUser] = useState<any>(null);
-  const [userStats, setUserStats] = useState<any>(null);
-  const [cash, setCash] = useState(5000);
-  const [gems, setGems] = useState(90);
-  const [prestigeLevel, setPrestigeLevel] = useState(0);
-  const [userId, setUserId] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<any>(() => {
+    try {
+      const cached = localStorage.getItem("cached_appwrite_user");
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [userStats, setUserStats] = useState<any>(() => {
+    try {
+      const cachedStats = localStorage.getItem("cached_appwrite_stats");
+      if (cachedStats) {
+        const parsed = JSON.parse(cachedStats);
+        if (parsed && typeof parsed === "object" && Object.keys(parsed).length > 0) {
+          return parsed;
+        }
+      }
+    } catch {}
+    return { ...DEFAULT_GUEST_STATS };
+  });
+
+  const [cash, setCash] = useState<number>(() => Number(userStats?.cash ?? 5000));
+  const [gems, setGems] = useState<number>(() => Number(userStats?.gems ?? 90));
+  const [prestigeLevel, setPrestigeLevel] = useState<number>(() => Number(userStats?.prestigeLevel ?? 0));
+  const [userId, setUserId] = useState<string | null>(() => {
+    return currentUser?.$id || currentUser?.uid || currentUser?.userId || null;
+  });
+
   const getSavedRigMode = (): ArcadeRigMode => {
     try {
       const saved = localStorage.getItem("pf_arcade_rig_mode");
@@ -64,7 +106,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             customAdminBadge: settings.customAdminBadge ?? "Operator"
           });
         } catch (setErr) {
-          console.log("Admin settings defaulted:", (setErr as any)?.message || setErr);
           setAdminSettings({
             isCasinoRigged: false,
             arcadeRigMode: getSavedRigMode(),
@@ -81,6 +122,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             if (meRes?.user && !meRes.user.isGuest) {
               const u = {
                 $id: meRes.user.userId,
+                uid: meRes.user.userId,
                 email: meRes.user.email,
                 name: meRes.user.name,
               };
@@ -110,7 +152,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 setCash(doc.cash ?? 5000);
                 setGems(doc.gems ?? 90);
                 setPrestigeLevel(doc.prestigeLevel ?? 0);
-                
+
                 const lastC = doc.lastClaimed || doc.lastDailyRewardClaim;
                 if (lastC) {
                   localStorage.setItem("pf_last_claimed", lastC);
@@ -127,32 +169,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           }
         }
       } catch (e: any) {
-        console.warn("Appwrite init error in context:", e);
-
-        // Firefox ETP fallback hydration
         const isSessionValid = localStorage.getItem("pf_session_valid");
         const fallbackId = localStorage.getItem("pf_fallback_userId");
         if (isSessionValid === "true" && fallbackId) {
-          console.log("Hydrating user state from Firefox ETP fallback");
           try {
-            const doc = await databases.getDocument(
-              "pumpforge",
-              "users",
-              fallbackId,
-            );
+            const doc = await databases.getDocument("pumpforge", "users", fallbackId);
             setUserStats(doc);
             setCash(doc.cash ?? 5000);
             setGems(doc.gems ?? 90);
             setPrestigeLevel(doc.prestigeLevel ?? 0);
             setUserId(fallbackId);
-            // Reconstruct minimal user to keep the app working
             setCurrentUser({
               $id: fallbackId,
+              uid: fallbackId,
               email: doc.email || "",
               name: doc.username || "Player",
             });
-          } catch (fallbackErr) {
-            console.error("ETP hydration also failed:", fallbackErr);
+          } catch {
             localStorage.removeItem("pf_session_valid");
             localStorage.removeItem("pf_fallback_userId");
           }
@@ -176,7 +209,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             setCash(updatedDoc.cash);
             setGems(updatedDoc.gems);
             setPrestigeLevel(updatedDoc.prestigeLevel);
-            setUserStats(updatedDoc);
+            setUserStats((prev: any) => ({ ...(prev || {}), ...updatedDoc }));
           }
         }
       },
@@ -188,7 +221,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     <AppContext.Provider
       value={{
         currentUser,
+        setCurrentUser,
         userStats,
+        setUserStats,
         cash,
         setCash,
         gems,
@@ -196,6 +231,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         prestigeLevel,
         setPrestigeLevel,
         userId,
+        setUserId,
         adminSettings,
         setAdminSettings,
       }}
@@ -212,4 +248,3 @@ export function useAppContext() {
   }
   return context;
 }
-

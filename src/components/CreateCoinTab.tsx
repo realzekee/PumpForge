@@ -57,7 +57,25 @@ export default function CreateCoinTab({ setCoins, coins }: CreateCoinProps) {
     setErrorMsg(null);
     if (isLaunching) return;
 
-    if (!currentUser) {
+    const activeUser = currentUser || (() => {
+      try {
+        const cached = localStorage.getItem("cached_appwrite_user");
+        return cached ? JSON.parse(cached) : null;
+      } catch {
+        return null;
+      }
+    })();
+
+    const activeStats = userStats || (() => {
+      try {
+        const cached = localStorage.getItem("cached_appwrite_stats");
+        return cached ? JSON.parse(cached) : null;
+      } catch {
+        return null;
+      }
+    })();
+
+    if (!activeUser && !localStorage.getItem("pf_custom_token")) {
       setErrorMsg("User not signed in");
       return;
     }
@@ -66,18 +84,21 @@ export default function CreateCoinTab({ setCoins, coins }: CreateCoinProps) {
       setErrorMsg("Please enter a catchy coin name!");
       return;
     }
-    if (!symbol.trim()) {
-      setErrorMsg("Please choose a 3-4 letter ticker symbol (e.g. DOGE).");
+    if (!symbol.trim() || symbol.trim().length < 2) {
+      setErrorMsg("Please choose a 2-6 letter ticker symbol (e.g. DOGE).");
       return;
     }
-    if (!desc.trim()) {
+    if (!desc.trim() || desc.trim().length < 5) {
       setErrorMsg(
-        "Please write a short pitch description to attract other traders!",
+        "Please write a short pitch description (at least 5 characters) to attract other traders!",
       );
       return;
     }
 
-    const userOwnCoins = coins.filter((c) => c.creator === userStats.handle);
+    const userHandle = activeStats?.handle || "@player";
+    const userCash = Number(activeStats?.cash ?? cash ?? 5000);
+
+    const userOwnCoins = (coins || []).filter((c) => c.creator === userHandle);
     if (userOwnCoins.length >= 10) {
       setErrorMsg(
         `❌ 10-COIN LIMIT: You already have 10 active coins. Delete one before launching another!`,
@@ -85,7 +106,7 @@ export default function CreateCoinTab({ setCoins, coins }: CreateCoinProps) {
       return;
     }
 
-    if (userStats.cash < 1100) {
+    if (userCash < 1100) {
       setErrorMsg(
         "Insufficient funds. Launch costs require $1,100 ($100 list fee + $1,000 initial liquidity).",
       );
@@ -200,10 +221,10 @@ export default function CreateCoinTab({ setCoins, coins }: CreateCoinProps) {
                 </label>
                 <input
                   type="text"
-                  maxLength={4}
+                  maxLength={6}
                   placeholder="e.g. MEW"
                   value={symbol}
-                  onChange={(e) => setSymbol(e.target.value.slice(0, 4))}
+                  onChange={(e) => setSymbol(e.target.value.slice(0, 6))}
                   className="glass-input rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-rose-500 font-bold uppercase"
                 />
               </div>

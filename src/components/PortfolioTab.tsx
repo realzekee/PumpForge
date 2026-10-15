@@ -45,7 +45,7 @@ export default function PortfolioTab({
   onSendMoney,
   registeredUsers = [],
 }: PortfolioProps) {
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [showSendModal, setShowSendModal] = useState(false);
   const [sendHandle, setSendHandle] = useState("");
   const [sendType, setSendType] = useState("cash"); // 'cash' or a coin ID

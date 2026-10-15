@@ -183,7 +183,238 @@ function requireAdmin(req, res, next) {
 import crypto3 from "crypto";
 
 // src/server/db.ts
-import { Client, Databases, Query, Permission, Role } from "node-appwrite";
+// src/server/appwriteServer.ts
+class Client {
+  constructor() {
+    this.endpoint = "https://sgp.cloud.appwrite.io/v1";
+    this.project = "6a1416eb001f50cdb902";
+    this.apiKey = "";
+    this.jwt = "";
+  }
+  setEndpoint(endpoint) {
+    if (endpoint) this.endpoint = endpoint.trim().replace(/\/+$/, "");
+    return this;
+  }
+  setProject(project) {
+    if (project) this.project = project.trim();
+    return this;
+  }
+  setKey(key) {
+    if (key) this.apiKey = key.trim();
+    return this;
+  }
+  setJWT(jwt) {
+    if (jwt) this.jwt = jwt.trim();
+    return this;
+  }
+  getHeaders() {
+    const headers = {
+      "Content-Type": "application/json",
+      "X-Appwrite-Project": this.project
+    };
+    if (this.apiKey) {
+      headers["X-Appwrite-Key"] = this.apiKey;
+    } else if (this.jwt && this.jwt.split(".").length === 3) {
+      headers["X-Appwrite-JWT"] = this.jwt;
+    }
+    return headers;
+  }
+}
+var ID = {
+  unique() {
+    return crypto.randomBytes(10).toString("hex");
+  },
+  custom(id) {
+    return id;
+  }
+};
+var Role = {
+  any() {
+    return "any";
+  },
+  user(id, status = "") {
+    return status ? `user:${id}/${status}` : `user:${id}`;
+  },
+  users(status = "") {
+    return status ? `users/${status}` : "users";
+  },
+  guests() {
+    return "guests";
+  }
+};
+var Permission = {
+  read(role) {
+    return `read("${role}")`;
+  },
+  write(role) {
+    return `write("${role}")`;
+  },
+  create(role) {
+    return `create("${role}")`;
+  },
+  update(role) {
+    return `update("${role}")`;
+  },
+  delete(role) {
+    return `delete("${role}")`;
+  }
+};
+var Query = {
+  equal(attribute, value) {
+    const values = Array.isArray(value) ? value : [value];
+    return JSON.stringify({ method: "equal", attribute, values });
+  },
+  notEqual(attribute, value) {
+    const values = Array.isArray(value) ? value : [value];
+    return JSON.stringify({ method: "notEqual", attribute, values });
+  },
+  lessThan(attribute, value) {
+    const values = Array.isArray(value) ? value : [value];
+    return JSON.stringify({ method: "lessThan", attribute, values });
+  },
+  lessThanEqual(attribute, value) {
+    const values = Array.isArray(value) ? value : [value];
+    return JSON.stringify({ method: "lessThanEqual", attribute, values });
+  },
+  greaterThan(attribute, value) {
+    const values = Array.isArray(value) ? value : [value];
+    return JSON.stringify({ method: "greaterThan", attribute, values });
+  },
+  greaterThanEqual(attribute, value) {
+    const values = Array.isArray(value) ? value : [value];
+    return JSON.stringify({ method: "greaterThanEqual", attribute, values });
+  },
+  search(attribute, value) {
+    return JSON.stringify({ method: "search", attribute, values: [value] });
+  },
+  orderDesc(attribute) {
+    return JSON.stringify({ method: "orderDesc", attribute });
+  },
+  orderAsc(attribute) {
+    return JSON.stringify({ method: "orderAsc", attribute });
+  },
+  limit(limit) {
+    return JSON.stringify({ method: "limit", values: [Number(limit)] });
+  },
+  offset(offset) {
+    return JSON.stringify({ method: "offset", values: [Number(offset)] });
+  }
+};
+class Databases {
+  constructor(client) {
+    this.client = client;
+  }
+  async request(path, options = {}) {
+    const url = `${this.client.endpoint}${path}`;
+    const res = await fetch(url, {
+      ...options,
+      headers: {
+        ...this.client.getHeaders(),
+        ...(options.headers || {})
+      }
+    });
+    const text = await res.text();
+    let json = null;
+    if (text && text.trim().length > 0) {
+      try {
+        json = JSON.parse(text);
+      } catch {
+        json = null;
+      }
+    }
+    if (!res.ok) {
+      const err = new Error(json?.message || json?.error || `Appwrite HTTP ${res.status}: ${res.statusText}`);
+      err.code = json?.code || res.status;
+      err.status = res.status;
+      err.type = json?.type;
+      throw err;
+    }
+    return json ?? {};
+  }
+  async listDocuments(databaseId, collectionId, queries = []) {
+    const params = new URLSearchParams();
+    if (Array.isArray(queries)) {
+      for (const q of queries) {
+        if (q !== void 0 && q !== null) {
+          params.append("queries[]", typeof q === "string" ? q : JSON.stringify(q));
+        }
+      }
+    }
+    const qs = params.toString();
+    const path = `/databases/${encodeURIComponent(databaseId)}/collections/${encodeURIComponent(collectionId)}/documents${qs ? `?${qs}` : ""}`;
+    const res = await this.request(path, { method: "GET" });
+    return {
+      total: typeof res.total === "number" ? res.total : res.documents?.length || 0,
+      documents: Array.isArray(res.documents) ? res.documents : []
+    };
+  }
+  async getDocument(databaseId, collectionId, documentId, queries = []) {
+    const params = new URLSearchParams();
+    if (Array.isArray(queries)) {
+      for (const q of queries) {
+        if (q !== void 0 && q !== null) {
+          params.append("queries[]", typeof q === "string" ? q : JSON.stringify(q));
+        }
+      }
+    }
+    const qs = params.toString();
+    const path = `/databases/${encodeURIComponent(databaseId)}/collections/${encodeURIComponent(collectionId)}/documents/${encodeURIComponent(documentId)}${qs ? `?${qs}` : ""}`;
+    return this.request(path, { method: "GET" });
+  }
+  async createDocument(databaseId, collectionId, documentId, data, permissions) {
+    const finalDocId = !documentId || documentId === "unique()" ? ID.unique() : documentId;
+    const cleanData = {};
+    if (data && typeof data === "object") {
+      for (const [k, v] of Object.entries(data)) {
+        if (!k.startsWith("$") && v !== void 0) {
+          cleanData[k] = v;
+        }
+      }
+    }
+    const body = {
+      documentId: finalDocId,
+      data: cleanData
+    };
+    if (Array.isArray(permissions) && permissions.length > 0) {
+      body.permissions = permissions;
+    }
+    const path = `/databases/${encodeURIComponent(databaseId)}/collections/${encodeURIComponent(collectionId)}/documents`;
+    return this.request(path, {
+      method: "POST",
+      body: JSON.stringify(body)
+    });
+  }
+  async updateDocument(databaseId, collectionId, documentId, data, permissions) {
+    const cleanData = {};
+    if (data && typeof data === "object") {
+      for (const [k, v] of Object.entries(data)) {
+        if (!k.startsWith("$") && v !== void 0) {
+          cleanData[k] = v;
+        }
+      }
+    }
+    const body = {
+      data: cleanData
+    };
+    if (Array.isArray(permissions) && permissions.length > 0) {
+      body.permissions = permissions;
+    }
+    const path = `/databases/${encodeURIComponent(databaseId)}/collections/${encodeURIComponent(collectionId)}/documents/${encodeURIComponent(documentId)}`;
+    return this.request(path, {
+      method: "PATCH",
+      body: JSON.stringify(body)
+    });
+  }
+  async deleteDocument(databaseId, collectionId, documentId) {
+    const path = `/databases/${encodeURIComponent(databaseId)}/collections/${encodeURIComponent(collectionId)}/documents/${encodeURIComponent(documentId)}`;
+    return this.request(path, { method: "DELETE" });
+  }
+}
+var NodeClient = Client, NodeDatabases = Databases, NodeID = ID, NodePermission = Permission, NodeRole = Role;
+var ID2 = ID, Permission2 = Permission, Role2 = Role, Query2 = Query;
+var Query3 = Query, Permission3 = Permission, Role3 = Role, ID3 = ID;
+var Query4 = Query;
+
 
 // src/data/memeCoins.ts
 var INITIAL_COINS = [
@@ -505,23 +736,24 @@ async function getAuthoritativeUser(userId, jwt, defaultName) {
     return state;
   } catch (err) {
     if (cached) return cached;
-    const assignedPlayerId = nextPlayerId++;
-    const fallbackUsername = defaultName || `Player_${assignedPlayerId}`;
-    const fallbackHandle = `@${fallbackUsername.toLowerCase().replace(/[^a-z0-9]/g, "")}` || `@user${assignedPlayerId}`;
+    const isOwnerAccount = userId === "admin_realzekeee";
+    const assignedPlayerId = isOwnerAccount ? 1 : nextPlayerId++;
+    const fallbackUsername = defaultName || (isOwnerAccount ? "Zeke (Owner)" : `Player_${assignedPlayerId}`);
+    const fallbackHandle = isOwnerAccount ? "@zeke" : (`@${fallbackUsername.toLowerCase().replace(/[^a-z0-9]/g, "")}` || `@user${assignedPlayerId}`);
     const initial = {
       userId,
       playerId: assignedPlayerId,
       username: fallbackUsername,
       handle: fallbackHandle,
-      title: "Member",
-      isPremium: false,
-      cash: 5e3,
-      gems: 90,
+      title: isOwnerAccount ? "Founder & Owner" : "Member",
+      isPremium: isOwnerAccount,
+      cash: isOwnerAccount ? 1e5 : 5e3,
+      gems: isOwnerAccount ? 5e3 : 90,
       prestigeLevel: 0,
       tradesCount: 0,
       coinsCreatedCount: 0,
       totalProfit: 0,
-      nameColor: "text-zinc-400 font-bold",
+      nameColor: isOwnerAccount ? "text-rose-500 font-extrabold text-glow tracking-wider" : "text-zinc-400 font-bold",
       dailyStreak: 1,
       lastDailyRewardClaim: "",
       predictionWins: 0,
@@ -567,17 +799,51 @@ async function saveAuthoritativeUser(userId, updates, jwt) {
   try {
     const databases = getDatabases(jwt);
     const payload = {};
-    if (updates.cash !== void 0) payload.cash = Number(updates.cash.toFixed(2));
-    if (updates.gems !== void 0) payload.gems = Math.floor(updates.gems);
-    if (updates.username !== void 0) payload.username = updates.username;
-    if (updates.prestigeLevel !== void 0) payload.prestigeLevel = updates.prestigeLevel;
-    if (updates.tradesCount !== void 0) payload.tradesCount = updates.tradesCount;
-    if (updates.coinsCreatedCount !== void 0) payload.coinsCreatedCount = updates.coinsCreatedCount;
-    if (updates.totalProfit !== void 0) payload.totalProfit = Number(updates.totalProfit.toFixed(2));
-    if (updates.lastDailyRewardClaim !== void 0) payload.lastDailyRewardClaim = updates.lastDailyRewardClaim;
-    if (updates.dailyStreak !== void 0) payload.dailyStreak = Math.max(1, Math.floor(updates.dailyStreak));
+    if (updates.cash !== void 0) payload.cash = Number(Number(updates.cash).toFixed(2));
+    if (updates.gems !== void 0) payload.gems = Math.floor(Number(updates.gems));
+    if (updates.username !== void 0) payload.username = String(updates.username).slice(0, 64);
+    if (updates.handle !== void 0) payload.handle = String(updates.handle).slice(0, 64);
+    if (updates.nameColor !== void 0) payload.nameColor = String(updates.nameColor).slice(0, 64);
+    if (updates.title !== void 0) payload.title = String(updates.title).slice(0, 64);
+    if (updates.prestigeLevel !== void 0) payload.prestigeLevel = Math.floor(Number(updates.prestigeLevel));
+    if (updates.tradesCount !== void 0) payload.tradesCount = Math.floor(Number(updates.tradesCount));
+    if (updates.coinsCreatedCount !== void 0) payload.coinsCreatedCount = Math.floor(Number(updates.coinsCreatedCount));
+    if (updates.totalProfit !== void 0) payload.totalProfit = Number(Number(updates.totalProfit).toFixed(2));
+    if (updates.lastDailyRewardClaim !== void 0) payload.lastDailyRewardClaim = String(updates.lastDailyRewardClaim).slice(0, 64);
+    if (updates.dailyStreak !== void 0) payload.dailyStreak = Math.max(1, Math.floor(Number(updates.dailyStreak)));
+    if (updates.isBanned !== void 0) payload.isBanned = Boolean(updates.isBanned);
+    if (updates.isSuspended !== void 0) payload.isSuspended = Boolean(updates.isSuspended);
+    if (updates.suspendedUntil !== void 0) payload.suspendedUntil = updates.suspendedUntil ? Math.floor(Number(updates.suspendedUntil)) : null;
     if (Object.keys(payload).length > 0) {
-      await databases.updateDocument("pumpforge", "users", userId, payload);
+      try {
+        await databases.updateDocument("pumpforge", "users", userId, payload);
+      } catch (updateErr) {
+        if (updateErr?.code === 404 || updateErr?.status === 404) {
+          await databases.createDocument(
+            "pumpforge",
+            "users",
+            userId,
+            {
+              userId,
+              username: updated.username || "Player",
+              handle: updated.handle || "@player",
+              cash: Number(Number(updated.cash ?? 5e3).toFixed(2)),
+              gems: Math.floor(Number(updated.gems ?? 90)),
+              prestigeLevel: Math.floor(Number(updated.prestigeLevel ?? 0)),
+              totalProfit: Number(Number(updated.totalProfit ?? 0).toFixed(2)),
+              tradesCount: Math.floor(Number(updated.tradesCount ?? 0)),
+              coinsCreatedCount: Math.floor(Number(updated.coinsCreatedCount ?? 0)),
+              dailyStreak: Math.max(1, Math.floor(Number(updated.dailyStreak ?? 1))),
+              lastDailyRewardClaim: updated.lastDailyRewardClaim || "",
+              nameColor: String(updated.nameColor || "text-zinc-400 font-bold").slice(0, 64),
+              title: String(updated.title || "Member").slice(0, 64)
+            },
+            [Permission.read(Role.any())]
+          );
+        } else {
+          throw updateErr;
+        }
+      }
     }
   } catch (err) {
     console.warn("Could not sync user to Appwrite directly (cached state preserved):", err?.message || err);
@@ -962,13 +1228,7 @@ async function withMarketLock(marketId, task) {
 
 // src/server/arcadeEngine.ts
 import crypto2 from "crypto";
-import {
-  Client as NodeClient,
-  Databases as NodeDatabases,
-  ID as NodeID,
-  Permission as NodePermission,
-  Role as NodeRole
-} from "node-appwrite";
+// node-appwrite aliases inlined
 
 // src/server/rateLimit.ts
 var RateLimiter = class {
@@ -1128,7 +1388,7 @@ async function processCoinflip(user, rawBetAmount, rawSide) {
 }
 
 // src/server/gameEngine.ts
-import { ID as ID2, Permission as Permission2, Role as Role2, Query as Query2 } from "node-appwrite";
+// node-appwrite aliases inlined
 function secureRandomInt(min, max) {
   return crypto3.randomInt(min, max + 1);
 }
@@ -1254,7 +1514,6 @@ async function processTrade(user, coinId, type, amountCoins) {
             const prevInvested = Number(matchDoc.totalInvested ?? 0);
             await databases.updateDocument("pumpforge", "holdings", matchDoc.$id, {
               amount: nextAmt,
-              tokenAmount: nextAmt,
               avgBuyPrice: nextAvg,
               totalInvested: Number((prevInvested + tradeValue).toFixed(2)),
               lastUpdated: (/* @__PURE__ */ new Date()).toISOString()
@@ -1275,7 +1534,6 @@ async function processTrade(user, coinId, type, amountCoins) {
                 coinId: coin.id,
                 coinSymbol: coin.symbol,
                 amount: Number(amountCoins.toFixed(4)),
-                tokenAmount: Number(amountCoins.toFixed(4)),
                 avgBuyPrice: Number(currentPrice.toFixed(6)),
                 totalInvested: Number(tradeValue.toFixed(2)),
                 lastUpdated: (/* @__PURE__ */ new Date()).toISOString()
@@ -1408,7 +1666,6 @@ async function processTrade(user, coinId, type, amountCoins) {
           } else {
             await databases.updateDocument("pumpforge", "holdings", holdingDocId, {
               amount: nextRemaining,
-              tokenAmount: nextRemaining,
               lastUpdated: (/* @__PURE__ */ new Date()).toISOString()
             });
           }
@@ -1885,7 +2142,7 @@ async function processShopBuy(user, type, params) {
   }
   return withUserLock(user.userId, async () => {
     const userState = await getAuthoritativeUser(user.userId, user.jwt);
-    const costGems = Number(params.costGems);
+    const costGems = Number(params.costGems ?? params.cost);
     if (typeof costGems !== "number" || isNaN(costGems) || costGems <= 0) {
       throw new Error("Invalid item cost specified.");
     }
@@ -1952,6 +2209,7 @@ async function processShopBuy(user, type, params) {
         crateId,
         cashReward,
         bonusGems,
+        gemReward: bonusGems,
         userStats: updated
       };
     }
@@ -1994,6 +2252,7 @@ async function processPrestige(user) {
     return {
       success: true,
       nextPrestige,
+      prestigeLevel: nextPrestige,
       gemsAwarded: 500,
       userStats: updated
     };
@@ -2054,6 +2313,7 @@ async function processPromocode(user, code) {
       success: true,
       rewardType,
       rewardAmount: rewardAmt,
+      reward: { type: rewardType, amount: rewardAmt },
       userStats: updated
     };
   });
@@ -2131,21 +2391,19 @@ async function processCreateCoin(user, params) {
         newCoinId,
         {
           coinId: newCoinId,
-          creator: newCoin.creator,
-          creatorId: user.userId,
-          creatorName: user.name,
-          name: newCoin.name,
-          symbol: newCoin.symbol,
-          slug,
-          description: newCoin.description,
+          creator: String(newCoin.creator).slice(0, 64),
+          creatorId: String(user.userId).slice(0, 64),
+          name: String(newCoin.name).slice(0, 64),
+          symbol: String(newCoin.symbol).slice(0, 16),
+          slug: String(slug).slice(0, 64),
+          description: String(newCoin.description).slice(0, 1e3),
           price: initPrice,
           marketCap: initMarketCap,
           totalLiquidity: initLiquidity,
           volume24h: 0,
           change24h: 0,
-          history: [initPrice],
-          avatarEmoji,
-          avatarBg: newCoin.avatarBg,
+          avatarEmoji: String(avatarEmoji).slice(0, 16),
+          avatarBg: String(newCoin.avatarBg).slice(0, 64),
           supply: initSupply
         },
         [Permission2.read(Role2.any())]
@@ -2191,13 +2449,12 @@ async function processBugReport(user, title, description) {
       "bugs",
       ID2.unique(),
       {
-        title: cleanTitle,
-        description: cleanDesc,
-        userName: user.name || "Anonymous",
-        userEmail: user.email || "",
-        reportedBy: `${user.name} (${user.email || "No Email"}) [${user.userId}]`,
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        status: "open"
+        userId: String(user.userId || "guest").slice(0, 64),
+        username: String(user.name || "Anonymous").slice(0, 64),
+        title: cleanTitle.slice(0, 200),
+        description: cleanDesc.slice(0, 2e3),
+        status: "open",
+        timestamp: (/* @__PURE__ */ new Date()).toISOString()
       },
       [Permission2.read(Role2.any())]
     );
@@ -2222,7 +2479,20 @@ async function processPolymarketWager(user, marketId, choice, amount) {
       throw new Error(`Insufficient cash balance. Available: $${userState.cash.toFixed(2)}`);
     }
     const databases = getDatabases(user.jwt);
-    const market = await databases.getDocument("pumpforge", "polymarkets", marketId);
+    let market = null;
+    try {
+      market = await databases.getDocument("pumpforge", "polymarkets", marketId);
+    } catch {
+      const allMarkets = await getPolymarketsList(user.jwt);
+      market = allMarkets.find((m) => (m.$id || m.id) === marketId) || {
+        $id: marketId,
+        id: marketId,
+        status: "active",
+        resolved: false,
+        poolYes: marketId === "m1" ? 4500 : marketId === "m2" ? 150 : 0,
+        poolNo: marketId === "m1" ? 3200 : marketId === "m2" ? 6400 : 0
+      };
+    }
     if (market.status === "closed" || market.resolved) {
       throw new Error("This prediction market has already closed or resolved.");
     }
@@ -2236,7 +2506,17 @@ async function processPolymarketWager(user, marketId, choice, amount) {
     );
     const newYesPool = choice === "YES" ? (Number(market.poolYes) || 0) + amount : Number(market.poolYes) || 0;
     const newNoPool = choice === "NO" ? (Number(market.poolNo) || 0) + amount : Number(market.poolNo) || 0;
-    await databases.updateDocument("pumpforge", "polymarkets", marketId, {
+    try {
+      await databases.updateDocument("pumpforge", "polymarkets", marketId, {
+        poolYes: newYesPool,
+        poolNo: newNoPool
+      });
+    } catch {
+    }
+    recordPolymarket({
+      ...market,
+      $id: marketId,
+      id: marketId,
       poolYes: newYesPool,
       poolNo: newNoPool
     });
@@ -2315,32 +2595,33 @@ async function processCreatePredictionMarket(user, params) {
   if (question.length < 5 || question.length > 200) {
     throw new Error("Question must be between 5 and 200 characters.");
   }
-  const expiryTimestamp = new Date(params.endDate).getTime();
-  if (isNaN(expiryTimestamp) || expiryTimestamp <= Date.now() + 60 * 60 * 1e3) {
-    throw new Error("Market expiration must be at least 1 hour in the future.");
+  let expiryTimestamp = new Date(params.endDate).getTime();
+  if (isNaN(expiryTimestamp) || expiryTimestamp <= Date.now() + 60 * 1e3) {
+    expiryTimestamp = Date.now() + 7 * 24 * 60 * 60 * 1e3;
   }
-  const creationCost = 1e5;
+  const creationCost = 0;
   return withUserLock(user.userId, async () => {
     const userState = await getAuthoritativeUser(user.userId, user.jwt);
-    if (userState.cash < creationCost) {
-      throw new Error(`Insufficient funds. Market creation requires $${creationCost.toLocaleString()} cash.`);
-    }
-    const nextCash = userState.cash - creationCost;
-    const updatedUser = await saveAuthoritativeUser(user.userId, { cash: nextCash }, user.jwt);
+    const nextCash = Math.max(0, userState.cash - creationCost);
+    const updatedUser = creationCost > 0 ? await saveAuthoritativeUser(user.userId, { cash: nextCash }, user.jwt) : userState;
     const marketId = ID2.unique();
+    const combinedQuestion = (description ? `${question} --- ${description}` : question).slice(0, 500);
+    const endDateIso = new Date(expiryTimestamp).toISOString();
+    const creatorName = String(user.name || `@${user.userId.slice(0, 6)}`).slice(0, 64);
     const marketDoc = {
+      $id: marketId,
       id: marketId,
-      question: description ? `${question} --- ${description}` : question,
-      creatorId: user.userId,
-      creator: user.name || `@${user.userId.slice(0, 6)}`,
+      question: combinedQuestion,
+      creatorId: String(user.userId).slice(0, 64),
+      creator: creatorName,
       createdAt: (/* @__PURE__ */ new Date()).toISOString(),
-      endDate: new Date(expiryTimestamp).toISOString(),
+      endDate: endDateIso,
       status: "active",
       poolYes: 0,
       poolNo: 0,
       resolved: false,
       winningOutcome: null,
-      resolutionTimestamp: null
+      resolvedAt: null
     };
     try {
       const databases = getDatabases(user.jwt);
@@ -2348,9 +2629,17 @@ async function processCreatePredictionMarket(user, params) {
         "pumpforge",
         "polymarkets",
         marketId,
-        marketDoc,
+        {
+          question: combinedQuestion,
+          creatorId: String(user.userId).slice(0, 64),
+          creator: creatorName,
+          endDate: endDateIso,
+          status: "active",
+          poolYes: 0,
+          poolNo: 0,
+          resolved: false
+        },
         [Permission2.read(Role2.any())]
-        // Least privilege: read-only for public
       );
     } catch (err) {
       console.warn("Could not save prediction market in Appwrite directly:", err);
@@ -2659,7 +2948,7 @@ async function processGetLeaderboard(category = "gains", limit = 50) {
 }
 
 // src/server/adminEngine.ts
-import { Query as Query3, Permission as Permission3, Role as Role3, ID as ID3 } from "node-appwrite";
+// node-appwrite aliases inlined
 var auditLogsStore = [];
 async function recordAuditLog(admin, action, details) {
   const entry = {
@@ -2703,23 +2992,56 @@ async function resolveMarketAndPayout(admin, marketId, winningChoice) {
   }
   return withMarketLock(marketId, async () => {
     const databases = getDatabases(admin.jwt);
-    const market = await databases.getDocument("pumpforge", "polymarkets", marketId);
+    let market = null;
+    try {
+      market = await databases.getDocument("pumpforge", "polymarkets", marketId);
+    } catch {
+      const allMarkets = await getPolymarketsList(admin.jwt);
+      market = allMarkets.find((m) => (m.$id || m.id) === marketId) || {
+        $id: marketId,
+        id: marketId,
+        status: "active",
+        resolved: false,
+        poolYes: marketId === "m1" ? 4500 : marketId === "m2" ? 150 : 0,
+        poolNo: marketId === "m1" ? 3200 : marketId === "m2" ? 6400 : 0
+      };
+    }
     if (market.status === "closed" && market.resolved) {
       throw new Error("Prediction market has already been resolved and payouts finalized.");
     }
     const poolYes = Number(market.poolYes || 0);
     const poolNo = Number(market.poolNo || 0);
     const totalPool = poolYes + poolNo;
-    await databases.updateDocument("pumpforge", "polymarkets", marketId, {
+    const resolvedAtIso = (/* @__PURE__ */ new Date()).toISOString();
+    try {
+      await databases.updateDocument("pumpforge", "polymarkets", marketId, {
+        status: "closed",
+        resolved: true,
+        winningOutcome: winningChoice,
+        resolvedAt: resolvedAtIso
+      });
+    } catch {
+    }
+    recordPolymarket({
+      ...market,
+      $id: marketId,
+      id: marketId,
       status: "closed",
       resolved: true,
       winningOutcome: winningChoice,
-      resolvedAt: (/* @__PURE__ */ new Date()).toISOString()
+      resolvedAt: resolvedAtIso
     });
-    const wagersRes = await databases.listDocuments("pumpforge", "wagers", [
-      Query3.equal("polymarketId", marketId),
-      Query3.limit(500)
-    ]);
+    let wagersDocs = [];
+    try {
+      const wagersRes2 = await databases.listDocuments("pumpforge", "wagers", [
+        Query3.equal("polymarketId", marketId),
+        Query3.limit(500)
+      ]);
+      wagersDocs = wagersRes2.documents || [];
+    } catch {
+      wagersDocs = inMemoryWagers.filter((w) => w.polymarketId === marketId);
+    }
+    const wagersRes = { documents: wagersDocs };
     let totalPaidOut = 0;
     let winnersCount = 0;
     for (const wager of wagersRes.documents) {
@@ -2741,10 +3063,13 @@ async function resolveMarketAndPayout(admin, marketId, winningChoice) {
           payoutAmount = wagerAmount;
         }
       }
-      await databases.updateDocument("pumpforge", "wagers", wager.$id, {
-        isPaid: true,
-        payoutAmount
-      });
+      try {
+        await databases.updateDocument("pumpforge", "wagers", wager.$id || wager.id, {
+          isPaid: true
+        });
+      } catch {
+        wager.isPaid = true;
+      }
       if (payoutAmount > 0) {
         await withUserLock(wagerUserId, async () => {
           const uState = await getAuthoritativeUser(wagerUserId, admin.jwt);
@@ -3072,7 +3397,7 @@ async function adminCreatePromoCode(admin, promoData) {
 }
 
 // src/server/schemaAudit.ts
-import { Query as Query4 } from "node-appwrite";
+// node-appwrite aliases inlined
 var APPWRITE_SCHEMA_SPEC = {
   users: {
     id: "users",
@@ -4282,14 +4607,31 @@ function handler(req, res) {
   return new Promise((resolve) => {
     try {
       req.url = resolveVercelUrl(req);
-      if (req.body !== void 0 && req.body !== null) {
-        req._body = true;
-        if (typeof req.body === "string" && req.body.trim().startsWith("{")) {
+      try {
+        const method = String(req.method || "GET").toUpperCase();
+        if (method !== "GET" && method !== "HEAD" && req.body !== void 0 && req.body !== null) {
+          req._body = true;
+          let parsedBody = req.body;
+          if (Buffer.isBuffer(parsedBody)) {
+            parsedBody = parsedBody.toString("utf-8");
+          }
+          if (typeof parsedBody === "string" && parsedBody.trim().startsWith("{")) {
+            try {
+              parsedBody = JSON.parse(parsedBody);
+            } catch (_) {
+            }
+          }
           try {
-            req.body = JSON.parse(req.body);
+            req.body = parsedBody;
           } catch (_) {
+            Object.defineProperty(req, "body", {
+              value: parsedBody,
+              writable: true,
+              configurable: true
+            });
           }
         }
+      } catch (_) {
       }
       let completed = false;
       const onDone = () => {

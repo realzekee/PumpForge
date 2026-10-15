@@ -117,7 +117,7 @@ export default function CoinDetailsTab({
             const { databases } = await import("../appwrite");
             const res = await databases.listDocuments("pumpforge", "holdings", [
               Query.equal("coinId", activeCoin.id),
-              Query.orderDesc("tokenAmount"),
+              Query.orderDesc("amount"),
               Query.limit(5)
             ]);
             docs = res.documents || [];

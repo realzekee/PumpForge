@@ -34,7 +34,6 @@ export function TradesHistoryTab({
         if (!fetched) {
           try {
             const res = await databases.listDocuments("pumpforge", "trades", [
-              Query.equal("isSimulated", false),
               Query.orderDesc("$createdAt"),
               Query.limit(100)
             ]);

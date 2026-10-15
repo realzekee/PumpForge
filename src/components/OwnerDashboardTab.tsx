@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useAppContext } from "../context/AppContext";
@@ -132,7 +132,31 @@ export default function OwnerDashboardTab({
   onUpdateStats: propOnUpdateStats,
 }: OwnerDashboardProps) {
   const navigate = useNavigate();
-  const { userStats, cash, setCash, gems, setGems, userId, adminSettings, setAdminSettings } = useAppContext();
+  const { userStats: ctxUserStats, cash, setCash, gems, setGems, userId, adminSettings, setAdminSettings } = useAppContext();
+  const userStats = useMemo(() => {
+    if (ctxUserStats && Object.keys(ctxUserStats).length > 0) return ctxUserStats;
+    try {
+      const cached = localStorage.getItem("cached_appwrite_stats");
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && Object.keys(parsed).length > 0) return parsed;
+      }
+    } catch {}
+    return {
+      username: "Zeke (Owner)",
+      handle: "@zeke",
+      title: "Founder & Owner",
+      isPremium: true,
+      nameColor: "text-rose-500 font-extrabold text-glow",
+      cash: cash || 100000,
+      gems: gems || 5000,
+      prestigeLevel: 0,
+      totalProfit: 0,
+      coinsCreatedCount: 0,
+      tradesCount: 0,
+      email: currentUserEmail || "realzekeee@gmail.com",
+    };
+  }, [ctxUserStats, cash, gems, currentUserEmail]);
   const queryClient = useQueryClient();
 
   // Active sub-tab state
