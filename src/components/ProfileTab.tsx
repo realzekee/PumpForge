@@ -229,7 +229,7 @@ export default function ProfileTab({
               {userStats.handle}
             </span>
             <span className="text-[10px] glass-pill border border-white/10 text-zinc-300 font-mono font-bold uppercase py-0.5 px-2.5 rounded-full leading-none tracking-wider">
-              {userStats.title}
+              {(userStats.title || "Member").replace(/&amp;/g, "&")}
             </span>
             <span className="text-[10px] text-zinc-400">
               💎 {userStats.gems.toLocaleString()} Gems

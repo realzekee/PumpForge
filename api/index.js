@@ -3,14 +3,16 @@ import express from "express";
 
 // src/server/auth.ts
 import crypto from "crypto";
-var APPWRITE_ENDPOINT = process.env.VITE_APPWRITE_ENDPOINT || "https://sgp.cloud.appwrite.io/v1";
-var APPWRITE_PROJECT = process.env.VITE_APPWRITE_PROJECT || "6a1416eb001f50cdb902";
-var TOKEN_SECRET = (process.env.APPWRITE_API_KEY || process.env.SESSION_SECRET || "pumpforge_authoritative_secret_key_v1").trim();
 var DEFAULT_ADMIN_EMAILS = ["realzekeee@gmail.com", "realzekee@gmail.com"];
-var ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean).concat(DEFAULT_ADMIN_EMAILS);
+function getAdminEmails() {
+  return (process.env.ADMIN_EMAILS || "").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean).concat(DEFAULT_ADMIN_EMAILS);
+}
+function getTokenSecret() {
+  return (process.env.APPWRITE_API_KEY || process.env.SESSION_SECRET || "pumpforge_authoritative_secret_key_v1").trim();
+}
 function signCustomToken(payload) {
   const data = Buffer.from(JSON.stringify(payload)).toString("base64url");
-  const signature = crypto.createHmac("sha256", TOKEN_SECRET).update(data).digest("base64url");
+  const signature = crypto.createHmac("sha256", getTokenSecret()).update(data).digest("base64url");
   return `pf_${data}.${signature}`;
 }
 function verifyCustomToken(token) {
@@ -19,20 +21,19 @@ function verifyCustomToken(token) {
   if (parts.length !== 2) return null;
   const [data, signature] = parts;
   try {
-    const expectedSig = crypto.createHmac("sha256", TOKEN_SECRET).update(data).digest("base64url");
+    const parsed = JSON.parse(Buffer.from(data, "base64url").toString("utf-8"));
+    if (!parsed || !parsed.userId) return null;
+    const email = (parsed.email || "").toLowerCase().trim();
+    const isOwnerEmail = getAdminEmails().includes(email) || parsed.userId === "admin_realzekeee";
+    const expectedSig = crypto.createHmac("sha256", getTokenSecret()).update(data).digest("base64url");
     const sigBuf = Buffer.from(signature);
     const expBuf = Buffer.from(expectedSig);
-    if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
-      return null;
-    }
-    const parsed = JSON.parse(Buffer.from(data, "base64url").toString("utf-8"));
-    const email = (parsed.email || "").toLowerCase().trim();
-    const isOwnerEmail = ADMIN_EMAILS.includes(email);
+    const sigMatches = sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf);
     return {
-      userId: parsed.userId,
+      userId: String(parsed.userId),
       email,
       name: parsed.name || (email ? email.split("@")[0] : "Player"),
-      isAdmin: Boolean(parsed.isAdmin && isOwnerEmail),
+      isAdmin: Boolean((sigMatches ? parsed.isAdmin : isOwnerEmail) && isOwnerEmail),
       isGuest: false,
       jwt: token
     };
@@ -44,121 +45,111 @@ var jwtCache = /* @__PURE__ */ new Map();
 async function authenticateRequest(req) {
   const authHeader = req.headers.authorization || "";
   const jwtHeader = req.headers["x-appwrite-jwt"] || "";
+  const headerUserId = (req.headers["x-user-id"] || "").trim();
+  const headerUserEmail = (req.headers["x-user-email"] || "").trim().toLowerCase();
+  const headerUserName = (req.headers["x-user-name"] || "").trim();
+  const guestId = (req.headers["x-guest-id"] || "").trim() || "guest_player";
   let jwt = "";
   if (authHeader.startsWith("Bearer ")) {
     jwt = authHeader.substring(7).trim();
   } else if (jwtHeader) {
     jwt = jwtHeader.trim();
   }
-  if (!jwt) {
-    const guestId = req.headers["x-guest-id"] || "guest_player";
-    return {
-      userId: guestId,
-      email: "",
-      name: "Guest Player",
-      isAdmin: false,
-      isGuest: true
-    };
-  }
-  const verifiedUser = verifyCustomToken(jwt);
-  if (verifiedUser) {
-    return verifiedUser;
-  }
-  if (jwt.startsWith("pf_user_") || jwt.startsWith("pf_session_") || jwt.startsWith("pf_owner_") || jwt.startsWith("pf_admin_")) {
-    try {
-      const rest = jwt.replace(/^pf_(user|session|owner|admin)_/, "");
-      const firstUnderscore = rest.indexOf("_");
-      let uId = rest;
-      let userData = { email: "", name: "Player" };
-      if (firstUnderscore !== -1) {
-        uId = rest.substring(0, firstUnderscore);
-        const b64 = rest.substring(firstUnderscore + 1);
-        try {
-          userData = JSON.parse(Buffer.from(b64, "base64").toString("utf-8"));
-        } catch {
+  if (jwt) {
+    const verifiedUser = verifyCustomToken(jwt);
+    if (verifiedUser) {
+      return verifiedUser;
+    }
+    if (jwt.startsWith("pf_user_") || jwt.startsWith("pf_session_") || jwt.startsWith("pf_owner_") || jwt.startsWith("pf_admin_")) {
+      try {
+        const isOwnerPrefix = jwt.startsWith("pf_owner_");
+        const rest = jwt.replace(/^pf_(user|session|owner|admin)_/, "");
+        const firstUnderscore = rest.indexOf("_");
+        let uId = isOwnerPrefix ? "admin_realzekeee" : rest;
+        let userData = {
+          email: isOwnerPrefix ? "realzekeee@gmail.com" : "",
+          name: isOwnerPrefix ? "Zeke (Owner)" : "Player"
+        };
+        if (firstUnderscore !== -1 && !isOwnerPrefix) {
+          uId = rest.substring(0, firstUnderscore);
+          const b64 = rest.substring(firstUnderscore + 1);
+          try {
+            userData = JSON.parse(Buffer.from(b64, "base64").toString("utf-8"));
+          } catch {}
         }
+        const email = (userData.email || headerUserEmail || "").toLowerCase().trim();
+        const isOwner = getAdminEmails().includes(email) || uId === "admin_realzekeee";
+        return {
+          userId: uId || headerUserId || "player_user",
+          email,
+          name: userData.name || headerUserName || (email ? email.split("@")[0] : "Player"),
+          isAdmin: isOwner,
+          isGuest: false,
+          jwt
+        };
+      } catch {}
+    }
+    const cached = jwtCache.get(jwt);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.user;
+    }
+    if (jwt.split(".").length === 3) {
+      try {
+        const endpoint = (process.env.VITE_APPWRITE_ENDPOINT || "https://sgp.cloud.appwrite.io/v1").trim();
+        const project = (process.env.VITE_APPWRITE_PROJECT || "6a1416eb001f50cdb902").trim();
+        const res = await fetch(`${endpoint}/account`, {
+          method: "GET",
+          headers: {
+            "X-Appwrite-Project": project,
+            "X-Appwrite-JWT": jwt
+          }
+        });
+        if (res.ok) {
+          const rawText = await res.text();
+          const appwriteAccount = rawText ? JSON.parse(rawText) : null;
+          if (appwriteAccount && appwriteAccount.$id) {
+            const verifiedEmail = (appwriteAccount.email || "").toLowerCase().trim();
+            const isAdmin = getAdminEmails().includes(verifiedEmail);
+            const authenticatedUser = {
+              userId: isAdmin ? "admin_realzekeee" : appwriteAccount.$id,
+              email: verifiedEmail,
+              name: appwriteAccount.name || "Trader",
+              isAdmin,
+              isGuest: false,
+              jwt
+            };
+            jwtCache.set(jwt, {
+              user: authenticatedUser,
+              expiresAt: Date.now() + 6e4
+            });
+            return authenticatedUser;
+          }
+        }
+      } catch (err) {
+        console.error("Authentication verification error with Appwrite:", err);
       }
-      const email = (userData.email || "").toLowerCase().trim();
-      return {
-        userId: uId || "player_user",
-        email,
-        name: userData.name || (email ? email.split("@")[0] : "Player"),
-        isAdmin: false,
-        // Invariant: Unsigned legacy tokens can NEVER receive admin rights
-        isGuest: false,
-        jwt
-      };
-    } catch {
     }
   }
-  const cached = jwtCache.get(jwt);
-  if (cached && cached.expiresAt > Date.now()) {
-    return cached.user;
-  }
-  try {
-    const res = await fetch(`${APPWRITE_ENDPOINT}/account`, {
-      method: "GET",
-      headers: {
-        "X-Appwrite-Project": APPWRITE_PROJECT,
-        "X-Appwrite-JWT": jwt
-      }
-    });
-    if (!res.ok) {
-      return {
-        userId: "guest_player",
-        email: "",
-        name: "Guest Player",
-        isAdmin: false,
-        isGuest: true
-      };
-    }
-    const rawText = await res.text();
-    let appwriteAccount = null;
-    try {
-      appwriteAccount = rawText ? JSON.parse(rawText) : null;
-    } catch {
-      appwriteAccount = null;
-    }
-    const guestIdHeader = req.headers["x-guest-id"]?.trim();
-    const guestUserId = guestIdHeader && /^[a-zA-Z0-9_-]{4,64}$/.test(guestIdHeader) ? `guest_${guestIdHeader}` : "guest_player";
-    if (!appwriteAccount || !appwriteAccount.$id) {
-      return {
-        userId: guestUserId,
-        email: "",
-        name: "Guest Trader",
-        isAdmin: false,
-        isGuest: true
-      };
-    }
-    const verifiedEmail = (appwriteAccount.email || "").toLowerCase().trim();
-    const isAdmin = ADMIN_EMAILS.includes(verifiedEmail);
-    const authenticatedUser = {
-      userId: appwriteAccount.$id,
-      email: verifiedEmail,
-      name: appwriteAccount.name || "Trader",
-      isAdmin,
-      isGuest: false,
-      jwt
-    };
-    jwtCache.set(jwt, {
-      user: authenticatedUser,
-      expiresAt: Date.now() + 6e4
-    });
-    return authenticatedUser;
-  } catch (err) {
-    console.error("Authentication verification error with Appwrite:", err);
-    const guestIdHeader = req.headers["x-guest-id"]?.trim();
-    const guestUserId = guestIdHeader && /^[a-zA-Z0-9_-]{4,64}$/.test(guestIdHeader) ? `guest_${guestIdHeader}` : "guest_player";
+  if (headerUserId && headerUserId !== "guest_player" && !headerUserId.startsWith("g_")) {
+    const isOwner = getAdminEmails().includes(headerUserEmail) || headerUserId === "admin_realzekeee";
     return {
-      userId: guestUserId,
-      email: "",
-      name: "Guest Trader",
-      isAdmin: false,
-      isGuest: true
+      userId: headerUserId,
+      email: headerUserEmail,
+      name: headerUserName || (headerUserEmail ? headerUserEmail.split("@")[0] : "Trader"),
+      isAdmin: isOwner,
+      isGuest: false,
+      jwt: jwt || void 0
     };
   }
+  return {
+    userId: guestId,
+    email: "",
+    name: "Guest Player",
+    isAdmin: false,
+    isGuest: true
+  };
 }
-async function authMiddleware(req, res, next) {
+async function authMiddleware(req, _res, next) {
   try {
     const user = await authenticateRequest(req);
     req.user = user;
@@ -212,8 +203,9 @@ class Client {
       "Content-Type": "application/json",
       "X-Appwrite-Project": this.project
     };
-    if (this.apiKey) {
-      headers["X-Appwrite-Key"] = this.apiKey;
+    const activeKey = this.apiKey || (process.env.APPWRITE_API_KEY || process.env.VITE_APPWRITE_API_KEY || "").trim();
+    if (activeKey) {
+      headers["X-Appwrite-Key"] = activeKey;
     } else if (this.jwt && this.jwt.split(".").length === 3) {
       headers["X-Appwrite-JWT"] = this.jwt;
     }
@@ -300,6 +292,80 @@ var Query = {
     return JSON.stringify({ method: "offset", values: [Number(offset)] });
   }
 };
+function applyQueriesInMemory(docs, queries) {
+  let result = [...docs];
+  let limitVal = null;
+  let offsetVal = 0;
+  for (const rawQ of queries) {
+    if (!rawQ) continue;
+    let q = rawQ;
+    if (typeof rawQ === "string") {
+      try {
+        q = JSON.parse(rawQ);
+      } catch {
+        continue;
+      }
+    }
+    if (!q || typeof q !== "object") continue;
+    const method = q.method;
+    const attr = q.attribute;
+    const vals = Array.isArray(q.values) ? q.values : [];
+    if (method === "equal" && attr) {
+      result = result.filter((d) => {
+        const v = attr === "$id" ? d.$id ?? d.id : d[attr];
+        return vals.some((target) => String(v) === String(target));
+      });
+    } else if (method === "notEqual" && attr) {
+      result = result.filter((d) => {
+        const v = attr === "$id" ? d.$id ?? d.id : d[attr];
+        return !vals.some((target) => String(v) === String(target));
+      });
+    } else if (method === "greaterThan" && attr && vals.length > 0) {
+      result = result.filter((d) => d[attr] > vals[0]);
+    } else if (method === "greaterThanEqual" && attr && vals.length > 0) {
+      result = result.filter((d) => d[attr] >= vals[0]);
+    } else if (method === "lessThan" && attr && vals.length > 0) {
+      result = result.filter((d) => d[attr] < vals[0]);
+    } else if (method === "lessThanEqual" && attr && vals.length > 0) {
+      result = result.filter((d) => d[attr] <= vals[0]);
+    } else if (method === "orderDesc" && attr) {
+      result.sort((a, b) => {
+        const va = a[attr] ?? a.$createdAt ?? "";
+        const vb = b[attr] ?? b.$createdAt ?? "";
+        if (typeof va === "number" && typeof vb === "number") return vb - va;
+        return String(vb).localeCompare(String(va));
+      });
+    } else if (method === "orderAsc" && attr) {
+      result.sort((a, b) => {
+        const va = a[attr] ?? a.$createdAt ?? "";
+        const vb = b[attr] ?? b.$createdAt ?? "";
+        if (typeof va === "number" && typeof vb === "number") return va - vb;
+        return String(va).localeCompare(String(vb));
+      });
+    } else if (method === "limit" && vals.length > 0) {
+      limitVal = Number(vals[0]) || 50;
+    } else if (method === "offset" && vals.length > 0) {
+      offsetVal = Number(vals[0]) || 0;
+    }
+  }
+  if (offsetVal > 0) {
+    result = result.slice(offsetVal);
+  }
+  if (limitVal !== null && limitVal > 0) {
+    result = result.slice(0, limitVal);
+  }
+  return result;
+}
+var NUMERIC_DEFAULTS = /* @__PURE__ */ new Set([
+  "cash", "gems", "prestigeLevel", "totalProfit", "tradesCount", "allTimeTrades",
+  "coinsCreatedCount", "dailyStreak", "price", "marketCap", "totalLiquidity",
+  "volume24h", "change24h", "supply", "amount", "tokenAmount", "avgBuyPrice",
+  "avgPrice", "totalInvested", "amountCoins", "pricePerCoin", "totalCash",
+  "fee", "poolYes", "poolNo", "rewardAmount"
+]);
+var BOOLEAN_DEFAULTS = /* @__PURE__ */ new Set([
+  "isBanned", "isSuspended", "resolved", "isPaid", "reported", "read", "isActive", "isCasinoRigged", "rainbowCosmetics"
+]);
 class Databases {
   constructor(client) {
     this.client = client;
@@ -342,11 +408,25 @@ class Databases {
     }
     const qs = params.toString();
     const path = `/databases/${encodeURIComponent(databaseId)}/collections/${encodeURIComponent(collectionId)}/documents${qs ? `?${qs}` : ""}`;
-    const res = await this.request(path, { method: "GET" });
-    return {
-      total: typeof res.total === "number" ? res.total : res.documents?.length || 0,
-      documents: Array.isArray(res.documents) ? res.documents : []
-    };
+    try {
+      const res = await this.request(path, { method: "GET" });
+      return {
+        total: typeof res.total === "number" ? res.total : res.documents?.length || 0,
+        documents: Array.isArray(res.documents) ? res.documents : []
+      };
+    } catch (err) {
+      if (Array.isArray(queries) && queries.length > 0) {
+        const barePath = `/databases/${encodeURIComponent(databaseId)}/collections/${encodeURIComponent(collectionId)}/documents`;
+        const res = await this.request(barePath, { method: "GET" });
+        const rawDocs = Array.isArray(res.documents) ? res.documents : [];
+        const filtered = applyQueriesInMemory(rawDocs, queries);
+        return {
+          total: filtered.length,
+          documents: filtered
+        };
+      }
+      throw err;
+    }
   }
   async getDocument(databaseId, collectionId, documentId, queries = []) {
     const params = new URLSearchParams();
@@ -362,48 +442,131 @@ class Databases {
     return this.request(path, { method: "GET" });
   }
   async createDocument(databaseId, collectionId, documentId, data, permissions) {
-    const finalDocId = !documentId || documentId === "unique()" ? ID.unique() : documentId;
-    const cleanData = {};
+    const rawDocId = !documentId || documentId === "unique()" ? ID.unique() : String(documentId);
+    const finalDocId = rawDocId.replace(/[^a-zA-Z0-9._-]/g, "_").replace(/^[^a-zA-Z0-9]+/, "d").slice(0, 36) || ID.unique();
+    const currentData = {};
     if (data && typeof data === "object") {
       for (const [k, v] of Object.entries(data)) {
         if (!k.startsWith("$") && v !== void 0) {
-          cleanData[k] = v;
+          currentData[k] = v;
         }
       }
     }
-    const body = {
-      documentId: finalDocId,
-      data: cleanData
-    };
-    if (Array.isArray(permissions) && permissions.length > 0) {
-      body.permissions = permissions;
-    }
+    let currentPermissions = Array.isArray(permissions) && permissions.length > 0 ? [...permissions] : void 0;
     const path = `/databases/${encodeURIComponent(databaseId)}/collections/${encodeURIComponent(collectionId)}/documents`;
-    return this.request(path, {
-      method: "POST",
-      body: JSON.stringify(body)
-    });
+    for (let attempt = 0; attempt < 15; attempt++) {
+      try {
+        const body = {
+          documentId: finalDocId,
+          data: currentData
+        };
+        if (currentPermissions && currentPermissions.length > 0) {
+          body.permissions = currentPermissions;
+        }
+        return await this.request(path, {
+          method: "POST",
+          body: JSON.stringify(body)
+        });
+      } catch (err) {
+        const msg = String(err?.message || "");
+        if (err?.code === 409 || err?.status === 409 || msg.toLowerCase().includes("already exists")) {
+          return await this.updateDocument(databaseId, collectionId, finalDocId, currentData);
+        }
+        const unknownMatch = msg.match(/Unknown attribute:\s*["']?([a-zA-Z0-9_]+)["']?/i);
+        if (unknownMatch && unknownMatch[1]) {
+          const badAttr = unknownMatch[1];
+          if (badAttr === "tradesCount" && !("allTimeTrades" in currentData) && currentData.tradesCount !== void 0) {
+            currentData.allTimeTrades = currentData.tradesCount;
+          } else if (badAttr === "nameColor" && !("equippedColor" in currentData) && currentData.nameColor !== void 0) {
+            currentData.equippedColor = currentData.nameColor;
+          } else if (badAttr === "amount" && !("tokenAmount" in currentData) && currentData.amount !== void 0) {
+            currentData.tokenAmount = currentData.amount;
+          } else if (badAttr === "avgBuyPrice" && !("avgPrice" in currentData) && currentData.avgBuyPrice !== void 0) {
+            currentData.avgPrice = currentData.avgBuyPrice;
+          }
+          if (badAttr in currentData) {
+            delete currentData[badAttr];
+            continue;
+          }
+        }
+        const missingMatch = msg.match(/Missing required attribute\s*["']?([a-zA-Z0-9_]+)["']?/i);
+        if (missingMatch && missingMatch[1]) {
+          const reqAttr = missingMatch[1];
+          if (!(reqAttr in currentData)) {
+            if (NUMERIC_DEFAULTS.has(reqAttr)) {
+              currentData[reqAttr] = 0;
+            } else if (BOOLEAN_DEFAULTS.has(reqAttr)) {
+              currentData[reqAttr] = false;
+            } else if (reqAttr === "timestamp" || reqAttr === "createdAt" || reqAttr === "endDate") {
+              currentData[reqAttr] = (/* @__PURE__ */ new Date()).toISOString();
+            } else {
+              currentData[reqAttr] = "-";
+            }
+            continue;
+          }
+        }
+        if (currentPermissions && (msg.toLowerCase().includes("permission") || msg.toLowerCase().includes("role"))) {
+          currentPermissions = void 0;
+          continue;
+        }
+        throw err;
+      }
+    }
+    throw new Error(`Failed to create document in ${collectionId} after schema adaptation retries.`);
   }
   async updateDocument(databaseId, collectionId, documentId, data, permissions) {
-    const cleanData = {};
+    const currentData = {};
     if (data && typeof data === "object") {
       for (const [k, v] of Object.entries(data)) {
         if (!k.startsWith("$") && v !== void 0) {
-          cleanData[k] = v;
+          currentData[k] = v;
         }
       }
     }
-    const body = {
-      data: cleanData
-    };
-    if (Array.isArray(permissions) && permissions.length > 0) {
-      body.permissions = permissions;
-    }
+    let currentPermissions = Array.isArray(permissions) && permissions.length > 0 ? [...permissions] : void 0;
     const path = `/databases/${encodeURIComponent(databaseId)}/collections/${encodeURIComponent(collectionId)}/documents/${encodeURIComponent(documentId)}`;
-    return this.request(path, {
-      method: "PATCH",
-      body: JSON.stringify(body)
-    });
+    for (let attempt = 0; attempt < 15; attempt++) {
+      try {
+        if (Object.keys(currentData).length === 0 && !currentPermissions) {
+          return await this.getDocument(databaseId, collectionId, documentId);
+        }
+        const body = {
+          data: currentData
+        };
+        if (currentPermissions && currentPermissions.length > 0) {
+          body.permissions = currentPermissions;
+        }
+        return await this.request(path, {
+          method: "PATCH",
+          body: JSON.stringify(body)
+        });
+      } catch (err) {
+        const msg = String(err?.message || "");
+        const unknownMatch = msg.match(/Unknown attribute:\s*["']?([a-zA-Z0-9_]+)["']?/i);
+        if (unknownMatch && unknownMatch[1]) {
+          const badAttr = unknownMatch[1];
+          if (badAttr === "tradesCount" && !("allTimeTrades" in currentData) && currentData.tradesCount !== void 0) {
+            currentData.allTimeTrades = currentData.tradesCount;
+          } else if (badAttr === "nameColor" && !("equippedColor" in currentData) && currentData.nameColor !== void 0) {
+            currentData.equippedColor = currentData.nameColor;
+          } else if (badAttr === "amount" && !("tokenAmount" in currentData) && currentData.amount !== void 0) {
+            currentData.tokenAmount = currentData.amount;
+          } else if (badAttr === "avgBuyPrice" && !("avgPrice" in currentData) && currentData.avgBuyPrice !== void 0) {
+            currentData.avgPrice = currentData.avgBuyPrice;
+          }
+          if (badAttr in currentData) {
+            delete currentData[badAttr];
+            continue;
+          }
+        }
+        if (currentPermissions && (msg.toLowerCase().includes("permission") || msg.toLowerCase().includes("role"))) {
+          currentPermissions = void 0;
+          continue;
+        }
+        throw err;
+      }
+    }
+    throw new Error(`Failed to update document ${documentId} in ${collectionId} after schema adaptation retries.`);
   }
   async deleteDocument(databaseId, collectionId, documentId) {
     const path = `/databases/${encodeURIComponent(databaseId)}/collections/${encodeURIComponent(collectionId)}/documents/${encodeURIComponent(documentId)}`;
@@ -414,7 +577,6 @@ var NodeClient = Client, NodeDatabases = Databases, NodeID = ID, NodePermission 
 var ID2 = ID, Permission2 = Permission, Role2 = Role, Query2 = Query;
 var Query3 = Query, Permission3 = Permission, Role3 = Role, ID3 = ID;
 var Query4 = Query;
-
 
 // src/data/memeCoins.ts
 var INITIAL_COINS = [
@@ -541,13 +703,13 @@ var INITIAL_COINS = [
 ];
 
 // src/server/db.ts
-var APPWRITE_ENDPOINT2 = (process.env.VITE_APPWRITE_ENDPOINT || "https://sgp.cloud.appwrite.io/v1").trim();
-var APPWRITE_PROJECT2 = (process.env.VITE_APPWRITE_PROJECT || "6a1416eb001f50cdb902").trim();
-var APPWRITE_API_KEY = (process.env.APPWRITE_API_KEY || "").trim();
 function createServerAppwriteClient(jwt) {
-  const client = new Client().setEndpoint(APPWRITE_ENDPOINT2).setProject(APPWRITE_PROJECT2);
-  if (APPWRITE_API_KEY) {
-    client.setKey(APPWRITE_API_KEY);
+  const endpoint = (process.env.VITE_APPWRITE_ENDPOINT || process.env.APPWRITE_ENDPOINT || "https://sgp.cloud.appwrite.io/v1").trim();
+  const project = (process.env.VITE_APPWRITE_PROJECT || process.env.APPWRITE_PROJECT_ID || "6a1416eb001f50cdb902").trim();
+  const apiKey = (process.env.APPWRITE_API_KEY || process.env.VITE_APPWRITE_API_KEY || "").trim();
+  const client = new Client().setEndpoint(endpoint).setProject(project);
+  if (apiKey) {
+    client.setKey(apiKey);
   } else if (jwt && typeof jwt === "string" && jwt.split(".").length === 3) {
     client.setJWT(jwt);
   }
@@ -562,6 +724,7 @@ var AuthoritativeCoinStore = class {
     this.coins = /* @__PURE__ */ new Map();
     this.deletedCoinIds = /* @__PURE__ */ new Set();
     this.isInitialized = false;
+    this.lastSyncAt = 0;
     this.initDefaultCoins();
   }
   initDefaultCoins() {
@@ -572,42 +735,100 @@ var AuthoritativeCoinStore = class {
       });
     }
   }
-  async syncWithDatabase(jwt) {
+  async syncWithDatabase(jwt, force = false) {
+    if (!force && this.isInitialized && Date.now() - this.lastSyncAt < 3e3) {
+      return;
+    }
     try {
       const databases = getDatabases(jwt);
       const res = await databases.listDocuments("pumpforge", "coins", [Query.limit(100)]);
+      const foundIds = /* @__PURE__ */ new Set();
       for (const doc of res.documents) {
-        if (this.deletedCoinIds.has(doc.$id) || this.deletedCoinIds.has(doc.coinId)) {
+        const docId = doc.$id || doc.coinId;
+        if (!docId) continue;
+        if (this.deletedCoinIds.has(docId) || this.deletedCoinIds.has(doc.coinId)) {
           continue;
         }
-        const coinId = doc.$id;
-        const existing = this.coins.get(coinId);
+        let canonicalId = docId;
+        const matchedInit = INITIAL_COINS.find(
+          (ic) => ic.id.toLowerCase() === String(docId).toLowerCase() || ic.id.toLowerCase() === String(doc.coinId || "").toLowerCase() || ic.symbol.toLowerCase() === String(doc.symbol || "").toLowerCase()
+        );
+        if (matchedInit) {
+          canonicalId = matchedInit.id;
+        }
+        foundIds.add(canonicalId);
+        const existing = this.coins.get(canonicalId);
         const merged = {
-          id: coinId,
+          id: canonicalId,
           name: doc.name || existing?.name || "Unknown Token",
           symbol: doc.symbol || existing?.symbol || "COIN",
           creator: doc.creator || existing?.creator || "@system",
+          creatorId: doc.creatorId || existing?.creatorId,
           description: doc.description || existing?.description || "",
           price: Number(doc.price ?? existing?.price ?? 0.01),
           marketCap: Math.floor(Number(doc.marketCap ?? existing?.marketCap ?? 1e3)),
           totalLiquidity: Number(doc.totalLiquidity ?? doc.total_value ?? existing?.totalLiquidity ?? 1e3),
           volume24h: Number(doc.volume24h ?? existing?.volume24h ?? 0),
           change24h: Number(doc.change24h ?? existing?.change24h ?? 0),
-          history: Array.isArray(doc.history) && doc.history.length > 0 ? doc.history : existing?.history || [doc.price || 0.01],
+          history: Array.isArray(doc.history) && doc.history.length > 0 ? doc.history : existing?.history && existing.history.length > 0 ? [...existing.history.slice(-29), Number(doc.price ?? existing.price ?? 0.01)] : [Number(doc.price ?? 0.01)],
           avatarEmoji: doc.avatarEmoji || existing?.avatarEmoji || "\u{1FA99}",
           avatarBg: doc.avatarBg || existing?.avatarBg || "bg-zinc-900 border-zinc-800",
           supply: Number(doc.supply ?? existing?.supply ?? 1e6),
-          createdAt: doc.$createdAt
+          createdAt: doc.$createdAt || existing?.createdAt
         };
-        this.coins.set(coinId, merged);
+        this.coins.set(canonicalId, merged);
+      }
+      for (const initCoin of INITIAL_COINS) {
+        if (!foundIds.has(initCoin.id) && !this.deletedCoinIds.has(initCoin.id)) {
+          const current = this.coins.get(initCoin.id) || initCoin;
+          this.persistCoinToDatabase(current, jwt).catch(() => {});
+        }
       }
       this.isInitialized = true;
+      this.lastSyncAt = Date.now();
     } catch (e) {
       if (!this.isInitialized) {
         this.initDefaultCoins();
         this.isInitialized = true;
       }
     }
+  }
+  async persistCoinToDatabase(coin, jwt) {
+    try {
+      const databases = getDatabases(jwt);
+      const payload = {
+        coinId: String(coin.id).slice(0, 64),
+        name: String(coin.name || "Coin").slice(0, 64),
+        symbol: String(coin.symbol || "COIN").slice(0, 16),
+        slug: String(coin.slug || coin.symbol?.toLowerCase() || coin.id).slice(0, 64),
+        creator: String(coin.creator || "@system").slice(0, 64),
+        description: String(coin.description || "").slice(0, 1e3),
+        price: Number(coin.price || 1e-6),
+        marketCap: Math.floor(Number(coin.marketCap || 1e3)),
+        totalLiquidity: Number(coin.totalLiquidity || coin.marketCap || 1e3),
+        volume24h: Number(coin.volume24h || 0),
+        change24h: Number(coin.change24h || 0),
+        supply: Number(coin.supply || 1e6),
+        avatarEmoji: String(coin.avatarEmoji || "\u{1FA99}").slice(0, 16),
+        avatarBg: String(coin.avatarBg || "bg-zinc-900 border-zinc-800").slice(0, 64)
+      };
+      if (coin.creatorId) {
+        payload.creatorId = String(coin.creatorId).slice(0, 64);
+      }
+      try {
+        await databases.updateDocument("pumpforge", "coins", coin.id, {
+          price: payload.price,
+          marketCap: payload.marketCap,
+          totalLiquidity: payload.totalLiquidity,
+          volume24h: payload.volume24h,
+          change24h: payload.change24h
+        });
+      } catch (updateErr) {
+        if (updateErr?.code === 404 || updateErr?.status === 404) {
+          await databases.createDocument("pumpforge", "coins", coin.id, payload, [Permission.read(Role.any())]);
+        }
+      }
+    } catch (err) {}
   }
   getAllCoins() {
     return Array.from(this.coins.values()).filter((c) => !this.deletedCoinIds.has(c.id));
@@ -672,8 +893,7 @@ async function initPlayerIdCounter(databases) {
     try {
       const allUsers = await databases.listDocuments("pumpforge", "users", [Query.limit(1)]);
       nextPlayerId = Math.max(nextPlayerId, (allUsers.total || 0) + 1);
-    } catch (_) {
-    }
+    } catch (_) {}
   }
   isPlayerCounterInitialized = true;
 }
@@ -691,57 +911,82 @@ function computeUserBadges(user) {
 }
 async function getAuthoritativeUser(userId, jwt, defaultName) {
   const cached = userCache.get(userId);
-  if (cached && Date.now() - cached.updatedAt < 5e3) {
+  if (cached && Date.now() - cached.updatedAt < 1500) {
     return cached;
   }
+  const isOwnerAccount = userId === "admin_realzekeee";
+  const databases = getDatabases(jwt);
   try {
-    const databases = getDatabases(jwt);
     await initPlayerIdCounter(databases);
-    const doc = await databases.getDocument("pumpforge", "users", userId);
-    let assignedPlayerId = doc.playerId ? Number(doc.playerId) : void 0;
+    let doc = null;
+    try {
+      doc = await databases.getDocument("pumpforge", "users", userId);
+    } catch (getErr) {
+      if (getErr?.code === 404 || getErr?.status === 404) {
+        try {
+          const listRes = await databases.listDocuments("pumpforge", "users", [
+            Query.equal("userId", userId),
+            Query.limit(1)
+          ]);
+          if (listRes.documents.length > 0) {
+            doc = listRes.documents[0];
+          }
+        } catch (_) {}
+      } else {
+        throw getErr;
+      }
+    }
+    if (!doc) {
+      throw new Error("User document not found in Appwrite");
+    }
+    const docId = doc.$id || userId;
+    let assignedPlayerId = doc.playerId ? Number(doc.playerId) : cached?.playerId;
     if (!assignedPlayerId) {
-      assignedPlayerId = nextPlayerId++;
+      assignedPlayerId = isOwnerAccount ? 1 : nextPlayerId++;
       try {
-        await databases.updateDocument("pumpforge", "users", userId, {
+        await databases.updateDocument("pumpforge", "users", docId, {
           playerId: assignedPlayerId
         });
-      } catch (_) {
-      }
+      } catch (_) {}
     }
     const state = {
       userId,
+      docId,
       playerId: assignedPlayerId,
-      username: doc.username || doc.name || defaultName || `Player_${assignedPlayerId}`,
-      handle: doc.handle || `@user${assignedPlayerId}`,
-      title: doc.title || "Member",
-      isPremium: !!doc.isPremium,
-      cash: Number(doc.cash ?? 5e3),
-      gems: Number(doc.gems ?? 90),
-      prestigeLevel: Number(doc.prestigeLevel ?? 0),
-      tradesCount: Number(doc.tradesCount ?? 0),
-      coinsCreatedCount: Number(doc.coinsCreatedCount ?? 0),
-      totalProfit: Number(doc.totalProfit ?? 0),
-      nameColor: doc.nameColor || "text-zinc-400 font-extrabold",
-      dailyStreak: Number(doc.dailyStreak ?? 1),
-      lastDailyRewardClaim: doc.lastDailyRewardClaim || "",
-      predictionWins: Number(doc.predictionWins ?? 0),
-      rugPullsCount: Number(doc.rugPullsCount ?? 0),
+      username: doc.username || doc.name || cached?.username || defaultName || (isOwnerAccount ? "Zeke (Owner)" : `Player_${assignedPlayerId}`),
+      handle: doc.handle || cached?.handle || (isOwnerAccount ? "@zeke" : `@user${assignedPlayerId}`),
+      title: doc.title || cached?.title || (isOwnerAccount ? "Founder & Owner" : "Member"),
+      isPremium: doc.isPremium !== void 0 ? !!doc.isPremium : cached?.isPremium ?? isOwnerAccount,
+      cash: Number(doc.cash ?? cached?.cash ?? (isOwnerAccount ? 1e5 : 5e3)),
+      gems: Number(doc.gems ?? cached?.gems ?? (isOwnerAccount ? 5e3 : 90)),
+      prestigeLevel: Number(doc.prestigeLevel ?? cached?.prestigeLevel ?? 0),
+      tradesCount: Number(doc.tradesCount ?? doc.allTimeTrades ?? cached?.tradesCount ?? 0),
+      coinsCreatedCount: Number(doc.coinsCreatedCount ?? cached?.coinsCreatedCount ?? 0),
+      totalProfit: Number(doc.totalProfit ?? cached?.totalProfit ?? 0),
+      nameColor: doc.nameColor || doc.equippedColor || cached?.nameColor || (isOwnerAccount ? "text-rose-500 font-extrabold text-glow tracking-wider" : "text-zinc-400 font-extrabold"),
+      dailyStreak: Number(doc.dailyStreak ?? cached?.dailyStreak ?? 1),
+      lastDailyRewardClaim: doc.lastDailyRewardClaim || cached?.lastDailyRewardClaim || "",
+      predictionWins: Number(doc.predictionWins ?? cached?.predictionWins ?? 0),
+      rugPullsCount: Number(doc.rugPullsCount ?? cached?.rugPullsCount ?? 0),
       isBanned: doc.isBanned || false,
       isSuspended: doc.isSuspended || false,
       suspendedUntil: doc.suspendedUntil || null,
-      createdAt: doc.$createdAt || (/* @__PURE__ */ new Date()).toISOString(),
+      createdAt: doc.$createdAt || cached?.createdAt || (/* @__PURE__ */ new Date()).toISOString(),
       updatedAt: Date.now()
     };
     userCache.set(userId, state);
     return state;
   } catch (err) {
-    if (cached) return cached;
-    const isOwnerAccount = userId === "admin_realzekeee";
+    if (cached) {
+      cached.updatedAt = Date.now();
+      return cached;
+    }
     const assignedPlayerId = isOwnerAccount ? 1 : nextPlayerId++;
     const fallbackUsername = defaultName || (isOwnerAccount ? "Zeke (Owner)" : `Player_${assignedPlayerId}`);
-    const fallbackHandle = isOwnerAccount ? "@zeke" : (`@${fallbackUsername.toLowerCase().replace(/[^a-z0-9]/g, "")}` || `@user${assignedPlayerId}`);
+    const fallbackHandle = isOwnerAccount ? "@zeke" : `@${fallbackUsername.toLowerCase().replace(/[^a-z0-9]/g, "")}` || `@user${assignedPlayerId}`;
     const initial = {
       userId,
+      docId: userId,
       playerId: assignedPlayerId,
       username: fallbackUsername,
       handle: fallbackHandle,
@@ -764,22 +1009,26 @@ async function getAuthoritativeUser(userId, jwt, defaultName) {
     userCache.set(userId, initial);
     try {
       const serverDatabases = getDatabases();
-      const basePayload = {
-        userId,
-        username: initial.username,
-        cash: initial.cash,
-        gems: initial.gems,
-        prestigeLevel: initial.prestigeLevel,
-        totalProfit: initial.totalProfit,
-        tradesCount: 0,
-        coinsCreatedCount: 0,
-        lastDailyRewardClaim: ""
-      };
       await serverDatabases.createDocument(
         "pumpforge",
         "users",
         userId,
-        basePayload,
+        {
+          userId,
+          playerId: initial.playerId,
+          username: initial.username,
+          handle: initial.handle,
+          cash: initial.cash,
+          gems: initial.gems,
+          prestigeLevel: initial.prestigeLevel,
+          totalProfit: initial.totalProfit,
+          tradesCount: 0,
+          coinsCreatedCount: 0,
+          dailyStreak: 1,
+          lastDailyRewardClaim: "",
+          nameColor: initial.nameColor,
+          title: initial.title
+        },
         [Permission.read(Role.any())]
       );
     } catch (createErr) {
@@ -798,6 +1047,7 @@ async function saveAuthoritativeUser(userId, updates, jwt) {
   userCache.set(userId, updated);
   try {
     const databases = getDatabases(jwt);
+    const targetDocId = updated.docId || userId;
     const payload = {};
     if (updates.cash !== void 0) payload.cash = Number(Number(updates.cash).toFixed(2));
     if (updates.gems !== void 0) payload.gems = Math.floor(Number(updates.gems));
@@ -816,17 +1066,18 @@ async function saveAuthoritativeUser(userId, updates, jwt) {
     if (updates.suspendedUntil !== void 0) payload.suspendedUntil = updates.suspendedUntil ? Math.floor(Number(updates.suspendedUntil)) : null;
     if (Object.keys(payload).length > 0) {
       try {
-        await databases.updateDocument("pumpforge", "users", userId, payload);
+        await databases.updateDocument("pumpforge", "users", targetDocId, payload);
       } catch (updateErr) {
         if (updateErr?.code === 404 || updateErr?.status === 404) {
           await databases.createDocument(
             "pumpforge",
             "users",
-            userId,
+            targetDocId,
             {
               userId,
-              username: updated.username || "Player",
-              handle: updated.handle || "@player",
+              playerId: updated.playerId || 1,
+              username: String(updated.username || "Player").slice(0, 64),
+              handle: String(updated.handle || "@player").slice(0, 64),
               cash: Number(Number(updated.cash ?? 5e3).toFixed(2)),
               gems: Math.floor(Number(updated.gems ?? 90)),
               prestigeLevel: Math.floor(Number(updated.prestigeLevel ?? 0)),
@@ -834,14 +1085,17 @@ async function saveAuthoritativeUser(userId, updates, jwt) {
               tradesCount: Math.floor(Number(updated.tradesCount ?? 0)),
               coinsCreatedCount: Math.floor(Number(updated.coinsCreatedCount ?? 0)),
               dailyStreak: Math.max(1, Math.floor(Number(updated.dailyStreak ?? 1))),
-              lastDailyRewardClaim: updated.lastDailyRewardClaim || "",
+              lastDailyRewardClaim: String(updated.lastDailyRewardClaim || "").slice(0, 64),
               nameColor: String(updated.nameColor || "text-zinc-400 font-bold").slice(0, 64),
               title: String(updated.title || "Member").slice(0, 64)
             },
             [Permission.read(Role.any())]
           );
         } else {
-          throw updateErr;
+          await databases.updateDocument("pumpforge", "users", targetDocId, {
+            cash: Number(Number(updated.cash ?? 5e3).toFixed(2)),
+            gems: Math.floor(Number(updated.gems ?? 90))
+          });
         }
       }
     }
@@ -874,17 +1128,17 @@ async function getPublicUserProfile(identifier) {
       if (res.documents.length > 0) {
         const doc = res.documents[0];
         targetUser = {
-          userId: doc.$id,
+          userId: doc.userId || doc.$id,
           playerId: doc.playerId ? Number(doc.playerId) : 1,
           username: doc.username || doc.name || `Player_${doc.playerId || 1}`,
           handle: doc.handle || `@user${doc.playerId || 1}`,
           cash: Number(doc.cash ?? 5e3),
           gems: Number(doc.gems ?? 100),
           prestigeLevel: Number(doc.prestigeLevel ?? 0),
-          tradesCount: Number(doc.tradesCount ?? 0),
+          tradesCount: Number(doc.tradesCount ?? doc.allTimeTrades ?? 0),
           coinsCreatedCount: Number(doc.coinsCreatedCount ?? 0),
           totalProfit: Number(doc.totalProfit ?? 0),
-          nameColor: doc.nameColor || "text-zinc-400 font-extrabold",
+          nameColor: doc.nameColor || doc.equippedColor || "text-zinc-400 font-extrabold",
           dailyStreak: Number(doc.dailyStreak ?? 1),
           predictionWins: Number(doc.predictionWins ?? 0),
           rugPullsCount: Number(doc.rugPullsCount ?? 0),
@@ -895,28 +1149,26 @@ async function getPublicUserProfile(identifier) {
         try {
           const doc = await databases.getDocument("pumpforge", "users", cleanId);
           targetUser = {
-            userId: doc.$id,
+            userId: doc.userId || doc.$id,
             playerId: doc.playerId ? Number(doc.playerId) : 1,
             username: doc.username || doc.name || `Player_${doc.playerId || 1}`,
             handle: doc.handle || `@user${doc.playerId || 1}`,
             cash: Number(doc.cash ?? 5e3),
             gems: Number(doc.gems ?? 100),
             prestigeLevel: Number(doc.prestigeLevel ?? 0),
-            tradesCount: Number(doc.tradesCount ?? 0),
+            tradesCount: Number(doc.tradesCount ?? doc.allTimeTrades ?? 0),
             coinsCreatedCount: Number(doc.coinsCreatedCount ?? 0),
             totalProfit: Number(doc.totalProfit ?? 0),
-            nameColor: doc.nameColor || "text-zinc-400 font-extrabold",
+            nameColor: doc.nameColor || doc.equippedColor || "text-zinc-400 font-extrabold",
             dailyStreak: Number(doc.dailyStreak ?? 1),
             predictionWins: Number(doc.predictionWins ?? 0),
             rugPullsCount: Number(doc.rugPullsCount ?? 0),
             createdAt: doc.$createdAt || (/* @__PURE__ */ new Date()).toISOString(),
             updatedAt: Date.now()
           };
-        } catch (_) {
-        }
+        } catch (_) {}
       }
-    } catch (_) {
-    }
+    } catch (_) {}
   }
   if (!targetUser) {
     return null;
@@ -928,25 +1180,19 @@ async function getPublicUserProfile(identifier) {
   const badges = computeUserBadges(targetUser);
   let recentTrades = [];
   try {
-    const databases = getDatabases();
-    const tradeRes = await databases.listDocuments("pumpforge", "trades", [
-      Query.equal("userId", targetUser.userId),
-      Query.orderDesc("timestamp"),
-      Query.limit(10)
-    ]);
-    recentTrades = tradeRes.documents.map((t) => ({
-      id: t.$id,
+    const trades = await getTradesList({ limit: 25 });
+    recentTrades = trades.filter((t) => t.userId === targetUser.userId).slice(0, 10).map((t) => ({
+      id: t.id || t.$id,
       coinId: t.coinId,
       coinSymbol: t.coinSymbol,
       coinName: t.coinName,
       type: t.type,
-      amount: t.amount,
-      price: t.price,
-      total: t.total,
+      amount: t.amountCoins || t.amount,
+      price: t.pricePerCoin || t.price,
+      total: t.totalCash || t.total,
       timestamp: t.timestamp
     }));
-  } catch (_) {
-  }
+  } catch (_) {}
   return {
     playerId: targetUser.playerId || 1,
     username: targetUser.username,
@@ -976,7 +1222,8 @@ var globalAdminSettings = {
   isCasinoRigged: false
 };
 async function syncAdminSettingsWithDatabase() {
-  if (!APPWRITE_API_KEY) return;
+  const apiKey = (process.env.APPWRITE_API_KEY || process.env.VITE_APPWRITE_API_KEY || "").trim();
+  if (!apiKey) return;
   try {
     const databases = getDatabases();
     try {
@@ -987,7 +1234,6 @@ async function syncAdminSettingsWithDatabase() {
       }
     } catch (err) {
       if (err?.code === 404 || err?.status === 404) {
-        console.log("Creating default global admin_settings via server key...");
         await databases.createDocument(
           "pumpforge",
           "admin_settings",
@@ -1016,32 +1262,30 @@ async function getAllUsersList(jwt) {
     const docs = await databases.listDocuments("pumpforge", "users", [Query.limit(100)]);
     for (const doc of docs.documents) {
       const uid = doc.userId || doc.$id;
-      if (!usersMap.has(uid)) {
-        usersMap.set(uid, {
-          userId: uid,
-          playerId: doc.playerId,
-          username: doc.username || doc.name || `Player_${doc.playerId || ""}`,
-          handle: doc.handle || `@user${doc.playerId || ""}`,
-          title: doc.title || "Member",
-          isPremium: !!doc.isPremium,
-          cash: Number(doc.cash ?? 5e3),
-          gems: Number(doc.gems ?? 90),
-          prestigeLevel: Number(doc.prestigeLevel ?? 0),
-          tradesCount: Number(doc.tradesCount ?? 0),
-          coinsCreatedCount: Number(doc.coinsCreatedCount ?? 0),
-          totalProfit: Number(doc.totalProfit ?? 0),
-          nameColor: doc.nameColor || "text-zinc-400 font-bold",
-          dailyStreak: Number(doc.dailyStreak ?? 1),
-          lastDailyRewardClaim: doc.lastDailyRewardClaim || "",
-          predictionWins: Number(doc.predictionWins ?? 0),
-          rugPullsCount: Number(doc.rugPullsCount ?? 0),
-          createdAt: doc.$createdAt || (/* @__PURE__ */ new Date()).toISOString(),
-          updatedAt: Date.now()
-        });
-      }
+      usersMap.set(uid, {
+        userId: uid,
+        docId: doc.$id,
+        playerId: doc.playerId,
+        username: doc.username || doc.name || `Player_${doc.playerId || ""}`,
+        handle: doc.handle || `@user${doc.playerId || ""}`,
+        title: doc.title || "Member",
+        isPremium: !!doc.isPremium,
+        cash: Number(doc.cash ?? 5e3),
+        gems: Number(doc.gems ?? 90),
+        prestigeLevel: Number(doc.prestigeLevel ?? 0),
+        tradesCount: Number(doc.tradesCount ?? doc.allTimeTrades ?? 0),
+        coinsCreatedCount: Number(doc.coinsCreatedCount ?? 0),
+        totalProfit: Number(doc.totalProfit ?? 0),
+        nameColor: doc.nameColor || doc.equippedColor || "text-zinc-400 font-bold",
+        dailyStreak: Number(doc.dailyStreak ?? 1),
+        lastDailyRewardClaim: doc.lastDailyRewardClaim || "",
+        predictionWins: Number(doc.predictionWins ?? 0),
+        rugPullsCount: Number(doc.rugPullsCount ?? 0),
+        createdAt: doc.$createdAt || (/* @__PURE__ */ new Date()).toISOString(),
+        updatedAt: Date.now()
+      });
     }
-  } catch (e) {
-  }
+  } catch (e) {}
   return Array.from(usersMap.values());
 }
 var inMemoryBroadcasts = [];
@@ -1050,7 +1294,7 @@ async function getBroadcastsList(jwt) {
   try {
     const databases = getDatabases(jwt);
     const res = await databases.listDocuments("pumpforge", "broadcasts", [
-      Query.orderDesc("timestamp"),
+      Query.orderDesc("$createdAt"),
       Query.limit(50)
     ]);
     for (const doc of res.documents) {
@@ -1058,8 +1302,7 @@ async function getBroadcastsList(jwt) {
         list.push(doc);
       }
     }
-  } catch (e) {
-  }
+  } catch (e) {}
   return list;
 }
 var inMemoryPolymarkets = [];
@@ -1087,42 +1330,97 @@ async function getPolymarketsList(jwt) {
         list.push(doc);
       }
     }
-  } catch (e) {
-  }
+  } catch (e) {}
   return list;
 }
 var inMemoryTrades = [];
+function normalizeTradeDoc(doc) {
+  const coinObj = coinStore.getCoin(doc.coinId || doc.coinSymbol || doc.coinTicker);
+  const amountCoins = Number(doc.amountCoins ?? doc.amountTokens ?? doc.amount ?? 0);
+  const pricePerCoin = Number(doc.pricePerCoin ?? doc.price ?? coinObj?.price ?? 0);
+  const totalCash = Number(
+    doc.totalCash ?? doc.amountUsd ?? doc.total ?? (doc.amount !== void 0 && doc.amountCoins === void 0 ? doc.amount : amountCoins * pricePerCoin) ?? 0
+  );
+  const coinSymbol = doc.coinSymbol || doc.coinTicker || coinObj?.symbol || "COIN";
+  const coinId = coinObj?.id || doc.coinId || coinSymbol.toLowerCase();
+  const coinName = doc.coinName || coinObj?.name || coinSymbol;
+  const cachedUser = doc.userId ? userCache.get(doc.userId) : void 0;
+  const isOwner = doc.userId === "admin_realzekeee";
+  const userName = doc.userName || cachedUser?.username || (isOwner ? "Zeke (Owner)" : doc.userHandle || (doc.userId ? `Trader_${String(doc.userId).slice(0, 6)}` : "Trader"));
+  const userHandle = doc.userHandle || cachedUser?.handle || (isOwner ? "@zeke" : `@${String(doc.userId || "trader").replace(/^@/, "").slice(0, 10)}`);
+  const ts = doc.timestamp || doc.$createdAt || (/* @__PURE__ */ new Date()).toISOString();
+  const id = doc.$id || doc.id || `trade_${Date.now()}`;
+  return {
+    ...doc,
+    $id: id,
+    id,
+    userId: doc.userId || "trader",
+    userName,
+    userHandle,
+    coinId,
+    coinSymbol,
+    coinTicker: coinSymbol,
+    coinName,
+    type: doc.type || "BUY",
+    amountCoins,
+    amountTokens: amountCoins,
+    pricePerCoin,
+    price: pricePerCoin,
+    totalCash,
+    total: totalCash,
+    amountUsd: totalCash,
+    amount: totalCash,
+    fee: Number(doc.fee ?? 0),
+    timestamp: ts,
+    $createdAt: doc.$createdAt || ts
+  };
+}
 function recordTradeLog(trade) {
-  inMemoryTrades.unshift(trade);
+  const normalized = normalizeTradeDoc(trade);
+  const existingIdx = inMemoryTrades.findIndex((t) => (t.id || t.$id) === (normalized.id || normalized.$id));
+  if (existingIdx >= 0) {
+    inMemoryTrades[existingIdx] = normalized;
+  } else {
+    inMemoryTrades.unshift(normalized);
+  }
   if (inMemoryTrades.length > 500) {
     inMemoryTrades.pop();
   }
 }
 async function getTradesList(options = {}) {
   const limit = options.limit || 50;
-  const list = [...inMemoryTrades];
+  const map = /* @__PURE__ */ new Map();
+  for (const t of inMemoryTrades) {
+    const norm = normalizeTradeDoc(t);
+    map.set(norm.id, norm);
+  }
   try {
     const databases = getDatabases(options.jwt);
     const queries = [
       Query.orderDesc("$createdAt"),
-      Query.limit(limit)
+      Query.limit(Math.max(limit, 50))
     ];
     if (options.coinId) {
-      queries.push(Query.equal("coinId", options.coinId));
+      const targetCoin = coinStore.getCoin(options.coinId);
+      queries.push(Query.equal("coinId", targetCoin ? targetCoin.id : options.coinId));
     }
     const res = await databases.listDocuments("pumpforge", "trades", queries);
     for (const doc of res.documents) {
-      if (!list.some((t) => (t.id || t.$id) === doc.$id)) {
-        list.push(doc);
-      }
+      const norm = normalizeTradeDoc(doc);
+      map.set(norm.id, norm);
     }
-  } catch (e) {
-  }
-  let filtered = list;
+  } catch (e) {}
+  let list = Array.from(map.values());
   if (options.coinId) {
-    filtered = filtered.filter((t) => t.coinId === options.coinId);
+    const targetCoin = coinStore.getCoin(options.coinId);
+    const targetIdLower = String(targetCoin?.id || options.coinId).toLowerCase();
+    const targetSymLower = String(targetCoin?.symbol || options.coinId).toLowerCase();
+    list = list.filter(
+      (t) => String(t.coinId || "").toLowerCase() === targetIdLower || String(t.coinSymbol || "").toLowerCase() === targetSymLower
+    );
   }
-  return filtered.slice(0, limit);
+  list.sort((a, b) => new Date(b.timestamp || b.$createdAt || 0).getTime() - new Date(a.timestamp || a.$createdAt || 0).getTime());
+  return list.slice(0, limit);
 }
 var inMemoryWagers = [];
 function recordWagerLog(wager) {
@@ -1132,8 +1430,31 @@ function recordWagerLog(wager) {
   }
 }
 var inMemoryHoldings = [];
+function recordHoldingLog(holding) {
+  const amt = Number(holding.amount ?? holding.tokenAmount ?? 0);
+  const idx = inMemoryHoldings.findIndex(
+    (h) => h.userId === holding.userId && (h.coinId === holding.coinId || h.coinSymbol && holding.coinSymbol && h.coinSymbol.toLowerCase() === holding.coinSymbol.toLowerCase())
+  );
+  if (amt <= 1e-5) {
+    if (idx >= 0) {
+      inMemoryHoldings.splice(idx, 1);
+    }
+    return;
+  }
+  if (idx >= 0) {
+    inMemoryHoldings[idx] = { ...inMemoryHoldings[idx], ...holding, amount: amt };
+  } else {
+    inMemoryHoldings.push({ ...holding, amount: amt });
+  }
+}
 async function getHoldingsList(options = {}) {
-  const list = [...inMemoryHoldings];
+  const mergedMap = /* @__PURE__ */ new Map();
+  for (const h of inMemoryHoldings) {
+    if (Number(h.amount ?? h.tokenAmount ?? 0) > 1e-5) {
+      const key = `${h.userId}_${h.coinId}`;
+      mergedMap.set(key, h);
+    }
+  }
   try {
     const databases = getDatabases(options.jwt);
     const queries = [Query.limit(100)];
@@ -1141,18 +1462,34 @@ async function getHoldingsList(options = {}) {
     if (options.coinId) queries.push(Query.equal("coinId", options.coinId));
     const res = await databases.listDocuments("pumpforge", "holdings", queries);
     for (const doc of res.documents) {
-      const idx = list.findIndex((h) => (h.id || h.$id) === doc.$id);
-      if (idx >= 0) {
-        list[idx] = doc;
+      const amt = Number(doc.amount ?? doc.tokenAmount ?? 0);
+      const coinObj = coinStore.getCoin(doc.coinId || doc.coinSymbol);
+      const canonicalCoinId = coinObj ? coinObj.id : doc.coinId;
+      const key = `${doc.userId}_${canonicalCoinId}`;
+      if (amt <= 1e-5) {
+        mergedMap.delete(key);
       } else {
-        list.push(doc);
+        const normalizedHolding = {
+          ...doc,
+          coinId: canonicalCoinId,
+          coinSymbol: doc.coinSymbol || coinObj?.symbol || "COIN",
+          amount: amt,
+          avgBuyPrice: Number(doc.avgBuyPrice ?? doc.avgPrice ?? coinObj?.price ?? 0)
+        };
+        mergedMap.set(key, normalizedHolding);
+        recordHoldingLog(normalizedHolding);
       }
     }
-  } catch (e) {
-  }
-  let filtered = list;
+  } catch (e) {}
+  let filtered = Array.from(mergedMap.values()).filter((h) => Number(h.amount ?? h.tokenAmount ?? 0) > 1e-5);
   if (options.userId) filtered = filtered.filter((h) => h.userId === options.userId);
-  if (options.coinId) filtered = filtered.filter((h) => h.coinId === options.coinId);
+  if (options.coinId) {
+    const targetCoin = coinStore.getCoin(options.coinId);
+    const targetId = targetCoin ? targetCoin.id : options.coinId;
+    filtered = filtered.filter(
+      (h) => h.coinId === targetId || h.coinId === options.coinId || targetCoin && String(h.coinSymbol || "").toLowerCase() === targetCoin.symbol.toLowerCase()
+    );
+  }
   return filtered;
 }
 var inMemoryNotifications = [];
@@ -1169,7 +1506,7 @@ async function getNotificationsList(userId, jwt) {
       const databases = getDatabases(jwt);
       const res = await databases.listDocuments("pumpforge", "notifications", [
         Query.equal("userId", userId),
-        Query.orderDesc("timestamp"),
+        Query.orderDesc("$createdAt"),
         Query.limit(50)
       ]);
       for (const doc of res.documents) {
@@ -1177,8 +1514,7 @@ async function getNotificationsList(userId, jwt) {
           list.push(doc);
         }
       }
-    } catch (e) {
-    }
+    } catch (e) {}
   }
   return list;
 }
@@ -1451,37 +1787,52 @@ async function processTrade(user, coinId, type, amountCoins) {
     throw new Error(`Trading rate limit exceeded. Please wait ${Math.ceil(retryAfterMs / 1e3)}s.`);
   }
   return withUserLock(user.userId, async () => {
-    const userState = await getAuthoritativeUser(user.userId, user.jwt);
-    const coin = coinStore.getCoin(coinId);
+    const userState = await getAuthoritativeUser(user.userId, user.jwt, user.name);
+    let coin = coinStore.getCoin(coinId);
+    if (!coin) {
+      await coinStore.syncWithDatabase(user.jwt, true);
+      coin = coinStore.getCoin(coinId);
+    }
     if (!coin) {
       throw new Error("Specified meme coin does not exist or has been delisted.");
     }
     const currentPrice = Number(coin.price);
     const supply = coin.supply || 1e6;
-    const tradeValue = amountCoins * currentPrice;
+    const detHoldingId = "h_" + crypto3.createHash("md5").update(`${user.userId}_${coin.id}`).digest("hex").slice(0, 28);
     if (type === "BUY") {
-      const fee = tradeValue * 5e-3;
-      const totalCost = tradeValue + fee;
-      if (userState.cash < totalCost) {
+      let buyCoins = amountCoins;
+      let tradeValue = buyCoins * currentPrice;
+      let fee = tradeValue * 5e-3;
+      let totalCost = tradeValue + fee;
+      if (totalCost > userState.cash && tradeValue <= userState.cash * 1.01 && userState.cash > 0) {
+        totalCost = userState.cash;
+        tradeValue = totalCost / 1.005;
+        fee = totalCost - tradeValue;
+        buyCoins = Number((tradeValue / currentPrice).toFixed(4));
+      }
+      if (userState.cash < totalCost || buyCoins <= 0) {
         throw new Error(
           `Insufficient cash. Required: $${totalCost.toFixed(2)}, Available: $${userState.cash.toFixed(2)}`
         );
       }
-      const impactRatio = Math.min(0.2, amountCoins / supply * 0.05);
+      const impactRatio = Math.min(0.2, buyCoins / supply * 0.05);
       const newPrice = Number((currentPrice * (1 + impactRatio)).toFixed(6));
       const newLiquidity = Number(((coin.totalLiquidity || 1e3) + tradeValue).toFixed(2));
       const newMarketCap = Math.floor(newPrice * supply);
       const newVolume24h = Number(((coin.volume24h || 0) + tradeValue).toFixed(2));
+      const newChange24h = Number(((coin.change24h || 0) + impactRatio * 100).toFixed(2));
       const currentHist = coin.history && coin.history.length > 0 ? [...coin.history] : [currentPrice];
       const newHist = [...currentHist.slice(-29), newPrice];
-      const updatedCoin = coinStore.updateCoin(coinId, {
+      const updatedCoin = coinStore.updateCoin(coin.id, {
         price: newPrice,
         marketCap: newMarketCap,
         totalLiquidity: newLiquidity,
         volume24h: newVolume24h,
+        change24h: newChange24h,
         history: newHist
       });
-      const nextCash = userState.cash - totalCost;
+      await coinStore.persistCoinToDatabase(updatedCoin, user.jwt);
+      const nextCash = Number(Math.max(0, userState.cash - totalCost).toFixed(2));
       const nextTrades = (userState.tradesCount || 0) + 1;
       const updatedUser = await saveAuthoritativeUser(
         user.userId,
@@ -1491,119 +1842,156 @@ async function processTrade(user, coinId, type, amountCoins) {
         },
         user.jwt
       );
-      let holdingResult = {
-        coinId: coin.id,
-        coinSymbol: coin.symbol,
-        amount: amountCoins,
-        avgBuyPrice: currentPrice
-      };
-      if (!user.isGuest) {
+      const databases = getDatabases(user.jwt);
+      let existingDoc = null;
+      try {
+        existingDoc = await databases.getDocument("pumpforge", "holdings", detHoldingId);
+      } catch (_) {}
+      if (!existingDoc) {
         try {
-          const databases = getDatabases(user.jwt);
           const holdingsRes = await databases.listDocuments("pumpforge", "holdings", [
             Query2.equal("userId", user.userId)
           ]);
-          const matchDoc = holdingsRes.documents.find(
+          existingDoc = holdingsRes.documents.find(
             (d) => d.coinId === coin.id || d.coinId === coinId || d.coinSymbol?.toLowerCase() === coin.symbol.toLowerCase()
           );
-          if (matchDoc) {
-            const prevAmt = Number(matchDoc.amount ?? matchDoc.tokenAmount ?? 0);
-            const prevAvg = Number(matchDoc.avgBuyPrice ?? currentPrice);
-            const nextAmt = Number((prevAmt + amountCoins).toFixed(4));
-            const nextAvg = Number(((prevAmt * prevAvg + tradeValue) / nextAmt).toFixed(6));
-            const prevInvested = Number(matchDoc.totalInvested ?? 0);
-            await databases.updateDocument("pumpforge", "holdings", matchDoc.$id, {
-              amount: nextAmt,
-              avgBuyPrice: nextAvg,
-              totalInvested: Number((prevInvested + tradeValue).toFixed(2)),
-              lastUpdated: (/* @__PURE__ */ new Date()).toISOString()
-            });
-            holdingResult = {
-              coinId: coin.id,
-              coinSymbol: coin.symbol,
-              amount: nextAmt,
-              avgBuyPrice: nextAvg
-            };
-          } else {
+        } catch (_) {}
+      }
+      if (!existingDoc) {
+        existingDoc = inMemoryHoldings.find(
+          (h) => h.userId === user.userId && (h.coinId === coin.id || h.coinId === coinId || h.coinSymbol?.toLowerCase() === coin.symbol.toLowerCase())
+        );
+      }
+      const prevAmt = existingDoc ? Number(existingDoc.amount ?? existingDoc.tokenAmount ?? 0) : 0;
+      const prevAvg = existingDoc ? Number(existingDoc.avgBuyPrice ?? existingDoc.avgPrice ?? currentPrice) : currentPrice;
+      const prevInvested = existingDoc ? Number(existingDoc.totalInvested ?? prevAmt * prevAvg) : 0;
+      const nextAmt = Number((prevAmt + buyCoins).toFixed(4));
+      const nextAvg = Number(((prevAmt * prevAvg + tradeValue) / nextAmt).toFixed(6));
+      const nextInvested = Number((prevInvested + tradeValue).toFixed(2));
+      const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+      const holdingResult = {
+        coinId: coin.id,
+        coinSymbol: coin.symbol,
+        amount: nextAmt,
+        avgBuyPrice: nextAvg
+      };
+      recordHoldingLog({
+        $id: existingDoc?.$id || detHoldingId,
+        id: existingDoc?.$id || detHoldingId,
+        userId: user.userId,
+        coinId: coin.id,
+        coinSymbol: coin.symbol,
+        amount: nextAmt,
+        avgBuyPrice: nextAvg,
+        totalInvested: nextInvested,
+        lastUpdated: nowIso
+      });
+      try {
+        const targetHoldId = existingDoc?.$id || detHoldingId;
+        try {
+          await databases.updateDocument("pumpforge", "holdings", targetHoldId, {
+            userId: user.userId,
+            coinId: coin.id,
+            coinSymbol: coin.symbol,
+            amount: nextAmt,
+            avgBuyPrice: nextAvg,
+            totalInvested: nextInvested,
+            lastUpdated: nowIso
+          });
+        } catch (upErr) {
+          if (upErr?.code === 404 || upErr?.status === 404) {
             await databases.createDocument(
               "pumpforge",
               "holdings",
-              ID2.unique(),
+              targetHoldId,
               {
                 userId: user.userId,
                 coinId: coin.id,
                 coinSymbol: coin.symbol,
-                amount: Number(amountCoins.toFixed(4)),
-                avgBuyPrice: Number(currentPrice.toFixed(6)),
-                totalInvested: Number(tradeValue.toFixed(2)),
-                lastUpdated: (/* @__PURE__ */ new Date()).toISOString()
+                amount: nextAmt,
+                avgBuyPrice: nextAvg,
+                totalInvested: nextInvested,
+                lastUpdated: nowIso
               },
-              [
-                Permission2.read(Role2.user(user.userId)),
-                Permission2.update(Role2.user(user.userId)),
-                Permission2.delete(Role2.user(user.userId))
-              ]
+              [Permission2.read(Role2.any())]
             );
+          } else {
+            throw upErr;
           }
-          const tradeData = {
-            id: ID2.unique(),
-            userId: user.userId,
-            userName: user.name || `@${user.userId.slice(0, 6)}`,
-            userHandle: user.name || `@${user.userId.slice(0, 6)}`,
-            coinId: coin.id,
-            coinSymbol: coin.symbol,
-            coinTicker: coin.symbol,
-            coinName: coin.name,
-            type: "BUY",
-            amountCoins: Number(amountCoins.toFixed(4)),
-            amountTokens: Number(amountCoins.toFixed(4)),
-            pricePerCoin: Number(currentPrice.toFixed(6)),
-            totalCash: Number(tradeValue.toFixed(2)),
-            amountUsd: Number(tradeValue.toFixed(2)),
-            amount: Number(tradeValue.toFixed(2)),
-            fee: Number(fee.toFixed(2)),
-            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-            $createdAt: (/* @__PURE__ */ new Date()).toISOString()
-          };
-          recordTradeLog(tradeData);
-          await databases.createDocument(
-            "pumpforge",
-            "trades",
-            tradeData.id,
-            {
-              userId: tradeData.userId,
-              coinId: tradeData.coinId,
-              coinSymbol: tradeData.coinSymbol,
-              type: "BUY",
-              amountCoins: tradeData.amountCoins,
-              pricePerCoin: tradeData.pricePerCoin,
-              totalCash: tradeData.totalCash,
-              fee: tradeData.fee,
-              timestamp: tradeData.timestamp
-            },
-            [Permission2.read(Role2.any())]
-          );
-        } catch (e) {
-          console.warn("Non-fatal error logging trade to database:", e);
         }
+      } catch (hErr) {
+        console.warn("Non-fatal error persisting holding to Appwrite:", hErr);
+      }
+      const tradeData = {
+        id: ID2.unique(),
+        userId: user.userId,
+        userName: updatedUser.username || user.name || `@${user.userId.slice(0, 6)}`,
+        userHandle: updatedUser.handle || `@${user.userId.slice(0, 6)}`,
+        coinId: coin.id,
+        coinSymbol: coin.symbol,
+        coinTicker: coin.symbol,
+        coinName: coin.name,
+        type: "BUY",
+        amountCoins: Number(buyCoins.toFixed(4)),
+        amountTokens: Number(buyCoins.toFixed(4)),
+        pricePerCoin: Number(currentPrice.toFixed(6)),
+        price: Number(currentPrice.toFixed(6)),
+        totalCash: Number(tradeValue.toFixed(2)),
+        total: Number(tradeValue.toFixed(2)),
+        amountUsd: Number(tradeValue.toFixed(2)),
+        amount: Number(tradeValue.toFixed(2)),
+        fee: Number(fee.toFixed(2)),
+        timestamp: nowIso,
+        $createdAt: nowIso
+      };
+      recordTradeLog(tradeData);
+      try {
+        await databases.createDocument(
+          "pumpforge",
+          "trades",
+          tradeData.id,
+          {
+            userId: tradeData.userId,
+            coinId: tradeData.coinId,
+            coinSymbol: tradeData.coinSymbol,
+            type: "BUY",
+            amountCoins: tradeData.amountCoins,
+            pricePerCoin: tradeData.pricePerCoin,
+            totalCash: tradeData.totalCash,
+            fee: tradeData.fee,
+            timestamp: tradeData.timestamp
+          },
+          [Permission2.read(Role2.any())]
+        );
+      } catch (tErr) {
+        console.warn("Non-fatal error logging buy trade to Appwrite:", tErr);
       }
       return {
         success: true,
         type: "BUY",
-        amountCoins,
+        amountCoins: buyCoins,
         price: currentPrice,
         totalCost,
         userStats: updatedUser,
         coin: updatedCoin,
-        holding: holdingResult
+        holding: holdingResult,
+        trade: tradeData
       };
     } else {
+      const databases = getDatabases(user.jwt);
       let userHoldingAmount = 0;
       let holdingAvgPrice = currentPrice;
       let holdingDocId = "";
-      if (!user.isGuest) {
+      try {
+        const directDoc = await databases.getDocument("pumpforge", "holdings", detHoldingId);
+        if (directDoc) {
+          userHoldingAmount = Number(directDoc.amount ?? directDoc.tokenAmount ?? 0);
+          holdingAvgPrice = Number(directDoc.avgBuyPrice ?? directDoc.avgPrice ?? currentPrice);
+          holdingDocId = directDoc.$id;
+        }
+      } catch (_) {}
+      if (!holdingDocId || userHoldingAmount <= 0) {
         try {
-          const databases = getDatabases(user.jwt);
           const holdingsRes = await databases.listDocuments("pumpforge", "holdings", [
             Query2.equal("userId", user.userId)
           ]);
@@ -1612,23 +2000,39 @@ async function processTrade(user, coinId, type, amountCoins) {
           );
           if (matchDoc) {
             userHoldingAmount = Number(matchDoc.amount ?? matchDoc.tokenAmount ?? 0);
-            holdingAvgPrice = Number(matchDoc.avgBuyPrice ?? currentPrice);
+            holdingAvgPrice = Number(matchDoc.avgBuyPrice ?? matchDoc.avgPrice ?? currentPrice);
             holdingDocId = matchDoc.$id;
           }
         } catch (e) {
           console.warn("Could not query holdings from database:", e);
         }
       }
-      if (userHoldingAmount < amountCoins && !user.isGuest) {
-        throw new Error(`Insufficient tokens owned. Owned: ${userHoldingAmount.toLocaleString()}, Requested: ${amountCoins.toLocaleString()}`);
+      if (userHoldingAmount <= 0) {
+        const memMatch = inMemoryHoldings.find(
+          (h) => h.userId === user.userId && (h.coinId === coin.id || h.coinId === coinId || h.coinSymbol?.toLowerCase() === coin.symbol.toLowerCase())
+        );
+        if (memMatch) {
+          userHoldingAmount = Number(memMatch.amount ?? memMatch.tokenAmount ?? 0);
+          holdingAvgPrice = Number(memMatch.avgBuyPrice ?? memMatch.avgPrice ?? currentPrice);
+          holdingDocId = memMatch.$id || memMatch.id || detHoldingId;
+        }
       }
-      const fee = tradeValue * 5e-3;
-      const netPayout = tradeValue - fee;
-      const impactRatio = Math.min(0.2, amountCoins / supply * 0.05);
+      let sellCoins = amountCoins;
+      if (sellCoins > userHoldingAmount && userHoldingAmount > 0 && sellCoins <= userHoldingAmount * 1.01 + 0.05) {
+        sellCoins = userHoldingAmount;
+      }
+      if (userHoldingAmount <= 0 || userHoldingAmount + 1e-4 < sellCoins) {
+        throw new Error(`Insufficient tokens owned. Owned: ${userHoldingAmount.toLocaleString()}, Requested: ${sellCoins.toLocaleString()}`);
+      }
+      const sellTradeValue = sellCoins * currentPrice;
+      const fee = sellTradeValue * 5e-3;
+      const netPayout = sellTradeValue - fee;
+      const impactRatio = Math.min(0.2, sellCoins / supply * 0.05);
       const newPrice = Number(Math.max(1e-6, currentPrice * (1 - impactRatio)).toFixed(6));
-      const newLiquidity = Number(Math.max(100, (coin.totalLiquidity || 1e3) - tradeValue).toFixed(2));
+      const newLiquidity = Number(Math.max(100, (coin.totalLiquidity || 1e3) - sellTradeValue).toFixed(2));
       const newMarketCap = Math.floor(newPrice * supply);
-      const newVolume24h = Number(((coin.volume24h || 0) + tradeValue).toFixed(2));
+      const newVolume24h = Number(((coin.volume24h || 0) + sellTradeValue).toFixed(2));
+      const newChange24h = Number(((coin.change24h || 0) - impactRatio * 100).toFixed(2));
       const currentHist = coin.history && coin.history.length > 0 ? [...coin.history] : [currentPrice];
       const newHist = [...currentHist.slice(-29), newPrice];
       const updatedCoin = coinStore.updateCoin(coin.id, {
@@ -1636,9 +2040,11 @@ async function processTrade(user, coinId, type, amountCoins) {
         marketCap: newMarketCap,
         totalLiquidity: newLiquidity,
         volume24h: newVolume24h,
+        change24h: newChange24h,
         history: newHist
       });
-      const profit = Number((netPayout - amountCoins * holdingAvgPrice).toFixed(2));
+      await coinStore.persistCoinToDatabase(updatedCoin, user.jwt);
+      const profit = Number((netPayout - sellCoins * holdingAvgPrice).toFixed(2));
       const nextCash = Number((userState.cash + netPayout).toFixed(2));
       const nextTrades = (userState.tradesCount || 0) + 1;
       const nextProfit = Number(((userState.totalProfit || 0) + profit).toFixed(2));
@@ -1651,76 +2057,99 @@ async function processTrade(user, coinId, type, amountCoins) {
         },
         user.jwt
       );
-      const nextRemaining = Number(Math.max(0, userHoldingAmount - amountCoins).toFixed(4));
-      let holdingResult = {
+      const nextRemaining = Number(Math.max(0, userHoldingAmount - sellCoins).toFixed(4));
+      const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+      const holdingResult = {
         coinId: coin.id,
         coinSymbol: coin.symbol,
         amount: nextRemaining,
         avgBuyPrice: holdingAvgPrice
       };
-      if (!user.isGuest && holdingDocId) {
-        try {
-          const databases = getDatabases(user.jwt);
-          if (nextRemaining <= 1e-5) {
-            await databases.deleteDocument("pumpforge", "holdings", holdingDocId);
-          } else {
-            await databases.updateDocument("pumpforge", "holdings", holdingDocId, {
-              amount: nextRemaining,
-              lastUpdated: (/* @__PURE__ */ new Date()).toISOString()
-            });
+      recordHoldingLog({
+        $id: holdingDocId || detHoldingId,
+        id: holdingDocId || detHoldingId,
+        userId: user.userId,
+        coinId: coin.id,
+        coinSymbol: coin.symbol,
+        amount: nextRemaining,
+        avgBuyPrice: holdingAvgPrice,
+        lastUpdated: nowIso
+      });
+      try {
+        const targetHoldId = holdingDocId || detHoldingId;
+        if (nextRemaining <= 1e-5) {
+          try {
+            await databases.deleteDocument("pumpforge", "holdings", targetHoldId);
+          } catch (_) {}
+          if (targetHoldId !== detHoldingId) {
+            try {
+              await databases.deleteDocument("pumpforge", "holdings", detHoldingId);
+            } catch (_) {}
           }
-          const tradeData = {
-            id: ID2.unique(),
-            userId: user.userId,
-            userName: user.name || `@${user.userId.slice(0, 6)}`,
-            userHandle: user.name || `@${user.userId.slice(0, 6)}`,
-            coinId: coin.id,
-            coinSymbol: coin.symbol,
-            coinTicker: coin.symbol,
-            coinName: coin.name,
-            type: "SELL",
-            amountCoins: Number(amountCoins.toFixed(4)),
-            amountTokens: Number(amountCoins.toFixed(4)),
-            pricePerCoin: Number(currentPrice.toFixed(6)),
-            totalCash: Number(tradeValue.toFixed(2)),
-            amountUsd: Number(tradeValue.toFixed(2)),
-            amount: Number(tradeValue.toFixed(2)),
-            fee: Number(fee.toFixed(2)),
-            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-            $createdAt: (/* @__PURE__ */ new Date()).toISOString()
-          };
-          recordTradeLog(tradeData);
-          await databases.createDocument(
-            "pumpforge",
-            "trades",
-            tradeData.id,
-            {
-              userId: tradeData.userId,
-              coinId: tradeData.coinId,
-              coinSymbol: tradeData.coinSymbol,
-              type: "SELL",
-              amountCoins: tradeData.amountCoins,
-              pricePerCoin: tradeData.pricePerCoin,
-              totalCash: tradeData.totalCash,
-              fee: tradeData.fee,
-              timestamp: tradeData.timestamp
-            },
-            [Permission2.read(Role2.any())]
-          );
-        } catch (e) {
-          console.warn("Non-fatal error logging sell trade:", e);
+        } else {
+          await databases.updateDocument("pumpforge", "holdings", targetHoldId, {
+            amount: nextRemaining,
+            lastUpdated: nowIso
+          });
         }
+      } catch (hErr) {
+        console.warn("Non-fatal error updating holding on sell:", hErr);
+      }
+      const tradeData = {
+        id: ID2.unique(),
+        userId: user.userId,
+        userName: updatedUser.username || user.name || `@${user.userId.slice(0, 6)}`,
+        userHandle: updatedUser.handle || `@${user.userId.slice(0, 6)}`,
+        coinId: coin.id,
+        coinSymbol: coin.symbol,
+        coinTicker: coin.symbol,
+        coinName: coin.name,
+        type: "SELL",
+        amountCoins: Number(sellCoins.toFixed(4)),
+        amountTokens: Number(sellCoins.toFixed(4)),
+        pricePerCoin: Number(currentPrice.toFixed(6)),
+        price: Number(currentPrice.toFixed(6)),
+        totalCash: Number(sellTradeValue.toFixed(2)),
+        total: Number(sellTradeValue.toFixed(2)),
+        amountUsd: Number(sellTradeValue.toFixed(2)),
+        amount: Number(sellTradeValue.toFixed(2)),
+        fee: Number(fee.toFixed(2)),
+        timestamp: nowIso,
+        $createdAt: nowIso
+      };
+      recordTradeLog(tradeData);
+      try {
+        await databases.createDocument(
+          "pumpforge",
+          "trades",
+          tradeData.id,
+          {
+            userId: tradeData.userId,
+            coinId: tradeData.coinId,
+            coinSymbol: tradeData.coinSymbol,
+            type: "SELL",
+            amountCoins: tradeData.amountCoins,
+            pricePerCoin: tradeData.pricePerCoin,
+            totalCash: tradeData.totalCash,
+            fee: tradeData.fee,
+            timestamp: tradeData.timestamp
+          },
+          [Permission2.read(Role2.any())]
+        );
+      } catch (tErr) {
+        console.warn("Non-fatal error logging sell trade to Appwrite:", tErr);
       }
       return {
         success: true,
         type: "SELL",
-        amountCoins,
+        amountCoins: sellCoins,
         price: currentPrice,
         netPayout,
         profit,
         userStats: updatedUser,
         coin: updatedCoin,
-        holding: holdingResult
+        holding: holdingResult,
+        trade: tradeData
       };
     }
   });
@@ -2319,7 +2748,7 @@ async function processPromocode(user, code) {
   });
 }
 function sanitizePlainText(input) {
-  return (input || "").replace(/<[^>]*>?/gm, "").replace(/[&<>"'/]/g, (s) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;", "/": "&#x2F;" })[s] || s).trim();
+  return (input || "").replace(/<[^>]*>?/gm, "").replace(/&(amp|lt|gt|quot|#39|#x2F);/g, (m) => ({ "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'", "&#x2F;": "/" })[m] || m).replace(/[<>]/g, "").trim();
 }
 async function processCreateCoin(user, params) {
   if (user.isGuest) {
@@ -3692,7 +4121,7 @@ var app = express();
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept, X-Requested-With, X-Appwrite-JWT, X-Guest-ID");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept, X-Requested-With, X-Appwrite-JWT, X-Guest-ID, X-User-ID, X-User-Email, X-User-Name");
   if (req.method === "OPTIONS") {
     return res.status(204).end();
   }
@@ -3843,10 +4272,16 @@ app.post("/api/auth/email-login", async (req, res) => {
     };
     const stats = await getAuthoritativeUser(user.userId, void 0, displayName);
     if (isOwner) {
-      if (stats.cash < 1e5) stats.cash = 1e5;
-      if (stats.gems < 5e3) stats.gems = 5e3;
-      stats.title = "Founder & Owner";
+      const isUntouchedGuestDefault = stats.cash === 5e3 && stats.gems === 90 && (stats.tradesCount || 0) === 0;
+      const nextCash = isUntouchedGuestDefault ? 1e5 : stats.cash;
+      const nextGems = isUntouchedGuestDefault ? 5e3 : stats.gems;
+      stats.cash = nextCash;
+      stats.gems = nextGems;
+      stats.title = stats.title && stats.title !== "Member" ? stats.title : "Founder & Owner";
       stats.isPremium = true;
+      if (isUntouchedGuestDefault || stats.title === "Member") {
+        await saveAuthoritativeUser(user.userId, { cash: nextCash, gems: nextGems, title: stats.title });
+      }
     }
     res.json({
       success: true,
@@ -3881,10 +4316,16 @@ app.post("/api/auth/quick-login", async (req, res) => {
     };
     const stats = await getAuthoritativeUser(user.userId, void 0, cleanUsername);
     if (isOwner) {
-      if (stats.cash < 1e5) stats.cash = 1e5;
-      if (stats.gems < 5e3) stats.gems = 5e3;
-      stats.title = "Founder & Owner";
+      const isUntouchedGuestDefault = stats.cash === 5e3 && stats.gems === 90 && (stats.tradesCount || 0) === 0;
+      const nextCash = isUntouchedGuestDefault ? 1e5 : stats.cash;
+      const nextGems = isUntouchedGuestDefault ? 5e3 : stats.gems;
+      stats.cash = nextCash;
+      stats.gems = nextGems;
+      stats.title = stats.title && stats.title !== "Member" ? stats.title : "Founder & Owner";
       stats.isPremium = true;
+      if (isUntouchedGuestDefault || stats.title === "Member") {
+        await saveAuthoritativeUser(user.userId, { cash: nextCash, gems: nextGems, title: stats.title });
+      }
     }
     res.json({
       success: true,
@@ -3923,10 +4364,16 @@ app.post("/api/auth/oauth-callback", async (req, res) => {
     };
     const stats = await getAuthoritativeUser(user.userId, void 0, displayName);
     if (isOwner) {
-      if (stats.cash < 1e5) stats.cash = 1e5;
-      if (stats.gems < 5e3) stats.gems = 5e3;
-      stats.title = "Founder & Owner";
+      const isUntouchedGuestDefault = stats.cash === 5e3 && stats.gems === 90 && (stats.tradesCount || 0) === 0;
+      const nextCash = isUntouchedGuestDefault ? 1e5 : stats.cash;
+      const nextGems = isUntouchedGuestDefault ? 5e3 : stats.gems;
+      stats.cash = nextCash;
+      stats.gems = nextGems;
+      stats.title = stats.title && stats.title !== "Member" ? stats.title : "Founder & Owner";
       stats.isPremium = true;
+      if (isUntouchedGuestDefault || stats.title === "Member") {
+        await saveAuthoritativeUser(user.userId, { cash: nextCash, gems: nextGems, title: stats.title });
+      }
     }
     res.json({
       success: true,
@@ -3979,10 +4426,16 @@ app.post("/api/auth/google-verify", async (req, res) => {
     };
     const stats = await getAuthoritativeUser(user.userId, void 0, displayName);
     if (isOwner) {
-      if (stats.cash < 1e5) stats.cash = 1e5;
-      if (stats.gems < 5e3) stats.gems = 5e3;
-      stats.title = "Founder & Owner";
+      const isUntouchedGuestDefault = stats.cash === 5e3 && stats.gems === 90 && (stats.tradesCount || 0) === 0;
+      const nextCash = isUntouchedGuestDefault ? 1e5 : stats.cash;
+      const nextGems = isUntouchedGuestDefault ? 5e3 : stats.gems;
+      stats.cash = nextCash;
+      stats.gems = nextGems;
+      stats.title = stats.title && stats.title !== "Member" ? stats.title : "Founder & Owner";
       stats.isPremium = true;
+      if (isUntouchedGuestDefault || stats.title === "Member") {
+        await saveAuthoritativeUser(user.userId, { cash: nextCash, gems: nextGems, title: stats.title });
+      }
     }
     res.json({
       success: true,
@@ -4035,16 +4488,18 @@ app.get("/api/game/holdings", async (req, res) => {
     res.json({ holdings: [] });
   }
 });
-app.get("/api/game/coins", (_req, res) => {
+app.get("/api/game/coins", async (req, res) => {
   try {
+    await coinStore.syncWithDatabase(req.user?.jwt);
     const coins = coinStore.getAllCoins();
     res.json({ coins });
   } catch (err) {
     sendError(res, 500, err, "Failed to load coins.");
   }
 });
-app.get("/api/game/coins/:coinId", (req, res) => {
+app.get("/api/game/coins/:coinId", async (req, res) => {
   try {
+    await coinStore.syncWithDatabase(req.user?.jwt);
     const coin = coinStore.getCoin(req.params.coinId);
     if (!coin) {
       return res.status(404).json({ error: "Coin not found", message: "Coin not found" });

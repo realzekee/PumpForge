@@ -66,7 +66,7 @@ const PORT = 3000;
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept, X-Requested-With, X-Appwrite-JWT, X-Guest-ID");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept, X-Requested-With, X-Appwrite-JWT, X-Guest-ID, X-User-ID, X-User-Email, X-User-Name");
   if (req.method === "OPTIONS") {
     return res.status(204).end();
   }
@@ -276,13 +276,16 @@ function sendError(res: express.Response, status: number, err: any, fallback = "
 
       const stats = await getAuthoritativeUser(user.userId, undefined, displayName);
       if (isOwner) {
-        const nextCash = Math.max(stats.cash || 0, 100000);
-        const nextGems = Math.max(stats.gems || 0, 5000);
+        const isUntouchedGuestDefault = stats.cash === 5000 && stats.gems === 90 && (stats.tradesCount || 0) === 0;
+        const nextCash = isUntouchedGuestDefault ? 100000 : stats.cash;
+        const nextGems = isUntouchedGuestDefault ? 5000 : stats.gems;
         stats.cash = nextCash;
         stats.gems = nextGems;
-        stats.title = "Founder & Owner";
+        stats.title = stats.title && stats.title !== "Member" ? stats.title : "Founder & Owner";
         stats.isPremium = true;
-        await saveAuthoritativeUser(user.userId, { cash: nextCash, gems: nextGems, title: "Founder & Owner" });
+        if (isUntouchedGuestDefault || stats.title === "Member") {
+          await saveAuthoritativeUser(user.userId, { cash: nextCash, gems: nextGems, title: stats.title });
+        }
       }
 
       res.json({
@@ -322,13 +325,16 @@ function sendError(res: express.Response, status: number, err: any, fallback = "
 
       const stats = await getAuthoritativeUser(user.userId, undefined, cleanUsername);
       if (isOwner) {
-        const nextCash = Math.max(stats.cash || 0, 100000);
-        const nextGems = Math.max(stats.gems || 0, 5000);
+        const isUntouchedGuestDefault = stats.cash === 5000 && stats.gems === 90 && (stats.tradesCount || 0) === 0;
+        const nextCash = isUntouchedGuestDefault ? 100000 : stats.cash;
+        const nextGems = isUntouchedGuestDefault ? 5000 : stats.gems;
         stats.cash = nextCash;
         stats.gems = nextGems;
-        stats.title = "Founder & Owner";
+        stats.title = stats.title && stats.title !== "Member" ? stats.title : "Founder & Owner";
         stats.isPremium = true;
-        await saveAuthoritativeUser(user.userId, { cash: nextCash, gems: nextGems, title: "Founder & Owner" });
+        if (isUntouchedGuestDefault || stats.title === "Member") {
+          await saveAuthoritativeUser(user.userId, { cash: nextCash, gems: nextGems, title: stats.title });
+        }
       }
 
       res.json({
@@ -373,13 +379,16 @@ function sendError(res: express.Response, status: number, err: any, fallback = "
 
       const stats = await getAuthoritativeUser(user.userId, undefined, displayName);
       if (isOwner) {
-        const nextCash = Math.max(stats.cash || 0, 100000);
-        const nextGems = Math.max(stats.gems || 0, 5000);
+        const isUntouchedGuestDefault = stats.cash === 5000 && stats.gems === 90 && (stats.tradesCount || 0) === 0;
+        const nextCash = isUntouchedGuestDefault ? 100000 : stats.cash;
+        const nextGems = isUntouchedGuestDefault ? 5000 : stats.gems;
         stats.cash = nextCash;
         stats.gems = nextGems;
-        stats.title = "Founder & Owner";
+        stats.title = stats.title && stats.title !== "Member" ? stats.title : "Founder & Owner";
         stats.isPremium = true;
-        await saveAuthoritativeUser(user.userId, { cash: nextCash, gems: nextGems, title: "Founder & Owner" });
+        if (isUntouchedGuestDefault || stats.title === "Member") {
+          await saveAuthoritativeUser(user.userId, { cash: nextCash, gems: nextGems, title: stats.title });
+        }
       }
 
       res.json({
@@ -439,13 +448,16 @@ function sendError(res: express.Response, status: number, err: any, fallback = "
 
       const stats = await getAuthoritativeUser(user.userId, undefined, displayName);
       if (isOwner) {
-        const nextCash = Math.max(stats.cash || 0, 100000);
-        const nextGems = Math.max(stats.gems || 0, 5000);
+        const isUntouchedGuestDefault = stats.cash === 5000 && stats.gems === 90 && (stats.tradesCount || 0) === 0;
+        const nextCash = isUntouchedGuestDefault ? 100000 : stats.cash;
+        const nextGems = isUntouchedGuestDefault ? 5000 : stats.gems;
         stats.cash = nextCash;
         stats.gems = nextGems;
-        stats.title = "Founder & Owner";
+        stats.title = stats.title && stats.title !== "Member" ? stats.title : "Founder & Owner";
         stats.isPremium = true;
-        await saveAuthoritativeUser(user.userId, { cash: nextCash, gems: nextGems, title: "Founder & Owner" });
+        if (isUntouchedGuestDefault || stats.title === "Member") {
+          await saveAuthoritativeUser(user.userId, { cash: nextCash, gems: nextGems, title: stats.title });
+        }
       }
 
       res.json({
@@ -507,8 +519,9 @@ function sendError(res: express.Response, status: number, err: any, fallback = "
   // ==========================================
   // --- AUTHORITATIVE COIN & MARKET ROUTES ---
   // ==========================================
-  app.get("/api/game/coins", (_req, res) => {
+  app.get("/api/game/coins", async (req, res) => {
     try {
+      await coinStore.syncWithDatabase((req as any).user?.jwt);
       const coins = coinStore.getAllCoins();
       res.json({ coins });
     } catch (err: any) {
@@ -516,8 +529,9 @@ function sendError(res: express.Response, status: number, err: any, fallback = "
     }
   });
 
-  app.get("/api/game/coins/:coinId", (req, res) => {
+  app.get("/api/game/coins/:coinId", async (req, res) => {
     try {
+      await coinStore.syncWithDatabase((req as any).user?.jwt);
       const coin = coinStore.getCoin(req.params.coinId);
       if (!coin) {
         return res.status(404).json({ error: "Coin not found", message: "Coin not found" });

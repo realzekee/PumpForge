@@ -174,17 +174,33 @@ export default function CoinDetailsTab({
     return () => clearInterval(interval);
   }, [activeCoin?.createdAt]);
 
-  // User holdings query
+  // User holdings query (matches across id, $id, coinId, symbol, and slug)
   const userAssetHolding = useMemo(() => {
-    const found = (holdings || []).find((h) => h.coinId === activeCoin?.id);
-    return found ? found.amount : 0;
-  }, [holdings, activeCoin?.id]);
+    if (!activeCoin) return 0;
+    const targetIds = new Set(
+      [
+        activeCoin.id,
+        (activeCoin as any).$id,
+        (activeCoin as any).coinId,
+        activeCoin.symbol,
+        (activeCoin as any).slug,
+      ]
+        .filter(Boolean)
+        .map((s) => String(s).toLowerCase())
+    );
+    const matching = (holdings || []).filter(
+      (h) =>
+        targetIds.has(String(h.coinId || "").toLowerCase()) ||
+        Boolean((h as any).coinSymbol && targetIds.has(String((h as any).coinSymbol).toLowerCase()))
+    );
+    return matching.reduce((sum, h) => sum + (Number(h.amount) || 0), 0);
+  }, [holdings, activeCoin]);
 
   // Handle transaction execute
   const handleExecuteTrade = async (e: React.FormEvent) => {
     e.preventDefault();
     setFeedback(null);
-    const numericAmt = parseFloat(tradeAmountCoins);
+    let numericAmt = parseFloat(tradeAmountCoins);
     if (isNaN(numericAmt) || numericAmt <= 0) {
       setFeedback({
         type: "error",
@@ -203,7 +219,7 @@ export default function CoinDetailsTab({
 
     if (activeTradeMode === "BUY") {
       const totalCost = numericAmt * activeCoin.price;
-      if (userStats.cash < totalCost) {
+      if (userStats.cash * 1.006 < totalCost) {
         setFeedback({
           type: "error",
           msg: `Insufficient cash reserve! You need $${totalCost.toLocaleString(undefined, { minimumFractionDigits: 2 })} but only have $${userStats.cash.toLocaleString(undefined, { minimumFractionDigits: 2 })}.`,
@@ -211,10 +227,19 @@ export default function CoinDetailsTab({
         return;
       }
     } else if (activeTradeMode === "SELL") {
-      if (userAssetHolding < numericAmt) {
+      if (userAssetHolding <= 0) {
         setFeedback({
           type: "error",
-          msg: `Insufficient token balance! You own ${userAssetHolding.toFixed(2)} *${activeCoin.symbol} but attempted to sell ${numericAmt.toFixed(2)}.`,
+          msg: `You do not own any *${activeCoin.symbol} tokens to sell.`,
+        });
+        return;
+      }
+      if (numericAmt > userAssetHolding && numericAmt <= userAssetHolding * 1.01 + 0.05) {
+        numericAmt = userAssetHolding;
+      } else if (userAssetHolding + 0.0001 < numericAmt) {
+        setFeedback({
+          type: "error",
+          msg: `Insufficient token balance! You own ${userAssetHolding.toLocaleString(undefined, { maximumFractionDigits: 4 })} *${activeCoin.symbol} but attempted to sell ${numericAmt.toLocaleString(undefined, { maximumFractionDigits: 4 })}.`,
         });
         return;
       }
@@ -229,14 +254,16 @@ export default function CoinDetailsTab({
       );
       setFeedback({
         type: "success",
-        msg: `Successfully ${activeTradeMode === "BUY" ? "purchased" : "sold"} ${numericAmt.toLocaleString()} *${activeCoin.symbol} tokens!`,
+        msg: `Successfully ${activeTradeMode === "BUY" ? "purchased" : "sold"} ${numericAmt.toLocaleString(undefined, { maximumFractionDigits: 4 })} *${activeCoin.symbol} tokens!`,
       });
       setTradeAmountCoins("");
       setTradePercentage(null);
+      fetchCoinTrades();
+      fetchCandles();
       setTimeout(() => {
         setActiveTradeMode("NONE");
         setFeedback(null);
-      }, 1800);
+      }, 1500);
     } catch (err: any) {
       console.error("Trade execution failed:", err);
       setFeedback({
@@ -251,12 +278,19 @@ export default function CoinDetailsTab({
   const setPercentOfMax = (percent: number) => {
     setTradePercentage(percent);
     if (activeTradeMode === "BUY") {
-      const cashBudget = userStats.cash * (percent / 100);
-      const coinsToBuy = cashBudget / activeCoin.price;
-      setTradeAmountCoins(coinsToBuy.toFixed(2));
+      // Account for 0.5% protocol fee so 100% buy never exceeds userStats.cash
+      const cashBudget = (userStats.cash * (percent / 100)) / 1.0055;
+      const rawCoins = cashBudget / (activeCoin.price || 0.000001);
+      const floored = Math.floor(rawCoins * 100) / 100;
+      setTradeAmountCoins(floored > 0 ? floored.toFixed(2) : rawCoins.toFixed(4));
     } else {
-      const balanceToSell = userAssetHolding * (percent / 100);
-      setTradeAmountCoins(balanceToSell.toFixed(2));
+      if (percent === 100) {
+        const flooredAll = Math.floor(userAssetHolding * 10000) / 10000;
+        setTradeAmountCoins(flooredAll > 0 ? String(flooredAll) : "0");
+      } else {
+        const balanceToSell = Math.floor(userAssetHolding * (percent / 100) * 10000) / 10000;
+        setTradeAmountCoins(balanceToSell > 0 ? String(balanceToSell) : "0");
+      }
     }
   };
 
@@ -339,11 +373,19 @@ export default function CoinDetailsTab({
     fetchCandles();
     fetchCoinTrades();
     fetchComments();
+    const onTradesUpdated = () => {
+      fetchCoinTrades();
+      fetchCandles();
+    };
+    window.addEventListener("pf_trades_updated", onTradesUpdated);
     const interval = setInterval(() => {
       fetchCandles();
       fetchCoinTrades();
-    }, 15000);
-    return () => clearInterval(interval);
+    }, 10000);
+    return () => {
+      window.removeEventListener("pf_trades_updated", onTradesUpdated);
+      clearInterval(interval);
+    };
   }, [activeCoin?.id, timeframe]);
 
   // Handle comment submit
@@ -1114,14 +1156,17 @@ export default function CoinDetailsTab({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
-                    {coinTrades.map((t) => {
-                      const totalVal = Number(t.total) || (Number(t.amount) || 0) * (Number(t.price) || 0);
+                    {coinTrades.map((t, idx) => {
+                      const tokenQty = Number(t.amountCoins ?? t.amountTokens ?? t.amount ?? 0);
+                      const unitPrice = Number(t.pricePerCoin ?? t.price ?? activeCoin?.price ?? 0);
+                      const totalVal = Number(t.totalCash ?? t.total ?? t.amountUsd ?? tokenQty * unitPrice ?? 0);
                       const isWhaleTrade = totalVal >= 1000;
                       const isBuy = t.type === "BUY";
+                      const traderLabel = (t.userHandle || t.userName || (t.userId === "admin_realzekeee" ? "zeke" : t.userId) || "trader").replace(/^@/, "").slice(0, 12);
 
                       return (
                         <tr
-                          key={t.$id || t.id}
+                          key={t.$id || t.id || `ct-${idx}`}
                           className={`hover:bg-white/[0.03] transition-colors ${
                             isWhaleTrade ? "bg-amber-500/10 border-l-2 border-amber-400" : ""
                           }`}
@@ -1130,7 +1175,7 @@ export default function CoinDetailsTab({
                             <UserHoverCard userIdOrHandle={t.userId || t.userHandle || "user"}>
                               <span className="text-zinc-200 hover:text-white cursor-pointer font-bold flex items-center gap-1">
                                 {isWhaleTrade && <span title="High-roller &ge; $1,000">💎</span>}
-                                @{(t.userHandle || t.userId || "trader").replace(/^@/, "").slice(0, 10)}
+                                @{traderLabel}
                               </span>
                             </UserHoverCard>
                           </td>
@@ -1146,10 +1191,10 @@ export default function CoinDetailsTab({
                             </span>
                           </td>
                           <td className="py-2.5 text-right text-zinc-300 font-semibold">
-                            {(Number(t.amount) || 0).toLocaleString("en-US", { maximumFractionDigits: 2 })}
+                            {tokenQty.toLocaleString("en-US", { maximumFractionDigits: 2 })}
                           </td>
                           <td className="py-2.5 text-right text-zinc-400">
-                            ${(Number(t.price) || 0).toFixed(6)}
+                            ${unitPrice.toFixed(6)}
                           </td>
                           <td className="py-2.5 text-right font-black">
                             <span className={isWhaleTrade ? "text-amber-400 font-black" : isBuy ? "text-emerald-400" : "text-rose-400"}>

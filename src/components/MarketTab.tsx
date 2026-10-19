@@ -107,8 +107,18 @@ export default function MarketTab({
   };
 
   const getUserHolding = (coinId: string): number => {
-    const holds = holdings.find((h) => h.coinId === coinId);
-    return holds ? holds.amount : 0;
+    const coinObj = coins.find((c) => c.id === coinId);
+    const targetIds = new Set(
+      [coinId, coinObj?.symbol, (coinObj as any)?.slug]
+        .filter(Boolean)
+        .map((s) => String(s).toLowerCase())
+    );
+    const holds = holdings.filter(
+      (h) =>
+        targetIds.has(String(h.coinId || "").toLowerCase()) ||
+        Boolean((h as any).coinSymbol && targetIds.has(String((h as any).coinSymbol).toLowerCase()))
+    );
+    return holds.reduce((sum, h) => sum + (Number(h.amount) || 0), 0);
   };
 
   const handlePercentageClick = (percentage: number) => {
@@ -116,14 +126,19 @@ export default function MarketTab({
     setTradePercentage(percentage);
 
     if (tradeType === "BUY") {
-      const maxCashToSpend = userStats.cash;
-      const budget = maxCashToSpend * (percentage / 100);
-      const coinCount = budget / selectedCoin.price;
-      setTradeAmount(coinCount.toFixed(2));
+      const budget = (userStats.cash * (percentage / 100)) / 1.0055;
+      const rawCoins = budget / (selectedCoin.price || 0.000001);
+      const floored = Math.floor(rawCoins * 100) / 100;
+      setTradeAmount(floored > 0 ? floored.toFixed(2) : rawCoins.toFixed(4));
     } else {
       const holds = getUserHolding(selectedCoin.id);
-      const coinCount = holds * (percentage / 100);
-      setTradeAmount(coinCount.toFixed(2));
+      if (percentage === 100) {
+        const flooredAll = Math.floor(holds * 10000) / 10000;
+        setTradeAmount(flooredAll > 0 ? String(flooredAll) : "0");
+      } else {
+        const coinCount = Math.floor(holds * (percentage / 100) * 10000) / 10000;
+        setTradeAmount(coinCount > 0 ? String(coinCount) : "0");
+      }
     }
   };
 

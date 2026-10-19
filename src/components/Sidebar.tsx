@@ -350,7 +350,7 @@ export default function Sidebar({
               {!isDailyRewardAvailable ? (
                 <div className="flex items-center justify-center gap-1.5 font-mono">
                   <Clock className="w-3.5 h-3.5 text-zinc-500" />
-                  <span>Next in {dailyRewardTimer}</span>
+                  <span>{dailyRewardTimer?.startsWith("Next in") ? dailyRewardTimer : `Next in ${dailyRewardTimer}`}</span>
                 </div>
               ) : (
                 <div className="flex items-center justify-center gap-1.5 font-bold">
@@ -505,7 +505,7 @@ export default function Sidebar({
                         </span>
                         <span>•</span>
                         <span className="text-zinc-300 font-extrabold uppercase tracking-widest scale-95">
-                          {userStats.title}
+                          {(userStats.title || "Member").replace(/&amp;/g, "&")}
                         </span>
                       </span>
                     </div>

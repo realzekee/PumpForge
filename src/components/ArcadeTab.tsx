@@ -888,7 +888,7 @@ export default function ArcadeTab({
               </div>
 
               {coinResultMsg && (
-                <div className="text-center font-bold text-xs bg-zinc-900/60 p-2.5 border border-zinc-850 rounded-xl w-full">
+                <div className="text-center font-bold text-xs bg-zinc-900/60 p-2.5 border border-zinc-800 rounded-xl w-full">
                   {coinResultMsg}
                 </div>
               )}
@@ -980,7 +980,7 @@ export default function ArcadeTab({
                 <button
                   onClick={playCoinflip}
                   disabled={coinIsFlapping}
-                  className="w-full bg-orange-655 hover:bg-orange-500 active:scale-98 transition-all text-white font-black uppercase text-xs tracking-widest py-3 rounded-xl shadow-lg border border-orange-500 mt-1"
+                  className="w-full bg-gradient-to-r from-orange-600 to-rose-600 hover:from-orange-500 hover:to-rose-500 cursor-pointer active:scale-98 transition-all text-white font-black uppercase text-xs tracking-widest py-3 rounded-xl shadow-lg border border-orange-500 mt-1"
                 >
                   Flip Coin
                 </button>
@@ -1005,7 +1005,7 @@ export default function ArcadeTab({
               </div>
 
               {slotResultMsg && (
-                <div className="text-center font-bold text-xs bg-zinc-900/60 p-2.5 border border-zinc-850 rounded-xl w-full select-none">
+                <div className="text-center font-bold text-xs bg-zinc-900/60 p-2.5 border border-zinc-800 rounded-xl w-full select-none">
                   {slotResultMsg}
                 </div>
               )}
@@ -1097,7 +1097,7 @@ export default function ArcadeTab({
                 <button
                   onClick={playSlots}
                   disabled={slotIsSpinning}
-                  className="w-full bg-orange-655 hover:bg-orange-500 active:scale-98 transition-all text-white font-black uppercase text-xs tracking-widest py-3 rounded-xl shadow-lg border border-orange-500 mt-1"
+                  className="w-full bg-gradient-to-r from-orange-600 to-rose-600 hover:from-orange-500 hover:to-rose-500 cursor-pointer active:scale-98 transition-all text-white font-black uppercase text-xs tracking-widest py-3 rounded-xl shadow-lg border border-orange-500 mt-1"
                 >
                   Spin Slots
                 </button>
@@ -1187,7 +1187,7 @@ export default function ArcadeTab({
                               ),
                             )
                           }
-                          className="w-full bg-zinc-950 border border-zinc-850 px-2.5 py-1.5 rounded-lg text-xs font-bold focus:outline-none font-mono"
+                          className="w-full bg-zinc-950 border border-zinc-800 px-2.5 py-1.5 rounded-lg text-xs font-bold focus:outline-none font-mono"
                         />
                       </div>
                       <span className="text-[9px] text-zinc-500 font-semibold px-1">
@@ -1270,7 +1270,7 @@ export default function ArcadeTab({
                       <select
                         value={minesCount}
                         onChange={(e) => setMinesCount(Number(e.target.value))}
-                        className="bg-zinc-950 border border-zinc-850 px-2 py-1.5 rounded-lg text-xs font-bold focus:outline-none"
+                        className="bg-zinc-950 border border-zinc-800 px-2 py-1.5 rounded-lg text-xs font-bold focus:outline-none"
                       >
                         {[1, 2, 3, 5, 8, 12, 18, 24].map((cnt) => (
                           <option key={cnt} value={cnt}>
@@ -1281,7 +1281,7 @@ export default function ArcadeTab({
                     </div>
                     <button
                       onClick={startMinesGame}
-                      className="w-full bg-orange-655 hover:bg-orange-500 py-2.5 rounded-xl text-white font-bold text-xs uppercase tracking-wider border border-orange-500 mt-2 hover:brightness-110 active:scale-98 transition-all"
+                      className="w-full bg-gradient-to-r from-orange-600 to-rose-600 hover:from-orange-500 hover:to-rose-500 cursor-pointer py-2.5 rounded-xl text-white font-bold text-xs uppercase tracking-wider border border-orange-500 mt-2 hover:brightness-110 active:scale-98 transition-all"
                     >
                       Start Mines
                     </button>
@@ -1399,7 +1399,7 @@ export default function ArcadeTab({
                       className={`h-11 rounded-xl text-sm font-black font-mono transition-all border flex items-center justify-center select-none ${
                         diceSelectedNum === num
                           ? "bg-rose-600 hover:bg-rose-500 text-white border-rose-400 shadow shadow-rose-950/50 scale-102 font-extrabold"
-                          : "bg-zinc-950 text-zinc-400 border-zinc-900/60 hover:text-zinc-300 hover:border-zinc-850 cursor-pointer disabled:opacity-50"
+                          : "bg-zinc-950 text-zinc-400 border-zinc-900/60 hover:text-zinc-300 hover:border-zinc-800 cursor-pointer disabled:opacity-50"
                       }`}
                     >
                       {num}
@@ -1591,7 +1591,7 @@ export default function ArcadeTab({
                               if (towerActive) {
                                 if (isCurrent) {
                                   cellStyle =
-                                    "bg-zinc-900 border-zinc-800 hover:bg-zinc-850 hover:border-zinc-650 hover:text-white cursor-pointer active:scale-95";
+                                    "bg-zinc-900 border-zinc-800 hover:bg-zinc-800 hover:border-zinc-650 hover:text-white cursor-pointer active:scale-95";
                                 } else if (isPassed) {
                                   if (isChosen) {
                                     cellStyle =
@@ -1617,7 +1617,7 @@ export default function ArcadeTab({
                                     );
                                   } else {
                                     cellStyle =
-                                      "bg-zinc-900/50 border-zinc-850 text-zinc-600";
+                                      "bg-zinc-900/50 border-zinc-800 text-zinc-600";
                                     iconContent = (
                                       <Lock className="w-3 h-3 text-zinc-700 font-bold" />
                                     );
@@ -1639,7 +1639,7 @@ export default function ArcadeTab({
                                 }
                               } else {
                                 cellStyle =
-                                  "bg-zinc-900/20 border-zinc-850/30 text-zinc-700/40";
+                                  "bg-zinc-900/20 border-zinc-800/30 text-zinc-700/40";
                                 if ((lvlIdx + colIdx) % 3 === 0) {
                                   iconContent = (
                                     <Lock className="w-2.5 h-2.5 text-zinc-805" />
@@ -1730,7 +1730,7 @@ export default function ArcadeTab({
                           ),
                         )
                       }
-                      className="w-full bg-zinc-950 border border-zinc-850 px-3 py-2 text-xs font-bold leading-none focus:outline-none focus:border-zinc-700 font-mono text-zinc-200 disabled:opacity-60"
+                      className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-xs font-bold leading-none focus:outline-none focus:border-zinc-700 font-mono text-zinc-200 disabled:opacity-60"
                     />
                   </div>
                   <span className="text-[9px] text-zinc-500 font-semibold px-1 font-mono leading-none">
@@ -1814,7 +1814,7 @@ export default function ArcadeTab({
                     towerLevel === 0 ? (
                       <button
                         onClick={abortTowerBet}
-                        className="w-full bg-zinc-900 hover:bg-zinc-850 hover:text-white py-3 rounded-xl text-zinc-300 font-extrabold text-[12px] uppercase tracking-wider border border-zinc-800 transition-all active:scale-98 font-mono shadow-md"
+                        className="w-full bg-zinc-900 hover:bg-zinc-800 hover:text-white py-3 rounded-xl text-zinc-300 font-extrabold text-[12px] uppercase tracking-wider border border-zinc-800 transition-all active:scale-98 font-mono shadow-md"
                       >
                         Abort Bet
                       </button>
@@ -1847,7 +1847,7 @@ export default function ArcadeTab({
         </div>
 
         {/* Quick game assistance alerts */}
-        <div className="mt-4 flex items-start gap-2 text-zinc-500 font-mono text-[10px] select-none leading-relaxed border-t border-zinc-850/30 pt-3">
+        <div className="mt-4 flex items-start gap-2 text-zinc-500 font-mono text-[10px] select-none leading-relaxed border-t border-zinc-800/30 pt-3">
           <AlertTriangle className="w-3.5 h-3.5 text-zinc-500 shrink-0 mt-0.5" />
           <span>
             Simulated casino algorithm. All bets are strictly simulated

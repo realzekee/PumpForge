@@ -64,7 +64,7 @@ export const UserHoverCard: React.FC<UserHoverCardProps> = ({
 
       {isOpen && (
         <div
-          className="absolute z-50 bottom-full left-0 mb-2 w-72 p-4 bg-zinc-950/95 border border-white/10 rounded-2xl shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150 text-left font-sans"
+          className="absolute z-50 bottom-full left-0 mb-2 w-72 max-w-[calc(100vw-2rem)] p-4 bg-zinc-950/95 border border-white/10 rounded-2xl shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150 text-left font-sans"
           onMouseEnter={() => {
             if (timeoutRef.current) clearTimeout(timeoutRef.current);
           }}

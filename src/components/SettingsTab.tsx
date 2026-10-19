@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { toast } from "sonner";
 import { Settings, Moon, Bell, Shield, Key, Eye } from "lucide-react";
 import { UserStats } from "../types";
 
@@ -34,7 +35,7 @@ const SettingsTab: React.FC<SettingsTabProps> = ({
       onUpdateStats((stats) => {
         stats.username = tempUsername.trim();
       });
-      alert("Display name updated successfully!");
+      toast.success("Display name updated successfully!");
     }
   };
 
@@ -48,7 +49,7 @@ const SettingsTab: React.FC<SettingsTabProps> = ({
       onUpdateStats((stats) => {
         stats.handle = cleanHandle;
       });
-      alert("Arena username (handle) updated successfully!");
+      toast.success("Arena username (handle) updated successfully!");
     }
   };
 

@@ -116,6 +116,18 @@ async function callServerDbProxy(method: string, args: any[]): Promise<any> {
   const guestUid = typeof window !== "undefined" && window.localStorage
     ? localStorage.getItem("pf_guest_uid")
     : null;
+  let cachedUid = "";
+  let cachedEmail = "";
+  if (typeof window !== "undefined" && window.localStorage) {
+    try {
+      const uRaw = localStorage.getItem("cached_appwrite_user");
+      if (uRaw) {
+        const uObj = JSON.parse(uRaw);
+        cachedUid = uObj?.$id || uObj?.uid || uObj?.userId || "";
+        cachedEmail = uObj?.email || "";
+      }
+    } catch {}
+  }
 
   const res = await fetch("/api/db/proxy", {
     method: "POST",
@@ -124,6 +136,8 @@ async function callServerDbProxy(method: string, args: any[]): Promise<any> {
       "Accept": "application/json",
       ...(customToken ? { Authorization: `Bearer ${customToken}` } : {}),
       ...(guestUid ? { "X-Guest-ID": guestUid } : {}),
+      ...(cachedUid ? { "X-User-ID": cachedUid } : {}),
+      ...(cachedEmail ? { "X-User-Email": cachedEmail } : {}),
     },
     body: JSON.stringify({
       method,

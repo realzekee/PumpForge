@@ -9,7 +9,7 @@ import { apiGetTrades } from "../api/gameClient";
 
 export function TradesHistoryTab({
   coins,
-  registeredUsers = []
+  registeredUsers = [],
 }: {
   coins: MemeCoin[];
   registeredUsers?: any[];
@@ -35,7 +35,7 @@ export function TradesHistoryTab({
           try {
             const res = await databases.listDocuments("pumpforge", "trades", [
               Query.orderDesc("$createdAt"),
-              Query.limit(100)
+              Query.limit(100),
             ]);
             list = res.documents || [];
           } catch (_dbErr) {}
@@ -50,7 +50,14 @@ export function TradesHistoryTab({
       }
     };
     fetchHistory();
-    return () => { active = false; };
+    const onTradesUpdated = () => fetchHistory();
+    window.addEventListener("pf_trades_updated", onTradesUpdated);
+    const timer = setInterval(fetchHistory, 10000);
+    return () => {
+      active = false;
+      window.removeEventListener("pf_trades_updated", onTradesUpdated);
+      clearInterval(timer);
+    };
   }, []);
 
   return (
@@ -71,33 +78,79 @@ export function TradesHistoryTab({
 
       <div className="glass-panel shadow-2xl rounded-3xl border border-white/10 p-6 flex flex-col gap-3">
         {loading ? (
-             <SkeletonLoader type="list" />
+          <SkeletonLoader type="list" />
         ) : trades.length > 0 ? (
-             trades.map((trade, idx) => {
-                 const coin = (coins || []).find(c => c && c.id === trade.coinId);
-                 const amountUsd = typeof trade.amount === 'number' && !isNaN(trade.amount) ? trade.amount : Number(trade.amount) || 0;
-                 const resolvedHandle = trade.userName || registeredUsers.find((u: any) => u.uid === trade.userId)?.handle || (trade.userId ? trade.userId.substring(0, 8) : "Trader");
-                 const resolvedSymbol = trade.coinTicker || (coin ? coin.symbol : "COIN");
-                 return (
-                     <div key={trade.$id || `trade-${idx}`} className="flex justify-between items-center glass-card p-4 rounded-2xl border border-white/10 shadow-sm">
-                         <div className="flex flex-col">
-                             <div className="text-xs text-zinc-400 flex items-center gap-1.5"><Clock className="w-3.5 h-3.5"/> {trade.$createdAt ? new Date(trade.$createdAt).toLocaleString() : "Just now"}</div>
-                             <div className="text-zinc-200 font-mono text-sm mt-1 truncate max-w-[140px] font-bold">
-                              <UserHoverCard userIdOrHandle={trade.userId || resolvedHandle}>
-                                {resolvedHandle}
-                              </UserHoverCard>
-                            </div>
-                         </div>
-                         <div className="flex items-center gap-4">
-                             <span className="font-mono text-zinc-300 font-bold">{(amountUsd >= 1000 ? (amountUsd/1000).toFixed(2) + "K" : amountUsd.toFixed(2))} USD</span>
-                             <span className="font-mono text-zinc-400 text-xs">*{resolvedSymbol}</span>
-                             <span className={`font-mono text-xs px-2.5 py-1 uppercase rounded-full font-black border ${trade.type === 'BUY' ? 'text-emerald-300 bg-emerald-500/20 border-emerald-500/40' : trade.type === 'TRANSFER' ? 'text-fuchsia-300 bg-fuchsia-500/20 border-fuchsia-500/40' : 'text-rose-300 bg-rose-500/20 border-rose-500/40'}`}>{trade.type || "TRADE"}</span>
-                         </div>
-                     </div>
-                 );
-             })
+          trades.map((trade, idx) => {
+            const coin = (coins || []).find(
+              (c) =>
+                c &&
+                (c.id === trade.coinId ||
+                  c.symbol?.toLowerCase() === String(trade.coinSymbol || trade.coinTicker || "").toLowerCase())
+            );
+            const tokenQty = Number(trade.amountCoins ?? trade.amountTokens ?? 0);
+            const unitPrice = Number(trade.pricePerCoin ?? trade.price ?? coin?.price ?? 0);
+            const amountUsd = Number(
+              trade.totalCash ??
+                trade.amountUsd ??
+                trade.total ??
+                (trade.amount !== undefined && trade.amountCoins === undefined ? trade.amount : tokenQty * unitPrice) ??
+                0
+            );
+            const resolvedHandle =
+              trade.userName ||
+              trade.userHandle ||
+              registeredUsers.find((u: any) => u.uid === trade.userId)?.handle ||
+              (trade.userId === "admin_realzekeee"
+                ? "Zeke (Owner)"
+                : trade.userId
+                ? trade.userId.substring(0, 10)
+                : "Trader");
+            const resolvedSymbol = trade.coinSymbol || trade.coinTicker || (coin ? coin.symbol : "COIN");
+            const timeValue = trade.timestamp || trade.$createdAt;
+
+            return (
+              <div
+                key={trade.$id || trade.id || `trade-${idx}`}
+                className="flex justify-between items-center glass-card p-4 rounded-2xl border border-white/10 shadow-sm"
+              >
+                <div className="flex flex-col">
+                  <div className="text-xs text-zinc-400 flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5" />{" "}
+                    {timeValue ? new Date(timeValue).toLocaleString() : "Just now"}
+                  </div>
+                  <div className="text-zinc-200 font-mono text-sm mt-1 truncate max-w-[180px] font-bold">
+                    <UserHoverCard userIdOrHandle={trade.userId || resolvedHandle}>
+                      {resolvedHandle}
+                    </UserHoverCard>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 sm:gap-4">
+                  {tokenQty > 0 && (
+                    <span className="font-mono text-zinc-400 text-xs hidden sm:inline">
+                      {tokenQty.toLocaleString("en-US", { maximumFractionDigits: 2 })} *{resolvedSymbol}
+                    </span>
+                  )}
+                  <span className="font-mono text-zinc-200 font-bold">
+                    ${amountUsd >= 1000 ? (amountUsd / 1000).toFixed(2) + "K" : amountUsd.toFixed(2)} USD
+                  </span>
+                  <span className="font-mono text-zinc-400 text-xs sm:hidden">*{resolvedSymbol}</span>
+                  <span
+                    className={`font-mono text-xs px-2.5 py-1 uppercase rounded-full font-black border ${
+                      trade.type === "BUY"
+                        ? "text-emerald-300 bg-emerald-500/20 border-emerald-500/40"
+                        : trade.type === "TRANSFER"
+                        ? "text-fuchsia-300 bg-fuchsia-500/20 border-fuchsia-500/40"
+                        : "text-rose-300 bg-rose-500/20 border-rose-500/40"
+                    }`}
+                  >
+                    {trade.type || "TRADE"}
+                  </span>
+                </div>
+              </div>
+            );
+          })
         ) : (
-             <div className="text-zinc-400 font-mono text-center py-6">No trades found.</div>
+          <div className="text-zinc-400 font-mono text-center py-6">No trades found.</div>
         )}
       </div>
     </div>

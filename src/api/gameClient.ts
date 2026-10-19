@@ -103,12 +103,39 @@ function getGuestId(): string {
   return gid;
 }
 
+function getCachedUserIdentity(): { userId?: string; email?: string; name?: string } {
+  if (typeof window === "undefined" || !window.localStorage) return {};
+  try {
+    const raw = localStorage.getItem("cached_appwrite_user");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      const uid = parsed?.$id || parsed?.uid || parsed?.userId;
+      if (uid) {
+        return {
+          userId: String(uid),
+          email: parsed?.email ? String(parsed.email) : "",
+          name: parsed?.name || parsed?.displayName ? String(parsed.name || parsed.displayName) : "",
+        };
+      }
+    }
+    const fallbackUid = localStorage.getItem("pf_fallback_userId");
+    if (fallbackUid) {
+      return { userId: fallbackUid };
+    }
+  } catch {}
+  return {};
+}
+
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const jwt = await getAuthJwt();
+  const identity = getCachedUserIdentity();
   const headers: Record<string, string> = {
     "Accept": "application/json",
     "Content-Type": "application/json",
     "X-Guest-ID": getGuestId(),
+    ...(identity.userId ? { "X-User-ID": identity.userId } : {}),
+    ...(identity.email ? { "X-User-Email": identity.email } : {}),
+    ...(identity.name ? { "X-User-Name": identity.name } : {}),
     ...(options.headers as Record<string, string> || {}),
   };
 

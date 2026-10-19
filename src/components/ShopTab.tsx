@@ -146,7 +146,7 @@ export default function ShopTab({
     cost: number,
   ) => {
     if (userStats.gems < cost) {
-      alert(
+      toast.error(
         "Insufficient gems! Play games, trade, or collect daily rewards to get additional gems.",
       );
       return;

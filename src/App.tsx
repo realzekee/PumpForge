@@ -209,12 +209,12 @@ function CoinRouteWrapper({
     if (c) {
       setLocalCoin((prev) => {
         if (!prev) return c;
-        const bestPrice = Math.max(prev.price || 0, c.price || 0);
+        const nextPrice = Number(c.price || prev.price || 0.01);
         return {
           ...prev,
           ...c,
-          price: bestPrice,
-          marketCap: Math.floor((c.supply || 1000000) * bestPrice),
+          price: nextPrice,
+          marketCap: Number(c.marketCap || Math.floor((c.supply || 1000000) * nextPrice)),
         };
       });
       setLoading(false);
@@ -230,10 +230,10 @@ function CoinRouteWrapper({
         setLocalCoin((prev) => {
           const docPrice = Number(doc.price || 0);
           const currentPrice = prev?.price || 0;
-          const bestPrice = Math.max(docPrice, currentPrice);
+          const bestPrice = docPrice > 0 ? docPrice : currentPrice || 0.01;
           return {
-            id: doc.$id || prev?.id || coinId,
-            coinId: doc.coinId || doc.$id || coinId,
+            id: doc.id || doc.$id || prev?.id || coinId,
+            coinId: doc.coinId || doc.id || doc.$id || coinId,
             creatorId: doc.creatorId || prev?.creatorId,
             creatorName: doc.creatorName || prev?.creatorName,
             creator: doc.creator || prev?.creator || "@system",
@@ -420,7 +420,23 @@ export default function App() {
       createdAt: "2026-05-24T06:40:00Z",
     };
   });
-  const [holdings, setHoldings] = useState<PortfolioHolding[]>([]);
+  const [holdings, setHoldings] = useState<PortfolioHolding[]>(() => {
+    try {
+      const cachedUserStr = safeStorage.getItem("cached_appwrite_user");
+      if (cachedUserStr) {
+        const u = JSON.parse(cachedUserStr);
+        const uid = u?.$id || u?.uid || u?.userId;
+        if (uid) {
+          const cachedH = safeStorage.getItem(`memex_holdings_${uid}`);
+          if (cachedH) {
+            const parsed = JSON.parse(cachedH);
+            if (Array.isArray(parsed)) return parsed;
+          }
+        }
+      }
+    } catch {}
+    return [];
+  });
   const [liveTrades, setLiveTrades] = useState<LiveTrade[]>([]);
   const [markets, setMarkets] = useState<PredictionMarket[]>(() => {
     const cached = safeStorage.getItem("pumpforge_polymarkets");
@@ -895,11 +911,19 @@ export default function App() {
           try {
             const meRes = await apiGetMe();
             if (meRes?.user && !meRes.user.isGuest) {
+              const uid = meRes.user.userId || meRes.user.$id;
               const u = {
-                $id: meRes.user.userId,
+                $id: uid,
+                uid,
                 email: meRes.user.email,
                 name: meRes.user.name,
               };
+              safeStorage.setItem("cached_appwrite_user", JSON.stringify(u));
+              localStorage.setItem("pf_session_valid", "true");
+              localStorage.setItem("pf_fallback_userId", uid);
+              if (meRes.stats) {
+                safeStorage.setItem("cached_appwrite_stats", JSON.stringify(meRes.stats));
+              }
               if (active) {
                 setCurrentUser(u);
                 if (meRes.stats) {
@@ -909,11 +933,24 @@ export default function App() {
                 setIsLoading(false);
                 setIsCheckingRedirect(false);
               }
+              try {
+                const hRes = await apiGetHoldings({ userId: uid });
+                if (active && hRes && Array.isArray(hRes.holdings)) {
+                  const mappedH = hRes.holdings
+                    .map((d: any) => ({
+                      coinId: d.coinId,
+                      amount: Number(d.amount ?? d.tokenAmount ?? 0),
+                      avgBuyPrice: Number(d.avgBuyPrice ?? d.avgPrice ?? d.price ?? 0),
+                    }))
+                    .filter((h: any) => h.amount > 0.00001);
+                  setHoldings(mappedH);
+                  safeStorage.setItem(`memex_holdings_${uid}`, JSON.stringify(mappedH));
+                }
+              } catch {}
               return;
             }
           } catch (e) {
             console.warn("Custom token session check notice:", e);
-            // Resilient fallback to cached user and stats
             const cachedUserStr = safeStorage.getItem("cached_appwrite_user");
             const cachedStatsStr = safeStorage.getItem("cached_appwrite_stats");
             if (cachedUserStr && active) {
@@ -985,14 +1022,22 @@ export default function App() {
                 user.$id,
               );
             } catch (err: any) {
-              profileDoc = {
-                cash: 5000.0,
-                gems: 90,
-                prestigeLevel: 0,
-                totalProfit: 0.0,
-                tradesCount: 0,
-                coinsCreatedCount: 0,
-              };
+              const cachedStatsStr = safeStorage.getItem("cached_appwrite_stats");
+              if (cachedStatsStr) {
+                try {
+                  profileDoc = JSON.parse(cachedStatsStr);
+                } catch {}
+              }
+              if (!profileDoc) {
+                profileDoc = {
+                  cash: isOwnerEmail ? 100000.0 : 5000.0,
+                  gems: isOwnerEmail ? 5000 : 90,
+                  prestigeLevel: 0,
+                  totalProfit: 0.0,
+                  tradesCount: 0,
+                  coinsCreatedCount: 0,
+                };
+              }
             }
           }
 
@@ -1614,6 +1659,8 @@ export default function App() {
     };
     
     fetchTrades();
+    const handleTradesUpdated = () => fetchTrades();
+    window.addEventListener("pf_trades_updated", handleTradesUpdated);
     
     let tradesUnsub = () => {};
     try {
@@ -1694,6 +1741,7 @@ export default function App() {
     }
 
     return () => {
+      window.removeEventListener("pf_trades_updated", handleTradesUpdated);
       coinsUnsub();
       tradesUnsub();
       usersUnsub();
@@ -1800,6 +1848,21 @@ export default function App() {
       };
 
       fetchUserWagers();
+      apiGetHoldings({ userId: uid })
+        .then((hRes) => {
+          if (hRes && Array.isArray(hRes.holdings)) {
+            const mappedH = hRes.holdings
+              .map((d: any) => ({
+                coinId: d.coinId,
+                amount: Number(d.amount ?? d.tokenAmount ?? 0),
+                avgBuyPrice: Number(d.avgBuyPrice ?? d.avgPrice ?? d.price ?? 0),
+              }))
+              .filter((h: any) => h.amount > 0.00001);
+            setHoldings(mappedH);
+            safeStorage.setItem(`memex_holdings_${uid}`, JSON.stringify(mappedH));
+          }
+        })
+        .catch(() => {});
       apiGetNotifications(uid)
         .then((res) => {
           if (res && Array.isArray(res.notifications) && res.notifications.length > 0) {
@@ -1982,67 +2045,110 @@ export default function App() {
       throw new Error(msg);
     }
 
+    let effectiveAmountCoins = amountCoins;
     if (type === "SELL") {
-      const existingHolding = holdings.find(
-        (h) => h.coinId === coin.id || h.coinId === coinId || h.coinId === coin.symbol
+      const targetIds = new Set(
+        [coin.id, coinId, coin.symbol, (coin as any).slug, (coin as any).$id]
+          .filter(Boolean)
+          .map((s) => String(s).toLowerCase())
       );
-      if (!existingHolding || existingHolding.amount < amountCoins) {
-        const owned = existingHolding ? existingHolding.amount.toLocaleString() : "0";
-        const msg = `You do not own enough tokens to sell! Owned: ${owned}, Requested: ${amountCoins.toLocaleString()}`;
+      const existingHolding = holdings.find(
+        (h) =>
+          targetIds.has(String(h.coinId || "").toLowerCase()) ||
+          ((h as any).coinSymbol && targetIds.has(String((h as any).coinSymbol).toLowerCase()))
+      );
+      if (!existingHolding || existingHolding.amount <= 0) {
+        const msg = `You do not own any *${coin.symbol} tokens to sell!`;
+        triggerToast("Transaction Failed", msg, true);
+        throw new Error(msg);
+      }
+      if (effectiveAmountCoins > existingHolding.amount && effectiveAmountCoins <= existingHolding.amount * 1.01 + 0.05) {
+        effectiveAmountCoins = existingHolding.amount;
+      } else if (existingHolding.amount + 0.0001 < effectiveAmountCoins) {
+        const owned = existingHolding.amount.toLocaleString();
+        const msg = `You do not own enough tokens to sell! Owned: ${owned}, Requested: ${effectiveAmountCoins.toLocaleString()}`;
         triggerToast("Transaction Failed", msg, true);
         throw new Error(msg);
       }
     }
 
     try {
-      const res = await apiTrade(coin.id, type, amountCoins);
-      if (res.userStats) {
-        const nextCash = Number(res.userStats.cash);
-        const nextProfit = Number(res.userStats.totalProfit ?? userStats.totalProfit);
-        const nextTrades = Number(res.userStats.tradesCount ?? userStats.tradesCount);
-        setUserStats((prev) => {
-          const next = {
-            ...prev,
-            cash: nextCash,
-            totalProfit: nextProfit,
-            tradesCount: nextTrades,
-          };
-          safeStorage.setItem("cached_appwrite_stats", JSON.stringify(next));
-          return next;
-        });
-      }
+      const res: any = await apiTrade(coin.id, type, effectiveAmountCoins);
+      const executedCoins = Number(res.amountCoins ?? effectiveAmountCoins);
+      const executedCost = Number(res.totalCost ?? executedCoins * coin.price * 1.005);
+      const executedPayout = Number(res.netPayout ?? executedCoins * coin.price * 0.995);
+
+      setUserStats((prev) => {
+        const fallbackCash =
+          type === "BUY"
+            ? Math.max(0, Number((prev.cash - executedCost).toFixed(2)))
+            : Number((prev.cash + executedPayout).toFixed(2));
+        const nextCash =
+          res.userStats && res.userStats.cash !== undefined
+            ? Number(res.userStats.cash)
+            : fallbackCash;
+        const nextProfit =
+          res.userStats && res.userStats.totalProfit !== undefined
+            ? Number(res.userStats.totalProfit)
+            : prev.totalProfit;
+        const nextTrades =
+          res.userStats && res.userStats.tradesCount !== undefined
+            ? Number(res.userStats.tradesCount)
+            : (prev.tradesCount || 0) + 1;
+
+        const next = {
+          ...prev,
+          cash: nextCash,
+          totalProfit: nextProfit,
+          tradesCount: nextTrades,
+        };
+        setContextCash(nextCash);
+        setContextUserStats(next);
+        safeStorage.setItem("cached_appwrite_stats", JSON.stringify(next));
+        return next;
+      });
 
       setHoldings((prev) => {
+        const targetIds = new Set(
+          [coin.id, coinId, coin.symbol, (coin as any).slug, (coin as any).$id]
+            .filter(Boolean)
+            .map((s) => String(s).toLowerCase())
+        );
+        const matchesCoin = (h: PortfolioHolding) =>
+          targetIds.has(String(h.coinId || "").toLowerCase()) ||
+          Boolean((h as any).coinSymbol && targetIds.has(String((h as any).coinSymbol).toLowerCase()));
+
         let nextHoldings: PortfolioHolding[];
-        if (type === "BUY") {
-          const exists = prev.find(
-            (h) => h.coinId === coin.id || h.coinId === coinId || h.coinId === coin.symbol
-          );
+        if (res.holding && typeof res.holding.amount === "number") {
+          const srvAmt = Number(res.holding.amount);
+          const srvAvg = Number(res.holding.avgBuyPrice || res.price || coin.price);
+          const others = prev.filter((h) => !matchesCoin(h));
+          if (srvAmt > 0.00001) {
+            nextHoldings = [...others, { coinId: coin.id, amount: srvAmt, avgBuyPrice: srvAvg }];
+          } else {
+            nextHoldings = others;
+          }
+        } else if (type === "BUY") {
+          const exists = prev.find(matchesCoin);
           if (exists) {
-            const nextAmt = exists.amount + amountCoins;
-            const nextAvg = (exists.amount * exists.avgBuyPrice + (res.totalCost || totalUsdVal)) / nextAmt;
+            const nextAmt = Number((exists.amount + executedCoins).toFixed(4));
+            const nextAvg = Number(((exists.amount * exists.avgBuyPrice + executedCost) / nextAmt).toFixed(6));
             nextHoldings = prev.map((h) =>
-              h.coinId === exists.coinId
-                ? { ...h, coinId: coin.id, amount: nextAmt, avgBuyPrice: nextAvg }
-                : h
+              matchesCoin(h) ? { ...h, coinId: coin.id, amount: nextAmt, avgBuyPrice: nextAvg } : h
             );
           } else {
             nextHoldings = [
               ...prev,
-              { coinId: coin.id, amount: amountCoins, avgBuyPrice: res.price || coin.price },
+              { coinId: coin.id, amount: executedCoins, avgBuyPrice: res.price || coin.price },
             ];
           }
         } else {
           nextHoldings = prev
-            .map((h) =>
-              h.coinId === coin.id || h.coinId === coinId || h.coinId === coin.symbol
-                ? { ...h, amount: h.amount - amountCoins }
-                : h
-            )
-            .filter((h) => h.amount > 0.000001);
+            .map((h) => (matchesCoin(h) ? { ...h, coinId: coin.id, amount: h.amount - executedCoins } : h))
+            .filter((h) => h.amount > 0.00001);
         }
 
-        const uid = currentUser?.$id || currentUser?.uid;
+        const uid = currentUser?.$id || currentUser?.uid || currentUser?.userId;
         if (uid) {
           safeStorage.setItem(`memex_holdings_${uid}`, JSON.stringify(nextHoldings));
         }
@@ -2056,6 +2162,23 @@ export default function App() {
           return nextCoins;
         });
       }
+
+      const newLiveTrade: LiveTrade = {
+        id: res.trade?.id || `trade_${Date.now()}`,
+        timestamp: new Date().toLocaleTimeString(),
+        type,
+        coinId: coin.id,
+        coinSymbol: coin.symbol,
+        coinTicker: coin.symbol,
+        coinName: coin.name,
+        amountTokens: executedCoins,
+        amountUsd: Number((executedCoins * (res.price || coin.price)).toFixed(2)),
+        userHandle: userStats.handle || currentUser?.name || "@trader",
+        userName: userStats.username || currentUser?.name || "Trader",
+        userId: currentUser?.$id || currentUser?.uid,
+      };
+      setLiveTrades((prev) => [newLiveTrade, ...prev.slice(0, 49)]);
+      window.dispatchEvent(new CustomEvent("pf_trades_updated", { detail: res.trade || newLiveTrade }));
 
       onAddNotification(
         type === "BUY" ? "Buy Order filled" : "Sell order filled",

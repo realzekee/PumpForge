@@ -67,7 +67,7 @@ export default function PortfolioTab({
   // Calculate current holdings value and cost basis
   const holdingsSummary = (holdings || []).reduce(
     (acc, h) => {
-      const coin = (coins || []).find((c) => c && c.id === h.coinId);
+      const coin = (coins || []).find((c) => c && (c.id === h.coinId || c.symbol?.toLowerCase() === String(h.coinId || (h as any).coinSymbol || '').toLowerCase()));
       const amount = Number(h.amount) || 0;
       const coinPrice = Number(coin?.price) || 0;
       const avgPrice = Number(h.avgBuyPrice) || coinPrice;
@@ -393,7 +393,7 @@ export default function PortfolioTab({
                   </thead>
                   <tbody className="divide-y divide-white/5 font-semibold text-zinc-300">
                     {(holdings || []).map((h) => {
-                      const coin = (coins || []).find((c) => c && c.id === h.coinId);
+                      const coin = (coins || []).find((c) => c && (c.id === h.coinId || c.symbol?.toLowerCase() === String(h.coinId || (h as any).coinSymbol || '').toLowerCase()));
                       if (!coin) return null;
 
                       const amount = Number(h.amount) || 0;
@@ -458,7 +458,7 @@ export default function PortfolioTab({
               {/* Mobile View lists */}
               <div className="block sm:hidden divide-y divide-white/10">
                 {(holdings || []).map((h) => {
-                  const coin = (coins || []).find((c) => c && c.id === h.coinId);
+                  const coin = (coins || []).find((c) => c && (c.id === h.coinId || c.symbol?.toLowerCase() === String(h.coinId || (h as any).coinSymbol || '').toLowerCase()));
                   if (!coin) return null;
 
                   const amount = Number(h.amount) || 0;
