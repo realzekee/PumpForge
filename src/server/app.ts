@@ -49,10 +49,14 @@ import {
   getAllUsersList,
   getBroadcastsList,
   getPolymarketsList,
+  recordPolymarket,
   getTradesList,
+  recordTradeLog,
   getHoldingsList,
+  recordHoldingLog,
   getDatabases,
   inMemoryWagers,
+  recordWagerLog,
   getNotificationsList,
   recordNotification,
 } from "./db";
@@ -66,7 +70,10 @@ const PORT = 3000;
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept, X-Requested-With, X-Appwrite-JWT, X-Guest-ID, X-User-ID, X-User-Email, X-User-Name");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, Accept, X-Requested-With, X-Appwrite-JWT, X-Guest-ID, X-User-ID, X-User-Email, X-User-Name, X-User-Cash, X-User-Gems, X-User-Profit, X-User-Trades, X-User-Updated-At"
+  );
   if (req.method === "OPTIONS") {
     return res.status(204).end();
   }
@@ -230,7 +237,12 @@ function sendError(res: express.Response, status: number, err: any, fallback = "
   });
 
   app.get("/api/health", (_req, res) => {
-    res.json({ status: "ok", timestamp: new Date().toISOString() });
+    const apiKey = (process.env.APPWRITE_API_KEY || process.env.VITE_APPWRITE_API_KEY || "").trim();
+    res.json({
+      status: "ok",
+      appwriteConfigured: Boolean(apiKey),
+      timestamp: new Date().toISOString(),
+    });
   });
 
   app.get("/api/auth/me", async (req, res) => {
@@ -581,7 +593,6 @@ function sendError(res: express.Response, status: number, err: any, fallback = "
   // ==========================================
   // --- AUTHORITATIVE ARCADE & GAMING ---
   // ==========================================
-  // Dedicated Coinflip route (Zero-Trust Authoritative via node-appwrite)
   app.post("/api/arcade/coinflip", async (req, res) => {
     try {
       const user = (req as any).user;
@@ -1028,8 +1039,6 @@ function sendError(res: express.Response, status: number, err: any, fallback = "
 
   // ==========================================
   // --- UNIVERSAL SERVER-AUTHORITATIVE APPWRITE DB PROXY ---
-  // Serves all 13 collections using server-side node-appwrite with APPWRITE_API_KEY.
-  // Completely eliminates browser Web Platform Origin checks (Error 1008) and permission errors.
   // ==========================================
   app.post("/api/db/proxy", async (req, res) => {
     try {
@@ -1048,7 +1057,6 @@ function sendError(res: express.Response, status: number, err: any, fallback = "
           const result = await (db as any)[method](...args);
           return res.json({ success: true, result });
         } catch (appwriteErr: any) {
-          // If Appwrite throws or key is in dev mode, gracefully serve from authoritative in-memory cache
           if (method === "listDocuments") {
             if (collectionId === "trades") {
               const trades = await getTradesList({ jwt: userJwt });
@@ -1097,7 +1105,12 @@ function sendError(res: express.Response, status: number, err: any, fallback = "
           if (method === "createDocument" || method === "updateDocument") {
             const docId = args[2] || `doc_${Date.now()}`;
             const data = args[3] || {};
-            return res.json({ success: true, result: { $id: docId, ...data } });
+            const merged = { $id: docId, id: docId, ...data };
+            if (collectionId === "polymarkets") recordPolymarket(merged);
+            if (collectionId === "holdings") recordHoldingLog(merged);
+            if (collectionId === "trades") recordTradeLog(merged);
+            if (collectionId === "wagers") recordWagerLog(merged);
+            return res.json({ success: true, result: merged });
           }
 
           if (method === "deleteDocument") {
@@ -1119,7 +1132,6 @@ function sendError(res: express.Response, status: number, err: any, fallback = "
 
   // ==========================================
   // --- STRICT API ERROR & 404 CATCH-ALL ---
-  // Guarantees that ALL /api requests return valid JSON, NEVER HTML error pages or SPA fallback.
   // ==========================================
   app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     console.error("[API Error]", err);

@@ -101,7 +101,7 @@ class AuthoritativeCoinStore {
           avatarEmoji: doc.avatarEmoji || existing?.avatarEmoji || "🪙",
           avatarBg: doc.avatarBg || existing?.avatarBg || "bg-zinc-900 border-zinc-800",
           supply: Number(doc.supply ?? existing?.supply ?? 1000000),
-          createdAt: doc.$createdAt || existing?.createdAt,
+          createdAt: doc.createdAt || doc.$createdAt || existing?.createdAt,
         };
 
         this.coins.set(canonicalId, merged);
@@ -157,7 +157,8 @@ class AuthoritativeCoinStore {
           change24h: payload.change24h,
         });
       } catch (updateErr: any) {
-        if (updateErr?.code === 404 || updateErr?.status === 404) {
+        const msg = String(updateErr?.message || "").toLowerCase();
+        if (updateErr?.code === 404 || updateErr?.status === 404 || msg.includes("not found")) {
           await databases.createDocument(
             "pumpforge",
             "coins",
@@ -257,9 +258,33 @@ export interface UserStateCache {
   suspendedUntil?: number | null;
   createdAt?: string;
   updatedAt: number;
+  dirty?: boolean;
 }
 
 const userCache = new Map<string, UserStateCache>();
+
+interface ClientUserHint {
+  cash?: number;
+  gems?: number;
+  totalProfit?: number;
+  tradesCount?: number;
+  updatedAt?: number;
+  username?: string;
+}
+const userHintsMap = new Map<string, ClientUserHint>();
+
+export function hydrateUserHintsFromHeaders(userId: string, hint: ClientUserHint) {
+  if (!userId) return;
+  const existing = userHintsMap.get(userId) || {};
+  userHintsMap.set(userId, {
+    cash: typeof hint.cash === "number" && !isNaN(hint.cash) && hint.cash >= 0 ? hint.cash : existing.cash,
+    gems: typeof hint.gems === "number" && !isNaN(hint.gems) && hint.gems >= 0 ? hint.gems : existing.gems,
+    totalProfit: typeof hint.totalProfit === "number" && !isNaN(hint.totalProfit) ? hint.totalProfit : existing.totalProfit,
+    tradesCount: typeof hint.tradesCount === "number" && !isNaN(hint.tradesCount) && hint.tradesCount >= 0 ? hint.tradesCount : existing.tradesCount,
+    updatedAt: typeof hint.updatedAt === "number" && !isNaN(hint.updatedAt) ? hint.updatedAt : existing.updatedAt,
+    username: hint.username || existing.username,
+  });
+}
 
 let nextPlayerId = 1;
 let isPlayerCounterInitialized = false;
@@ -297,11 +322,15 @@ export function computeUserBadges(user: UserStateCache): string[] {
 }
 
 /**
- * Fetches authoritative user state from Appwrite or cache
+ * Fetches authoritative user state from Appwrite or cache.
+ * Never overwrites a newer dirty in-memory state or newer client-verified balance with a stale Appwrite read.
  */
 export async function getAuthoritativeUser(userId: string, jwt?: string, defaultName?: string): Promise<UserStateCache> {
   const cached = userCache.get(userId);
-  if (cached && Date.now() - cached.updatedAt < 1500) {
+  const hint = userHintsMap.get(userId);
+
+  // If cached state has unsynced mutations on this instance or was updated within the last 5 seconds, trust it immediately
+  if (cached && (cached.dirty || Date.now() - cached.updatedAt < 5000)) {
     return cached;
   }
 
@@ -314,7 +343,8 @@ export async function getAuthoritativeUser(userId: string, jwt?: string, default
     try {
       doc = await databases.getDocument("pumpforge", "users", userId);
     } catch (getErr: any) {
-      if (getErr?.code === 404 || getErr?.status === 404) {
+      const errMsg = String(getErr?.message || "").toLowerCase();
+      if (getErr?.code === 404 || getErr?.status === 404 || errMsg.includes("not found")) {
         try {
           const listRes = await databases.listDocuments("pumpforge", "users", [
             Query.equal("userId", userId),
@@ -334,6 +364,7 @@ export async function getAuthoritativeUser(userId: string, jwt?: string, default
     }
 
     const docId = doc.$id || userId;
+    const docUpdatedAt = doc.$updatedAt ? new Date(doc.$updatedAt).getTime() : 0;
     let assignedPlayerId = doc.playerId ? Number(doc.playerId) : cached?.playerId;
     if (!assignedPlayerId) {
       assignedPlayerId = isOwnerAccount ? 1 : nextPlayerId++;
@@ -344,20 +375,55 @@ export async function getAuthoritativeUser(userId: string, jwt?: string, default
       } catch (_) {}
     }
 
+    // Determine whether our cached state or client hint is newer than the Appwrite document
+    // (e.g., if a previous serverless instance updated the balance or if Appwrite writes were restricted)
+    const useCachedBalance = Boolean(cached && (cached.dirty || (docUpdatedAt > 0 && cached.updatedAt > docUpdatedAt + 2000)));
+    const useHintBalance = Boolean(
+      !useCachedBalance &&
+        hint &&
+        typeof hint.cash === "number" &&
+        hint.updatedAt &&
+        (!docUpdatedAt || hint.updatedAt > docUpdatedAt + 2000)
+    );
+
+    const resolvedCash = useCachedBalance
+      ? cached!.cash
+      : useHintBalance
+      ? Number(hint!.cash)
+      : Number(doc.cash ?? cached?.cash ?? hint?.cash ?? (isOwnerAccount ? 100000.0 : 5000.0));
+
+    const resolvedGems = useCachedBalance
+      ? cached!.gems
+      : useHintBalance && typeof hint!.gems === "number"
+      ? Number(hint!.gems)
+      : Number(doc.gems ?? cached?.gems ?? hint?.gems ?? (isOwnerAccount ? 5000 : 90));
+
+    const resolvedProfit = useCachedBalance
+      ? cached!.totalProfit
+      : useHintBalance && typeof hint!.totalProfit === "number"
+      ? Number(hint!.totalProfit)
+      : Number(doc.totalProfit ?? cached?.totalProfit ?? hint?.totalProfit ?? 0);
+
+    const resolvedTrades = useCachedBalance
+      ? cached!.tradesCount
+      : useHintBalance && typeof hint!.tradesCount === "number"
+      ? Number(hint!.tradesCount)
+      : Number(doc.tradesCount ?? doc.allTimeTrades ?? cached?.tradesCount ?? hint?.tradesCount ?? 0);
+
     const state: UserStateCache = {
       userId,
       docId,
       playerId: assignedPlayerId,
-      username: doc.username || doc.name || cached?.username || defaultName || (isOwnerAccount ? "Zeke (Owner)" : `Player_${assignedPlayerId}`),
+      username: doc.username || doc.name || cached?.username || defaultName || hint?.username || (isOwnerAccount ? "Zeke (Owner)" : `Player_${assignedPlayerId}`),
       handle: doc.handle || cached?.handle || (isOwnerAccount ? "@zeke" : `@user${assignedPlayerId}`),
       title: doc.title || cached?.title || (isOwnerAccount ? "Founder & Owner" : "Member"),
       isPremium: doc.isPremium !== undefined ? !!doc.isPremium : (cached?.isPremium ?? isOwnerAccount),
-      cash: Number(doc.cash ?? cached?.cash ?? (isOwnerAccount ? 100000.0 : 5000.0)),
-      gems: Number(doc.gems ?? cached?.gems ?? (isOwnerAccount ? 5000 : 90)),
+      cash: resolvedCash,
+      gems: resolvedGems,
       prestigeLevel: Number(doc.prestigeLevel ?? cached?.prestigeLevel ?? 0),
-      tradesCount: Number(doc.tradesCount ?? doc.allTimeTrades ?? cached?.tradesCount ?? 0),
+      tradesCount: resolvedTrades,
       coinsCreatedCount: Number(doc.coinsCreatedCount ?? cached?.coinsCreatedCount ?? 0),
-      totalProfit: Number(doc.totalProfit ?? cached?.totalProfit ?? 0),
+      totalProfit: resolvedProfit,
       nameColor: doc.nameColor || doc.equippedColor || cached?.nameColor || (isOwnerAccount ? "text-rose-500 font-extrabold text-glow tracking-wider" : "text-zinc-400 font-extrabold"),
       dailyStreak: Number(doc.dailyStreak ?? cached?.dailyStreak ?? 1),
       lastDailyRewardClaim: doc.lastDailyRewardClaim || cached?.lastDailyRewardClaim || "",
@@ -367,21 +433,25 @@ export async function getAuthoritativeUser(userId: string, jwt?: string, default
       isSuspended: doc.isSuspended || false,
       suspendedUntil: doc.suspendedUntil || null,
       createdAt: doc.$createdAt || cached?.createdAt || new Date().toISOString(),
-      updatedAt: Date.now(),
+      updatedAt: Math.max(Date.now(), cached?.updatedAt || 0, hint?.updatedAt || 0),
+      dirty: useCachedBalance || useHintBalance,
     };
 
     userCache.set(userId, state);
     return state;
   } catch (err) {
-    // If we already have an in-memory state on this instance, preserve it and try to ensure it exists in Appwrite
+    // If we already have an in-memory state on this instance, preserve it
     if (cached) {
       cached.updatedAt = Date.now();
       return cached;
     }
 
     const assignedPlayerId = isOwnerAccount ? 1 : nextPlayerId++;
-    const fallbackUsername = defaultName || (isOwnerAccount ? "Zeke (Owner)" : `Player_${assignedPlayerId}`);
+    const fallbackUsername = defaultName || hint?.username || (isOwnerAccount ? "Zeke (Owner)" : `Player_${assignedPlayerId}`);
     const fallbackHandle = isOwnerAccount ? "@zeke" : (`@${fallbackUsername.toLowerCase().replace(/[^a-z0-9]/g, "")}` || `@user${assignedPlayerId}`);
+    const initialCash = typeof hint?.cash === "number" && !isNaN(hint.cash) ? hint.cash : (isOwnerAccount ? 100000.0 : 5000.0);
+    const initialGems = typeof hint?.gems === "number" && !isNaN(hint.gems) ? hint.gems : (isOwnerAccount ? 5000 : 90);
+
     const initial: UserStateCache = {
       userId,
       docId: userId,
@@ -390,12 +460,12 @@ export async function getAuthoritativeUser(userId: string, jwt?: string, default
       handle: fallbackHandle,
       title: isOwnerAccount ? "Founder & Owner" : "Member",
       isPremium: isOwnerAccount,
-      cash: isOwnerAccount ? 100000.0 : 5000.0,
-      gems: isOwnerAccount ? 5000 : 90,
+      cash: initialCash,
+      gems: initialGems,
       prestigeLevel: 0,
-      tradesCount: 0,
+      tradesCount: typeof hint?.tradesCount === "number" ? hint.tradesCount : 0,
       coinsCreatedCount: 0,
-      totalProfit: 0,
+      totalProfit: typeof hint?.totalProfit === "number" ? hint.totalProfit : 0,
       nameColor: isOwnerAccount ? "text-rose-500 font-extrabold text-glow tracking-wider" : "text-zinc-400 font-bold",
       dailyStreak: 1,
       lastDailyRewardClaim: "",
@@ -403,12 +473,13 @@ export async function getAuthoritativeUser(userId: string, jwt?: string, default
       rugPullsCount: 0,
       createdAt: new Date().toISOString(),
       updatedAt: Date.now(),
+      dirty: true,
     };
     userCache.set(userId, initial);
 
-    // Bootstrap in Appwrite via server key (self-healing createDocument automatically adapts to collection schema)
+    // Bootstrap in Appwrite via server key
     try {
-      const serverDatabases = getDatabases();
+      const serverDatabases = getDatabases(jwt);
       await serverDatabases.createDocument(
         "pumpforge",
         "users",
@@ -422,7 +493,7 @@ export async function getAuthoritativeUser(userId: string, jwt?: string, default
           gems: initial.gems,
           prestigeLevel: initial.prestigeLevel,
           totalProfit: initial.totalProfit,
-          tradesCount: 0,
+          tradesCount: initial.tradesCount,
           coinsCreatedCount: 0,
           dailyStreak: 1,
           lastDailyRewardClaim: "",
@@ -431,6 +502,7 @@ export async function getAuthoritativeUser(userId: string, jwt?: string, default
         },
         [Permission.read(Role.any())]
       );
+      initial.dirty = false;
     } catch (createErr) {
       console.warn("Could not create initial user in Appwrite DB (in-memory cached):", createErr);
     }
@@ -447,14 +519,24 @@ export async function saveAuthoritativeUser(
   updates: Partial<UserStateCache>,
   jwt?: string
 ): Promise<UserStateCache> {
-  const current = await getAuthoritativeUser(userId, jwt);
+  const current = userCache.get(userId) || (await getAuthoritativeUser(userId, jwt));
+  const now = Date.now();
   const updated: UserStateCache = {
     ...current,
     ...updates,
-    updatedAt: Date.now(),
+    updatedAt: now,
+    dirty: true,
   };
 
   userCache.set(userId, updated);
+  hydrateUserHintsFromHeaders(userId, {
+    cash: updated.cash,
+    gems: updated.gems,
+    totalProfit: updated.totalProfit,
+    tradesCount: updated.tradesCount,
+    updatedAt: now,
+    username: updated.username,
+  });
 
   try {
     const databases = getDatabases(jwt);
@@ -479,8 +561,10 @@ export async function saveAuthoritativeUser(
     if (Object.keys(payload).length > 0) {
       try {
         await databases.updateDocument("pumpforge", "users", targetDocId, payload);
+        updated.dirty = false;
       } catch (updateErr: any) {
-        if (updateErr?.code === 404 || updateErr?.status === 404) {
+        const msg = String(updateErr?.message || "").toLowerCase();
+        if (updateErr?.code === 404 || updateErr?.status === 404 || msg.includes("not found") || msg.includes("could not be found")) {
           await databases.createDocument(
             "pumpforge",
             "users",
@@ -503,12 +587,14 @@ export async function saveAuthoritativeUser(
             },
             [Permission.read(Role.any())]
           );
+          updated.dirty = false;
         } else {
           // Failsafe: guarantee core cash & gems balance persistence even if an optional field failed
           await databases.updateDocument("pumpforge", "users", targetDocId, {
             cash: Number(Number(updated.cash ?? 5000).toFixed(2)),
             gems: Math.floor(Number(updated.gems ?? 90)),
           });
+          updated.dirty = false;
         }
       }
     }
@@ -516,6 +602,7 @@ export async function saveAuthoritativeUser(
     console.warn("Could not sync user to Appwrite directly (cached state preserved):", err?.message || err);
   }
 
+  userCache.set(userId, updated);
   return updated;
 }
 
@@ -706,6 +793,8 @@ export async function getAllUsersList(jwt?: string): Promise<UserStateCache[]> {
     const docs = await databases.listDocuments("pumpforge", "users", [Query.limit(100)]);
     for (const doc of docs.documents) {
       const uid = doc.userId || doc.$id;
+      const existing = usersMap.get(uid);
+      if (existing && existing.dirty) continue;
       usersMap.set(uid, {
         userId: uid,
         docId: doc.$id,
@@ -757,38 +846,186 @@ export async function getBroadcastsList(jwt?: string): Promise<any[]> {
   return list;
 }
 
+// Default Seed Polymarkets so m1, m2, m3 exist authoritatively
+const DEFAULT_SEED_POLYMARKETS = [
+  {
+    $id: "m1",
+    id: "m1",
+    question: "Will *ROAD hit a $150K valuation by Friday? --- Based on shill room hype, ROAD represents the premium culture asset.",
+    creatorId: "admin_realzekeee",
+    creator: "@zeke",
+    endDate: new Date(Date.now() + 5 * 86400000).toISOString(),
+    status: "active",
+    poolYes: 4500,
+    poolNo: 3200,
+    resolved: false,
+    winningOutcome: null,
+    resolvedAt: null,
+  },
+  {
+    $id: "m2",
+    id: "m2",
+    question: "Will the Slots return a grand Jackpot win on next 10 attempts? --- Probabilities dictate slot engines have a high variance output.",
+    creatorId: "admin_realzekeee",
+    creator: "@zeke",
+    endDate: new Date(Date.now() + 2 * 86400000).toISOString(),
+    status: "active",
+    poolYes: 150,
+    poolNo: 6400,
+    resolved: false,
+    winningOutcome: null,
+    resolvedAt: null,
+  },
+  {
+    $id: "m3",
+    id: "m3",
+    question: "Will Zeke reach Prestige I status inside the next 12 hours? --- Requires $100K liquid cash balance to trigger Prestige system.",
+    creatorId: "admin_realzekeee",
+    creator: "@zeke",
+    endDate: new Date(Date.now() - 86400000).toISOString(),
+    status: "closed",
+    poolYes: 8500,
+    poolNo: 1000,
+    resolved: true,
+    winningOutcome: "YES",
+    resolvedAt: new Date(Date.now() - 3600000).toISOString(),
+  },
+];
+
+export function normalizePolymarketDoc(doc: any): any {
+  const id = doc.$id || doc.id || `m_${Date.now()}`;
+  const rawQuestion = String(doc.question || "Untitled Prediction");
+  const parts = rawQuestion.split(" --- ");
+  const cleanQuestion = parts[0] || rawQuestion;
+  const description = doc.description || parts[1] || "";
+  const poolYes = Number(doc.poolYes ?? doc.yesPool ?? 0);
+  const poolNo = Number(doc.poolNo ?? doc.noPool ?? 0);
+  const total = poolYes + poolNo;
+  const yesPercentage = total > 0 ? Math.round((poolYes / total) * 100) : 50;
+  const endDate = doc.endDate || doc.endDateIso || doc.endTime || new Date(Date.now() + 7 * 86400000).toISOString();
+  const resolved = Boolean(doc.resolved || doc.status === "closed");
+  const status = resolved ? "closed" : (doc.status || "active");
+  const winningOutcome = doc.winningOutcome || doc.resolvedOutcome || null;
+  const resolvedAt = doc.resolvedAt || (resolved ? doc.$updatedAt || new Date().toISOString() : null);
+
+  return {
+    ...doc,
+    $id: id,
+    id,
+    question: rawQuestion,
+    title: cleanQuestion,
+    description,
+    poolYes,
+    poolNo,
+    yesPool: poolYes,
+    noPool: poolNo,
+    yesPercentage,
+    endDate,
+    endDateIso: endDate,
+    endTime: endDate,
+    status,
+    resolved,
+    winningOutcome,
+    resolvedOutcome: winningOutcome,
+    resolvedAt,
+  };
+}
+
 // In-Memory Authoritative Polymarkets Store
-export const inMemoryPolymarkets: any[] = [];
+export const inMemoryPolymarkets: any[] = DEFAULT_SEED_POLYMARKETS.map(normalizePolymarketDoc);
+let polymarketsSeeded = false;
 
 export function recordPolymarket(market: any) {
-  const existingIdx = inMemoryPolymarkets.findIndex((m) => (m.id || m.$id) === (market.id || market.$id));
+  const norm = normalizePolymarketDoc(market);
+  const existingIdx = inMemoryPolymarkets.findIndex((m) => (m.id || m.$id) === (norm.id || norm.$id));
   if (existingIdx >= 0) {
-    inMemoryPolymarkets[existingIdx] = { ...inMemoryPolymarkets[existingIdx], ...market };
+    inMemoryPolymarkets[existingIdx] = { ...inMemoryPolymarkets[existingIdx], ...norm, updatedAt: Date.now() };
   } else {
-    inMemoryPolymarkets.unshift(market);
+    inMemoryPolymarkets.unshift({ ...norm, updatedAt: Date.now() });
+  }
+}
+
+export async function persistPolymarketToDatabase(market: any, jwt?: string) {
+  const norm = normalizePolymarketDoc(market);
+  recordPolymarket(norm);
+  try {
+    const databases = getDatabases(jwt);
+    const combinedQuestion = (norm.description && !String(norm.question).includes(" --- ")
+      ? `${norm.question} --- ${norm.description}`
+      : String(norm.question)
+    ).slice(0, 500);
+    const payload: Record<string, any> = {
+      question: combinedQuestion,
+      creatorId: String(norm.creatorId || "admin_realzekeee").slice(0, 64),
+      creator: String(norm.creator || "@zeke").slice(0, 64),
+      endDate: String(norm.endDate).slice(0, 64),
+      status: norm.status || "active",
+      poolYes: Number(norm.poolYes || 0),
+      poolNo: Number(norm.poolNo || 0),
+      resolved: Boolean(norm.resolved),
+    };
+    if (norm.winningOutcome) payload.winningOutcome = String(norm.winningOutcome).slice(0, 16);
+    if (norm.resolvedAt) payload.resolvedAt = String(norm.resolvedAt).slice(0, 64);
+
+    try {
+      await databases.updateDocument("pumpforge", "polymarkets", norm.id, payload);
+    } catch (upErr: any) {
+      const msg = String(upErr?.message || "").toLowerCase();
+      if (upErr?.code === 404 || upErr?.status === 404 || msg.includes("not found")) {
+        await databases.createDocument(
+          "pumpforge",
+          "polymarkets",
+          norm.id,
+          payload,
+          [Permission.read(Role.any())]
+        );
+      }
+    }
+  } catch (e) {
+    // Non-fatal: inMemoryPolymarkets retains authoritative state
   }
 }
 
 export async function getPolymarketsList(jwt?: string): Promise<any[]> {
-  const list: any[] = [...inMemoryPolymarkets];
+  const map = new Map<string, any>();
+  for (const m of inMemoryPolymarkets) {
+    const norm = normalizePolymarketDoc(m);
+    map.set(norm.id, norm);
+  }
+
   try {
     const databases = getDatabases(jwt);
     const res = await databases.listDocuments("pumpforge", "polymarkets", [
       Query.limit(100),
       Query.orderDesc("$createdAt"),
     ]);
+    const foundIds = new Set<string>();
     for (const doc of res.documents) {
-      const idx = list.findIndex((m) => (m.id || m.$id) === doc.$id);
-      if (idx >= 0) {
-        list[idx] = doc;
+      const norm = normalizePolymarketDoc(doc);
+      foundIds.add(norm.id);
+      const local = map.get(norm.id);
+      // If local in-memory state has a higher total pool (e.g. from a recent bet on this instance), keep higher pool
+      if (local && (local.poolYes + local.poolNo > norm.poolYes + norm.poolNo || (local.resolved && !norm.resolved))) {
+        map.set(norm.id, local);
       } else {
-        list.push(doc);
+        map.set(norm.id, norm);
+        recordPolymarket(norm);
+      }
+    }
+
+    if (!polymarketsSeeded) {
+      polymarketsSeeded = true;
+      for (const seed of DEFAULT_SEED_POLYMARKETS) {
+        if (!foundIds.has(seed.id)) {
+          persistPolymarketToDatabase(seed, jwt).catch(() => {});
+        }
       }
     }
   } catch (e) {
     // Non-fatal
   }
-  return list;
+
+  return Array.from(map.values());
 }
 
 // In-Memory Authoritative Trades Store
@@ -908,7 +1145,12 @@ export async function getTradesList(options: { coinId?: string; limit?: number; 
 export const inMemoryWagers: any[] = [];
 
 export function recordWagerLog(wager: any) {
-  inMemoryWagers.unshift(wager);
+  const existingIdx = inMemoryWagers.findIndex((w) => (w.id || w.$id) === (wager.id || wager.$id));
+  if (existingIdx >= 0) {
+    inMemoryWagers[existingIdx] = wager;
+  } else {
+    inMemoryWagers.unshift(wager);
+  }
   if (inMemoryWagers.length > 500) {
     inMemoryWagers.pop();
   }
@@ -955,7 +1197,6 @@ export async function getHoldingsList(options: { userId?: string; coinId?: strin
     if (options.coinId) queries.push(Query.equal("coinId", options.coinId));
     const res = await databases.listDocuments("pumpforge", "holdings", queries);
 
-    // If querying for a specific userId, trust the database snapshot for that user if documents were returned
     for (const doc of res.documents) {
       const amt = Number(doc.amount ?? doc.tokenAmount ?? 0);
       const coinObj = coinStore.getCoin(doc.coinId || doc.coinSymbol);

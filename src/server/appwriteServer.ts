@@ -1,18 +1,108 @@
-import crypto from "crypto";
-
 /**
- * Zero-dependency, ESM-safe Appwrite Server SDK implementation using Node.js native fetch.
- * Drop-in replacement for `node-appwrite` with self-healing schema adaptation and index-free query fallback.
+ * Lightweight zero-dependency REST implementation of the Appwrite Server SDK.
+ * Replaces `node-appwrite` in Serverless / Edge environments to avoid native binary
+ * or ESM/CJS bundling crashes on Vercel while preserving 100% API compatibility.
  */
+
+export const ID = {
+  unique: (): string => {
+    const ts = Date.now().toString(36);
+    const rand = Math.random().toString(36).substring(2, 10);
+    const rand2 = Math.random().toString(36).substring(2, 6);
+    return `${ts}${rand}${rand2}`.slice(0, 36);
+  },
+  custom: (id: string): string => id,
+};
+
+export const Role = {
+  any: (): string => "any",
+  user: (id: string, status?: string): string => (status ? `user:${id}/${status}` : `user:${id}`),
+  users: (status?: string): string => (status ? `users/${status}` : "users"),
+  guests: (): string => "guests",
+  team: (id: string, role?: string): string => (role ? `team:${id}/${role}` : `team:${id}`),
+};
+
+export const Permission = {
+  read: (role: string): string => `read("${role}")`,
+  write: (role: string): string => `write("${role}")`,
+  create: (role: string): string => `create("${role}")`,
+  update: (role: string): string => `update("${role}")`,
+  delete: (role: string): string => `delete("${role}")`,
+};
+
+export const Query = {
+  equal: (attribute: string, value: any): string =>
+    JSON.stringify({
+      method: "equal",
+      attribute,
+      values: Array.isArray(value) ? value : [value],
+    }),
+  notEqual: (attribute: string, value: any): string =>
+    JSON.stringify({
+      method: "notEqual",
+      attribute,
+      values: Array.isArray(value) ? value : [value],
+    }),
+  lessThan: (attribute: string, value: any): string =>
+    JSON.stringify({
+      method: "lessThan",
+      attribute,
+      values: [value],
+    }),
+  lessThanEqual: (attribute: string, value: any): string =>
+    JSON.stringify({
+      method: "lessThanEqual",
+      attribute,
+      values: [value],
+    }),
+  greaterThan: (attribute: string, value: any): string =>
+    JSON.stringify({
+      method: "greaterThan",
+      attribute,
+      values: [value],
+    }),
+  greaterThanEqual: (attribute: string, value: any): string =>
+    JSON.stringify({
+      method: "greaterThanEqual",
+      attribute,
+      values: [value],
+    }),
+  search: (attribute: string, value: string): string =>
+    JSON.stringify({
+      method: "search",
+      attribute,
+      values: [value],
+    }),
+  orderAsc: (attribute: string): string =>
+    JSON.stringify({
+      method: "orderAsc",
+      attribute,
+    }),
+  orderDesc: (attribute: string): string =>
+    JSON.stringify({
+      method: "orderDesc",
+      attribute,
+    }),
+  limit: (limit: number): string =>
+    JSON.stringify({
+      method: "limit",
+      values: [limit],
+    }),
+  offset: (offset: number): string =>
+    JSON.stringify({
+      method: "offset",
+      values: [offset],
+    }),
+};
 
 export class Client {
   public endpoint: string = "https://sgp.cloud.appwrite.io/v1";
   public project: string = "6a1416eb001f50cdb902";
-  public apiKey: string = "";
+  public key: string = "";
   public jwt: string = "";
 
   setEndpoint(endpoint: string): this {
-    if (endpoint) this.endpoint = endpoint.trim().replace(/\/+$/, "");
+    if (endpoint) this.endpoint = endpoint.replace(/\/+$/, "");
     return this;
   }
 
@@ -22,7 +112,7 @@ export class Client {
   }
 
   setKey(key: string): this {
-    if (key) this.apiKey = key.trim();
+    if (key) this.key = key.trim();
     return this;
   }
 
@@ -35,115 +125,34 @@ export class Client {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       "X-Appwrite-Project": this.project,
+      "X-Appwrite-Response-Format": "1.5.0",
     };
-    const activeKey = this.apiKey || (process.env.APPWRITE_API_KEY || process.env.VITE_APPWRITE_API_KEY || "").trim();
-    if (activeKey) {
-      headers["X-Appwrite-Key"] = activeKey;
-    } else if (this.jwt && this.jwt.split(".").length === 3) {
+    if (this.key) {
+      headers["X-Appwrite-Key"] = this.key;
+    } else if (this.jwt) {
       headers["X-Appwrite-JWT"] = this.jwt;
     }
     return headers;
   }
 }
 
-export const ID = {
-  unique(): string {
-    return crypto.randomBytes(10).toString("hex");
-  },
-  custom(id: string): string {
-    return id;
-  },
-};
-
-export const Role = {
-  any(): string {
-    return "any";
-  },
-  user(id: string, status: string = ""): string {
-    return status ? `user:${id}/${status}` : `user:${id}`;
-  },
-  users(status: string = ""): string {
-    return status ? `users/${status}` : "users";
-  },
-  guests(): string {
-    return "guests";
-  },
-};
-
-export const Permission = {
-  read(role: string): string {
-    return `read("${role}")`;
-  },
-  write(role: string): string {
-    return `write("${role}")`;
-  },
-  create(role: string): string {
-    return `create("${role}")`;
-  },
-  update(role: string): string {
-    return `update("${role}")`;
-  },
-  delete(role: string): string {
-    return `delete("${role}")`;
-  },
-};
-
-export const Query = {
-  equal(attribute: string, value: any): string {
-    const values = Array.isArray(value) ? value : [value];
-    return JSON.stringify({ method: "equal", attribute, values });
-  },
-  notEqual(attribute: string, value: any): string {
-    const values = Array.isArray(value) ? value : [value];
-    return JSON.stringify({ method: "notEqual", attribute, values });
-  },
-  lessThan(attribute: string, value: any): string {
-    const values = Array.isArray(value) ? value : [value];
-    return JSON.stringify({ method: "lessThan", attribute, values });
-  },
-  lessThanEqual(attribute: string, value: any): string {
-    const values = Array.isArray(value) ? value : [value];
-    return JSON.stringify({ method: "lessThanEqual", attribute, values });
-  },
-  greaterThan(attribute: string, value: any): string {
-    const values = Array.isArray(value) ? value : [value];
-    return JSON.stringify({ method: "greaterThan", attribute, values });
-  },
-  greaterThanEqual(attribute: string, value: any): string {
-    const values = Array.isArray(value) ? value : [value];
-    return JSON.stringify({ method: "greaterThanEqual", attribute, values });
-  },
-  search(attribute: string, value: string): string {
-    return JSON.stringify({ method: "search", attribute, values: [value] });
-  },
-  orderDesc(attribute: string): string {
-    return JSON.stringify({ method: "orderDesc", attribute });
-  },
-  orderAsc(attribute: string): string {
-    return JSON.stringify({ method: "orderAsc", attribute });
-  },
-  limit(limit: number): string {
-    return JSON.stringify({ method: "limit", values: [Number(limit)] });
-  },
-  offset(offset: number): string {
-    return JSON.stringify({ method: "offset", values: [Number(offset)] });
-  },
-};
-
+/**
+ * Evaluates Appwrite Query JSON strings against an in-memory document array.
+ * Used as an automatic fallback when an Appwrite collection lacks a required index
+ * for a filtered/ordered listDocuments call.
+ */
 function applyQueriesInMemory(docs: any[], queries: string[]): any[] {
   let result = [...docs];
   let limitVal: number | null = null;
   let offsetVal = 0;
 
   for (const rawQ of queries) {
-    if (!rawQ) continue;
-    let q: any = rawQ;
-    if (typeof rawQ === "string") {
-      try {
-        q = JSON.parse(rawQ);
-      } catch {
-        continue;
-      }
+    if (!rawQ || typeof rawQ !== "string") continue;
+    let q: any = null;
+    try {
+      q = JSON.parse(rawQ);
+    } catch {
+      continue;
     }
     if (!q || typeof q !== "object") continue;
 
@@ -151,15 +160,15 @@ function applyQueriesInMemory(docs: any[], queries: string[]): any[] {
     const attr = q.attribute;
     const vals = Array.isArray(q.values) ? q.values : [];
 
-    if (method === "equal" && attr) {
+    if (method === "equal" && attr && vals.length > 0) {
       result = result.filter((d) => {
-        const v = attr === "$id" ? (d.$id ?? d.id) : d[attr];
-        return vals.some((target: any) => String(v) === String(target));
+        const val = d[attr] ?? (attr === "id" ? d.$id : attr === "$id" ? d.id : undefined);
+        return vals.some((v: any) => String(val) === String(v));
       });
-    } else if (method === "notEqual" && attr) {
+    } else if (method === "notEqual" && attr && vals.length > 0) {
       result = result.filter((d) => {
-        const v = attr === "$id" ? (d.$id ?? d.id) : d[attr];
-        return !vals.some((target: any) => String(v) === String(target));
+        const val = d[attr];
+        return !vals.some((v: any) => String(val) === String(v));
       });
     } else if (method === "greaterThan" && attr && vals.length > 0) {
       result = result.filter((d) => d[attr] > vals[0]);
@@ -225,6 +234,8 @@ const NUMERIC_DEFAULTS = new Set([
   "fee",
   "poolYes",
   "poolNo",
+  "yesPool",
+  "noPool",
   "rewardAmount",
 ]);
 
@@ -375,6 +386,13 @@ export class Databases {
       } catch (err: any) {
         const msg = String(err?.message || "");
         if (err?.code === 409 || err?.status === 409 || msg.toLowerCase().includes("already exists")) {
+          if (collectionId === "users") {
+            try {
+              return await this.getDocument(databaseId, collectionId, finalDocId);
+            } catch {
+              return await this.updateDocument(databaseId, collectionId, finalDocId, currentData);
+            }
+          }
           return await this.updateDocument(databaseId, collectionId, finalDocId, currentData);
         }
 
@@ -389,6 +407,10 @@ export class Databases {
             currentData.tokenAmount = currentData.amount;
           } else if (badAttr === "avgBuyPrice" && !("avgPrice" in currentData) && currentData.avgBuyPrice !== undefined) {
             currentData.avgPrice = currentData.avgBuyPrice;
+          } else if (badAttr === "poolYes" && !("yesPool" in currentData) && currentData.poolYes !== undefined) {
+            currentData.yesPool = currentData.poolYes;
+          } else if (badAttr === "poolNo" && !("noPool" in currentData) && currentData.poolNo !== undefined) {
+            currentData.noPool = currentData.poolNo;
           }
           if (badAttr in currentData) {
             delete currentData[badAttr];
@@ -472,6 +494,10 @@ export class Databases {
             currentData.tokenAmount = currentData.amount;
           } else if (badAttr === "avgBuyPrice" && !("avgPrice" in currentData) && currentData.avgBuyPrice !== undefined) {
             currentData.avgPrice = currentData.avgBuyPrice;
+          } else if (badAttr === "poolYes" && !("yesPool" in currentData) && currentData.poolYes !== undefined) {
+            currentData.yesPool = currentData.poolYes;
+          } else if (badAttr === "poolNo" && !("noPool" in currentData) && currentData.poolNo !== undefined) {
+            currentData.noPool = currentData.poolNo;
           }
           if (badAttr in currentData) {
             delete currentData[badAttr];

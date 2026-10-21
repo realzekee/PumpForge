@@ -6,6 +6,8 @@ import {
   globalAdminSettings,
   getDatabases,
   recordPolymarket,
+  persistPolymarketToDatabase,
+  normalizePolymarketDoc,
   recordTradeLog,
   recordWagerLog,
   recordHoldingLog,
@@ -38,6 +40,32 @@ function secureRandomInt(min: number, max: number): number {
   return crypto.randomInt(min, max + 1);
 }
 
+function getArcadeSessionSecret(): string {
+  return (process.env.APPWRITE_API_KEY || process.env.SESSION_SECRET || "pumpforge_arcade_session_secret_v1").trim();
+}
+
+function signArcadeSessionToken(payload: any): string {
+  const data = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const sig = crypto.createHmac("sha256", getArcadeSessionSecret()).update(data).digest("base64url");
+  return `as_${data}.${sig}`;
+}
+
+function verifyArcadeSessionToken(token: string | undefined, expectedUserId: string, expectedGame: string): any | null {
+  if (!token || typeof token !== "string" || !token.startsWith("as_")) return null;
+  const parts = token.slice(3).split(".");
+  if (parts.length !== 2) return null;
+  const [data, sig] = parts;
+  try {
+    const expectedSig = crypto.createHmac("sha256", getArcadeSessionSecret()).update(data).digest("base64url");
+    if (sig !== expectedSig) return null;
+    const parsed = JSON.parse(Buffer.from(data, "base64url").toString("utf-8"));
+    if (!parsed || parsed.userId !== expectedUserId || parsed.game !== expectedGame) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 // ----------------------------------------------------
 // 1. DAILY REWARDS ENGINE
 // ----------------------------------------------------
@@ -52,7 +80,7 @@ export async function processDailyReward(user: AuthenticatedUser) {
   }
 
   return withUserLock(user.userId, async () => {
-    const userState = await getAuthoritativeUser(user.userId, user.jwt);
+    const userState = await getAuthoritativeUser(user.userId, user.jwt, user.name);
 
     const now = Date.now();
     const lastClaim = userState.lastDailyRewardClaim ? new Date(userState.lastDailyRewardClaim).getTime() : 0;
@@ -273,7 +301,8 @@ export async function processTrade(
             lastUpdated: nowIso,
           });
         } catch (upErr: any) {
-          if (upErr?.code === 404 || upErr?.status === 404) {
+          const msg = String(upErr?.message || "").toLowerCase();
+          if (upErr?.code === 404 || upErr?.status === 404 || msg.includes("not found")) {
             await databases.createDocument(
               "pumpforge",
               "holdings",
@@ -310,7 +339,7 @@ export async function processTrade(
         amountCoins: Number(buyCoins.toFixed(4)),
         amountTokens: Number(buyCoins.toFixed(4)),
         pricePerCoin: Number(currentPrice.toFixed(6)),
-         price: Number(currentPrice.toFixed(6)),
+        price: Number(currentPrice.toFixed(6)),
         totalCash: Number(tradeValue.toFixed(2)),
         total: Number(tradeValue.toFixed(2)),
         amountUsd: Number(tradeValue.toFixed(2)),
@@ -566,7 +595,7 @@ export async function processTrade(
 // 3. AUTHORITATIVE ARCADE / GAMBLING RNG ENGINE
 // ----------------------------------------------------
 
-// Active Mines Sessions: Keyed by userId
+// Active Mines Sessions: Keyed by userId (with signed sessionToken fallback for serverless)
 interface MinesSession {
   bet: number;
   minesCount: number;
@@ -578,7 +607,7 @@ interface MinesSession {
 }
 const activeMinesSessions = new Map<string, MinesSession>();
 
-// Active Tower Sessions: Keyed by userId
+// Active Tower Sessions: Keyed by userId (with signed sessionToken fallback for serverless)
 interface TowerSession {
   bet: number;
   difficulty: "easy" | "medium" | "hard";
@@ -594,7 +623,7 @@ const slotEmojis = ["🍒", "🍋", "🔔", "7️⃣", "💎"];
 export async function processArcadeWager(
   user: AuthenticatedUser,
   game: "coinflip" | "slots" | "dice" | "mines" | "tower",
-  action: "play" | "start" | "step" | "cashout",
+  action: "play" | "start" | "step" | "cashout" | "abort",
   params: any
 ) {
   const { allowed, retryAfterMs } = arcadeLimiter.isAllowed(user.userId);
@@ -603,7 +632,7 @@ export async function processArcadeWager(
   }
 
   return withUserLock(user.userId, async () => {
-    const userState = await getAuthoritativeUser(user.userId, user.jwt);
+    const userState = await getAuthoritativeUser(user.userId, user.jwt, user.name);
     const rigMode = globalAdminSettings.arcadeRigMode;
 
     // --- COINFLIP ---
@@ -614,7 +643,7 @@ export async function processArcadeWager(
       if (chosenSide !== "heads" && chosenSide !== "tails") {
         throw new Error("Choose heads or tails.");
       }
-      if (typeof bet !== "number" || isNaN(bet) || bet <= 0 || bet > Number(userState.cash)) {
+      if (typeof bet !== "number" || isNaN(bet) || !isFinite(bet) || bet <= 0 || bet > Number(userState.cash)) {
         throw new Error("Invalid bet amount or insufficient cash.");
       }
 
@@ -629,7 +658,7 @@ export async function processArcadeWager(
     // --- SLOTS ---
     if (game === "slots") {
       const bet = Number(params.bet);
-      if (typeof bet !== "number" || isNaN(bet) || bet <= 0 || bet > userState.cash) {
+      if (typeof bet !== "number" || isNaN(bet) || !isFinite(bet) || bet <= 0 || bet > userState.cash) {
         throw new Error("Invalid bet amount or insufficient cash.");
       }
 
@@ -648,27 +677,26 @@ export async function processArcadeWager(
 
       const matchCount = new Set(reels).size;
       let payout = 0;
-      let nextCash = userState.cash - bet;
+      let nextCash = Number((userState.cash - bet).toFixed(2));
 
       if (matchCount === 1) {
         // Triple match
         let multiplier = 3;
         if (reels[0] === "7️⃣") multiplier = 6;
         else if (reels[0] === "💎") multiplier = 4;
-        payout = bet * multiplier;
+        payout = Number((bet * multiplier).toFixed(2));
       } else if (matchCount === 2) {
         // Double match
         payout = Math.floor(bet * 0.95);
       }
 
-      nextCash += payout;
-      const won = payout > 0;
+      nextCash = Number(Math.max(0, nextCash + payout).toFixed(2));
 
       const updatedUser = await saveAuthoritativeUser(
         user.userId,
         {
           cash: nextCash,
-          totalProfit: (userState.totalProfit || 0) + (payout - bet),
+          totalProfit: Number(((userState.totalProfit || 0) + (payout - bet)).toFixed(2)),
         },
         user.jwt
       );
@@ -690,7 +718,7 @@ export async function processArcadeWager(
       if (!selectedNum || selectedNum < 1 || selectedNum > 6) {
         throw new Error("Choose a face number between 1 and 6.");
       }
-      if (typeof bet !== "number" || isNaN(bet) || bet <= 0 || bet > userState.cash) {
+      if (typeof bet !== "number" || isNaN(bet) || !isFinite(bet) || bet <= 0 || bet > userState.cash) {
         throw new Error("Invalid bet amount or insufficient cash.");
       }
 
@@ -705,18 +733,18 @@ export async function processArcadeWager(
 
       const won = landedFace === selectedNum;
       let payout = 0;
-      let nextCash = userState.cash - bet;
+      let nextCash = Number((userState.cash - bet).toFixed(2));
 
       if (won) {
         payout = Math.floor(bet * 3);
-        nextCash += payout;
+        nextCash = Number((nextCash + payout).toFixed(2));
       }
 
       const updatedUser = await saveAuthoritativeUser(
         user.userId,
         {
-          cash: nextCash,
-          totalProfit: (userState.totalProfit || 0) + (won ? payout - bet : -bet),
+          cash: Math.max(0, nextCash),
+          totalProfit: Number(((userState.totalProfit || 0) + (won ? payout - bet : -bet)).toFixed(2)),
         },
         user.jwt
       );
@@ -724,6 +752,7 @@ export async function processArcadeWager(
       return {
         game: "dice",
         landedFace,
+        selectedNum,
         won,
         payout,
         profit: won ? payout - bet : -bet,
@@ -739,12 +768,12 @@ export async function processArcadeWager(
         if (minesCount < 1 || minesCount > 24) {
           throw new Error("Mines count must be between 1 and 24.");
         }
-        if (typeof bet !== "number" || isNaN(bet) || bet <= 0 || bet > userState.cash) {
+        if (typeof bet !== "number" || isNaN(bet) || !isFinite(bet) || bet <= 0 || bet > userState.cash) {
           throw new Error("Invalid bet amount or insufficient cash.");
         }
 
         // Deduct bet from cash
-        const nextCash = userState.cash - bet;
+        const nextCash = Number(Math.max(0, userState.cash - bet).toFixed(2));
         const updatedUser = await saveAuthoritativeUser(
           user.userId,
           {
@@ -775,16 +804,55 @@ export async function processArcadeWager(
         };
         activeMinesSessions.set(user.userId, session);
 
+        const sessionToken = signArcadeSessionToken({
+          userId: user.userId,
+          game: "mines",
+          ...session,
+        });
+
         return {
           game: "mines",
           action: "start",
           safeSelections: 0,
           multiplier: 1,
+          sessionToken,
           userStats: updatedUser,
         };
       }
 
-      const session = activeMinesSessions.get(user.userId);
+      let session = activeMinesSessions.get(user.userId);
+      if ((!session || !session.active) && params.sessionToken) {
+        const restored = verifyArcadeSessionToken(params.sessionToken, user.userId, "mines");
+        if (restored && restored.active) {
+          session = {
+            bet: Number(restored.bet),
+            minesCount: Number(restored.minesCount),
+            secretMinesMap: Array.isArray(restored.secretMinesMap) ? restored.secretMinesMap : Array(25).fill(false),
+            revealedGrid: Array.isArray(restored.revealedGrid) ? restored.revealedGrid : Array(25).fill("hidden"),
+            safeSelections: Number(restored.safeSelections || 0),
+            multiplier: Number(restored.multiplier || 1),
+            active: true,
+          };
+          activeMinesSessions.set(user.userId, session);
+        }
+      }
+
+      if (action === "abort") {
+        const refundAmt = session ? session.bet : Number(params.bet || 0);
+        activeMinesSessions.delete(user.userId);
+        if (refundAmt > 0 && (!session || session.safeSelections === 0)) {
+          const nextCash = Number((userState.cash + refundAmt).toFixed(2));
+          const updatedUser = await saveAuthoritativeUser(user.userId, { cash: nextCash }, user.jwt);
+          return {
+            game: "mines",
+            action: "abort",
+            refunded: refundAmt,
+            userStats: updatedUser,
+          };
+        }
+        return { game: "mines", action: "abort", refunded: 0, userStats: userState };
+      }
+
       if (!session || !session.active) {
         throw new Error("No active Mines game found. Please place a bet to start.");
       }
@@ -797,9 +865,8 @@ export async function processArcadeWager(
 
         let isMine = session.secretMinesMap[cellIdx];
         if (rigMode === "win" && isMine) {
-          // Swap mine with safe
           const safeIdx = session.secretMinesMap.findIndex(
-            (m, i) => !m && session.revealedGrid[i] === "hidden" && i !== cellIdx
+            (m, i) => !m && session!.revealedGrid[i] === "hidden" && i !== cellIdx
           );
           if (safeIdx !== -1) {
             session.secretMinesMap[cellIdx] = false;
@@ -814,15 +881,22 @@ export async function processArcadeWager(
           // Mine exploded
           session.active = false;
           activeMinesSessions.delete(user.userId);
+          const updatedUser = await saveAuthoritativeUser(
+            user.userId,
+            {
+              totalProfit: Number(((userState.totalProfit || 0) - session.bet).toFixed(2)),
+            },
+            user.jwt
+          );
 
           return {
             game: "mines",
             action: "step",
             hitMine: true,
             explodedCell: cellIdx,
-            secretMinesMap: session.secretMinesMap, // Revealed on loss for transparency
+            secretMinesMap: session.secretMinesMap,
             multiplier: 0,
-            userStats: userState,
+            userStats: updatedUser,
           };
         }
 
@@ -842,9 +916,8 @@ export async function processArcadeWager(
         const clearedAll = session.safeSelections >= maxSafe;
 
         if (clearedAll) {
-          // Auto cashout on total clear
           const winnings = Math.floor(session.bet * session.multiplier);
-          const nextCash = userState.cash + winnings;
+          const nextCash = Number((userState.cash + winnings).toFixed(2));
           session.active = false;
           activeMinesSessions.delete(user.userId);
 
@@ -852,7 +925,7 @@ export async function processArcadeWager(
             user.userId,
             {
               cash: nextCash,
-              totalProfit: (userState.totalProfit || 0) + (winnings - session.bet),
+              totalProfit: Number(((userState.totalProfit || 0) + (winnings - session.bet)).toFixed(2)),
             },
             user.jwt
           );
@@ -869,6 +942,12 @@ export async function processArcadeWager(
           };
         }
 
+        const nextSessionToken = signArcadeSessionToken({
+          userId: user.userId,
+          game: "mines",
+          ...session,
+        });
+
         return {
           game: "mines",
           action: "step",
@@ -876,16 +955,30 @@ export async function processArcadeWager(
           cellIndex: cellIdx,
           safeSelections: session.safeSelections,
           multiplier: session.multiplier,
+          sessionToken: nextSessionToken,
         };
       }
 
       if (action === "cashout") {
         if (session.safeSelections === 0) {
-          throw new Error("Must select at least one safe cell before cashing out.");
+          // If cashing out at 0 selections, refund the initial bet cleanly
+          const refundAmt = session.bet;
+          const nextCash = Number((userState.cash + refundAmt).toFixed(2));
+          session.active = false;
+          activeMinesSessions.delete(user.userId);
+          const updatedUser = await saveAuthoritativeUser(user.userId, { cash: nextCash }, user.jwt);
+          return {
+            game: "mines",
+            action: "cashout",
+            winnings: refundAmt,
+            multiplier: 1,
+            secretMinesMap: session.secretMinesMap,
+            userStats: updatedUser,
+          };
         }
 
         const winnings = Math.floor(session.bet * session.multiplier);
-        const nextCash = userState.cash + winnings;
+        const nextCash = Number((userState.cash + winnings).toFixed(2));
         session.active = false;
         activeMinesSessions.delete(user.userId);
 
@@ -893,7 +986,7 @@ export async function processArcadeWager(
           user.userId,
           {
             cash: nextCash,
-            totalProfit: (userState.totalProfit || 0) + (winnings - session.bet),
+            totalProfit: Number(((userState.totalProfit || 0) + (winnings - session.bet)).toFixed(2)),
           },
           user.jwt
         );
@@ -914,11 +1007,11 @@ export async function processArcadeWager(
       if (action === "start") {
         const bet = Number(params.bet);
         const difficulty = (params.difficulty || "easy") as "easy" | "medium" | "hard";
-        if (typeof bet !== "number" || isNaN(bet) || bet <= 0 || bet > userState.cash) {
+        if (typeof bet !== "number" || isNaN(bet) || !isFinite(bet) || bet <= 0 || bet > userState.cash) {
           throw new Error("Invalid bet amount or insufficient cash.");
         }
 
-        const nextCash = userState.cash - bet;
+        const nextCash = Number(Math.max(0, userState.cash - bet).toFixed(2));
         const updatedUser = await saveAuthoritativeUser(
           user.userId,
           {
@@ -959,17 +1052,55 @@ export async function processArcadeWager(
         };
         activeTowerSessions.set(user.userId, session);
 
+        const sessionToken = signArcadeSessionToken({
+          userId: user.userId,
+          game: "tower",
+          ...session,
+        });
+
         return {
           game: "tower",
           action: "start",
           colsCount,
           safeCount,
           currentLevel: 0,
+          sessionToken,
           userStats: updatedUser,
         };
       }
 
-      const session = activeTowerSessions.get(user.userId);
+      let session = activeTowerSessions.get(user.userId);
+      if ((!session || !session.active) && params.sessionToken) {
+        const restored = verifyArcadeSessionToken(params.sessionToken, user.userId, "tower");
+        if (restored && restored.active) {
+          session = {
+            bet: Number(restored.bet),
+            difficulty: restored.difficulty || "easy",
+            currentLevel: Number(restored.currentLevel || 0),
+            secretGrid: Array.isArray(restored.secretGrid) ? restored.secretGrid : [],
+            multiplier: Number(restored.multiplier || 1),
+            active: true,
+          };
+          activeTowerSessions.set(user.userId, session);
+        }
+      }
+
+      if (action === "abort") {
+        const refundAmt = session ? session.bet : Number(params.bet || 0);
+        activeTowerSessions.delete(user.userId);
+        if (refundAmt > 0 && (!session || session.currentLevel === 0)) {
+          const nextCash = Number((userState.cash + refundAmt).toFixed(2));
+          const updatedUser = await saveAuthoritativeUser(user.userId, { cash: nextCash }, user.jwt);
+          return {
+            game: "tower",
+            action: "abort",
+            refunded: refundAmt,
+            userStats: updatedUser,
+          };
+        }
+        return { game: "tower", action: "abort", refunded: 0, userStats: userState };
+      }
+
       if (!session || !session.active) {
         throw new Error("No active Tower game found. Please place a bet.");
       }
@@ -988,28 +1119,35 @@ export async function processArcadeWager(
         if (!isSafe) {
           session.active = false;
           activeTowerSessions.delete(user.userId);
+          const updatedUser = await saveAuthoritativeUser(
+            user.userId,
+            {
+              totalProfit: Number(((userState.totalProfit || 0) - session.bet).toFixed(2)),
+            },
+            user.jwt
+          );
           return {
             game: "tower",
             action: "step",
             hitSkull: true,
             secretGrid: session.secretGrid,
-            userStats: userState,
+            userStats: updatedUser,
           };
         }
 
         session.currentLevel += 1;
-        // Multiplier progression
+        // Multiplier progression matching UI floors
         const multTable = {
-          easy: [1.35, 1.85, 2.5, 3.4, 4.6, 6.2, 8.4, 11.5, 15.6, 21.0],
-          medium: [1.8, 3.2, 5.8, 10.5, 19.0, 34.0, 61.0, 110.0, 198.0, 350.0],
-          hard: [2.7, 7.3, 19.8, 53.5, 144.0, 390.0, 1050.0, 2800.0, 7600.0, 20000.0],
+          easy: [1.05, 1.15, 1.3, 2.85, 3.7, 4.8, 6.25, 8.1, 10.5, 13.5],
+          medium: [1.15, 1.4, 1.8, 8.0, 13.2, 21.8, 36.0, 59.5, 98.0, 162.0],
+          hard: [1.3, 2.0, 4.0, 63.22, 178.29, 502.77, 1417.82, 3998.24, 11275.05, 31795.63],
         };
         session.multiplier = multTable[session.difficulty][session.currentLevel - 1] || 1;
 
         if (session.currentLevel >= 10) {
           // Reached top floor! Auto cashout
           const winnings = Math.floor(session.bet * session.multiplier);
-          const nextCash = userState.cash + winnings;
+          const nextCash = Number((userState.cash + winnings).toFixed(2));
           session.active = false;
           activeTowerSessions.delete(user.userId);
 
@@ -1017,7 +1155,7 @@ export async function processArcadeWager(
             user.userId,
             {
               cash: nextCash,
-              totalProfit: (userState.totalProfit || 0) + (winnings - session.bet),
+              totalProfit: Number(((userState.totalProfit || 0) + (winnings - session.bet)).toFixed(2)),
             },
             user.jwt
           );
@@ -1035,22 +1173,41 @@ export async function processArcadeWager(
           };
         }
 
+        const nextSessionToken = signArcadeSessionToken({
+          userId: user.userId,
+          game: "tower",
+          ...session,
+        });
+
         return {
           game: "tower",
           action: "step",
           hitSkull: false,
           level: session.currentLevel,
           multiplier: session.multiplier,
+          sessionToken: nextSessionToken,
         };
       }
 
       if (action === "cashout") {
         if (session.currentLevel === 0) {
-          throw new Error("Climb at least one floor before cashing out.");
+          const refundAmt = session.bet;
+          const nextCash = Number((userState.cash + refundAmt).toFixed(2));
+          session.active = false;
+          activeTowerSessions.delete(user.userId);
+          const updatedUser = await saveAuthoritativeUser(user.userId, { cash: nextCash }, user.jwt);
+          return {
+            game: "tower",
+            action: "cashout",
+            winnings: refundAmt,
+            multiplier: 1,
+            secretGrid: session.secretGrid,
+            userStats: updatedUser,
+          };
         }
 
         const winnings = Math.floor(session.bet * session.multiplier);
-        const nextCash = userState.cash + winnings;
+        const nextCash = Number((userState.cash + winnings).toFixed(2));
         session.active = false;
         activeTowerSessions.delete(user.userId);
 
@@ -1058,7 +1215,7 @@ export async function processArcadeWager(
           user.userId,
           {
             cash: nextCash,
-            totalProfit: (userState.totalProfit || 0) + (winnings - session.bet),
+            totalProfit: Number(((userState.totalProfit || 0) + (winnings - session.bet)).toFixed(2)),
           },
           user.jwt
         );
@@ -1091,7 +1248,7 @@ export async function processShopBuy(
   }
 
   return withUserLock(user.userId, async () => {
-    const userState = await getAuthoritativeUser(user.userId, user.jwt);
+    const userState = await getAuthoritativeUser(user.userId, user.jwt, user.name);
     const costGems = Number(params.costGems ?? params.cost);
 
     if (typeof costGems !== "number" || isNaN(costGems) || costGems <= 0) {
@@ -1152,7 +1309,7 @@ export async function processShopBuy(
       const bonusGems = secureRandomInt(minBonusGems, maxBonusGems);
 
       const nextGems = userState.gems - costGems + bonusGems;
-      const nextCash = userState.cash + cashReward;
+      const nextCash = Number((userState.cash + cashReward).toFixed(2));
 
       const updated = await saveAuthoritativeUser(
         user.userId,
@@ -1187,7 +1344,7 @@ export async function processPrestige(user: AuthenticatedUser) {
   }
 
   return withUserLock(user.userId, async () => {
-    const userState = await getAuthoritativeUser(user.userId, user.jwt);
+    const userState = await getAuthoritativeUser(user.userId, user.jwt, user.name);
 
     if (userState.cash < 100000.0) {
       throw new Error(`Prestige requires at least $100,000.00 cash reserves. Current: $${userState.cash.toFixed(2)}`);
@@ -1280,7 +1437,7 @@ export async function processPromocode(user: AuthenticatedUser, code: string) {
       claimedBy: [...claimedArray, user.userId],
     });
 
-    const userState = await getAuthoritativeUser(user.userId, user.jwt);
+    const userState = await getAuthoritativeUser(user.userId, user.jwt, user.name);
     let nextCash = userState.cash;
     let nextGems = userState.gems;
 
@@ -1337,6 +1494,7 @@ export async function processCreateCoin(user: AuthenticatedUser, params: any) {
   const rawSymbol = (params.symbol || "").trim().toUpperCase();
   const rawDescription = (params.description || "").trim();
   const avatarEmoji = params.avatarEmoji || "🪙";
+  const initialBuyUsd = Math.max(0, Number(params.initialBuyUsd) || 0);
 
   const cleanName = sanitizePlainText(rawName);
   const cleanSymbol = rawSymbol.replace(/[^A-Z0-9]/g, "");
@@ -1366,11 +1524,14 @@ export async function processCreateCoin(user: AuthenticatedUser, params: any) {
   }
 
   return withUserLock(user.userId, async () => {
-    const userState = await getAuthoritativeUser(user.userId, user.jwt);
+    const userState = await getAuthoritativeUser(user.userId, user.jwt, user.name);
     const creationCost = 1100.0; // $100 list fee + $1000 initial liquidity
+    const totalRequired = creationCost + initialBuyUsd;
 
-    if (userState.cash < creationCost) {
-      throw new Error(`Insufficient funds. Creation fee is $${creationCost.toFixed(2)}.`);
+    if (userState.cash < totalRequired) {
+      throw new Error(
+        `Insufficient funds. Required: $${totalRequired.toFixed(2)} ($1,100 launch fee${initialBuyUsd > 0 ? ` + $${initialBuyUsd.toFixed(2)} initial buy` : ""}).`
+      );
     }
 
     if ((userState.coinsCreatedCount || 0) >= 10) {
@@ -1378,18 +1539,24 @@ export async function processCreateCoin(user: AuthenticatedUser, params: any) {
     }
 
     const newCoinId = ID.unique();
-    // Core economy requirements: 1,000,000,000 supply, $1,000 initial market cap, $0.000001 initial price
-    const initSupply = 1000000000;
-    const initMarketCap = 1000;
-    const initPrice = 0.000001;
-    const initLiquidity = 1000;
+    // Use standard tradable supply and price so both small and large trades work seamlessly
+    const initSupply = 1000000;
+    const initMarketCap = 1000 + initialBuyUsd;
+    const initPrice = Number((initMarketCap / initSupply).toFixed(6));
+    const initLiquidity = 1000 + initialBuyUsd;
+    const nowIso = new Date().toISOString();
 
-    const newCoin = {
+    const creatorHandle = userState.handle || (user.name ? `@${user.name.toLowerCase().replace(/[^a-z0-9]/g, "")}` : `@${user.userId.slice(0, 6)}`);
+    const creatorName = userState.username || user.name || creatorHandle;
+
+    const newCoin: any = {
       id: newCoinId,
+      coinId: newCoinId,
       name: cleanName,
       symbol: cleanSymbol,
       slug,
-      creator: user.name || `@${user.userId.slice(0, 6)}`,
+      creator: creatorHandle,
+      creatorName,
       creatorId: user.userId,
       description: cleanDescription,
       avatarEmoji,
@@ -1398,46 +1565,90 @@ export async function processCreateCoin(user: AuthenticatedUser, params: any) {
       marketCap: initMarketCap,
       supply: initSupply,
       totalLiquidity: initLiquidity,
-      volume24h: 0,
-      change24h: 0,
-      history: [initPrice],
-      createdAt: new Date().toISOString(),
+      volume24h: initialBuyUsd,
+      change24h: initialBuyUsd > 0 ? Number(((initialBuyUsd / 1000) * 100).toFixed(2)) : 0,
+      history: [0.001, initPrice],
+      createdAt: nowIso,
+      isUserCreated: true,
     };
 
-    // Save in authoritative coin store
+    // Save in authoritative coin store & Appwrite
     coinStore.setCoin(newCoin);
+    await coinStore.persistCoinToDatabase(newCoin, user.jwt);
 
-    // Persist in Appwrite
-    try {
-      const databases = getDatabases(user.jwt);
-      await databases.createDocument(
-        "pumpforge",
-        "coins",
-        newCoinId,
-        {
-          coinId: newCoinId,
-          creator: String(newCoin.creator).slice(0, 64),
-          creatorId: String(user.userId).slice(0, 64),
-          name: String(newCoin.name).slice(0, 64),
-          symbol: String(newCoin.symbol).slice(0, 16),
-          slug: String(slug).slice(0, 64),
-          description: String(newCoin.description).slice(0, 1000),
-          price: initPrice,
-          marketCap: initMarketCap,
-          totalLiquidity: initLiquidity,
-          volume24h: 0,
-          change24h: 0,
-          avatarEmoji: String(avatarEmoji).slice(0, 16),
-          avatarBg: String(newCoin.avatarBg).slice(0, 64),
-          supply: initSupply,
-        },
-        [Permission.read(Role.any())]
-      );
-    } catch (e) {
-      console.warn("Non-fatal error creating coin doc in Appwrite:", e);
+    let initialHolding: any = null;
+    if (initialBuyUsd > 0) {
+      const boughtTokens = Number((initialBuyUsd / 0.001).toFixed(4));
+      const detHoldingId =
+        "h_" +
+        crypto
+          .createHash("md5")
+          .update(`${user.userId}_${newCoinId}`)
+          .digest("hex")
+          .slice(0, 28);
+      initialHolding = {
+        coinId: newCoinId,
+        coinSymbol: cleanSymbol,
+        amount: boughtTokens,
+        avgBuyPrice: 0.001,
+      };
+      recordHoldingLog({
+        $id: detHoldingId,
+        id: detHoldingId,
+        userId: user.userId,
+        coinId: newCoinId,
+        coinSymbol: cleanSymbol,
+        amount: boughtTokens,
+        avgBuyPrice: 0.001,
+        totalInvested: initialBuyUsd,
+        lastUpdated: nowIso,
+      });
+
+      try {
+        const databases = getDatabases(user.jwt);
+        await databases.createDocument(
+          "pumpforge",
+          "holdings",
+          detHoldingId,
+          {
+            userId: user.userId,
+            coinId: newCoinId,
+            coinSymbol: cleanSymbol,
+            amount: boughtTokens,
+            avgBuyPrice: 0.001,
+            totalInvested: initialBuyUsd,
+            lastUpdated: nowIso,
+          },
+          [Permission.read(Role.any())]
+        );
+      } catch (_) {}
+
+      const tradeData = {
+        id: ID.unique(),
+        userId: user.userId,
+        userName: creatorName,
+        userHandle: creatorHandle,
+        coinId: newCoinId,
+        coinSymbol: cleanSymbol,
+        coinTicker: cleanSymbol,
+        coinName: cleanName,
+        type: "BUY",
+        amountCoins: boughtTokens,
+        amountTokens: boughtTokens,
+        pricePerCoin: 0.001,
+        price: 0.001,
+        totalCash: initialBuyUsd,
+        total: initialBuyUsd,
+        amountUsd: initialBuyUsd,
+        amount: initialBuyUsd,
+        fee: 0,
+        timestamp: nowIso,
+        $createdAt: nowIso,
+      };
+      recordTradeLog(tradeData);
     }
 
-    const nextCash = userState.cash - creationCost;
+    const nextCash = Number(Math.max(0, userState.cash - totalRequired).toFixed(2));
     const nextCreated = (userState.coinsCreatedCount || 0) + 1;
 
     const updatedUser = await saveAuthoritativeUser(
@@ -1452,6 +1663,7 @@ export async function processCreateCoin(user: AuthenticatedUser, params: any) {
     return {
       success: true,
       coin: newCoin,
+      holding: initialHolding,
       userStats: updatedUser,
     };
   });
@@ -1514,12 +1726,12 @@ export async function processPolymarketWager(
   if (!["YES", "NO"].includes(choice)) {
     throw new Error("Must select YES or NO outcome.");
   }
-  if (typeof amount !== "number" || isNaN(amount) || amount <= 0) {
+  if (typeof amount !== "number" || isNaN(amount) || !isFinite(amount) || amount <= 0) {
     throw new Error("Invalid bet amount.");
   }
 
   return withUserLock(user.userId, async () => {
-    const userState = await getAuthoritativeUser(user.userId, user.jwt);
+    const userState = await getAuthoritativeUser(user.userId, user.jwt, user.name);
     if (userState.cash < amount) {
       throw new Error(`Insufficient cash balance. Available: $${userState.cash.toFixed(2)}`);
     }
@@ -1534,6 +1746,8 @@ export async function processPolymarketWager(
       market = allMarkets.find((m: any) => (m.$id || m.id) === marketId) || {
         $id: marketId,
         id: marketId,
+        question: "Community Forecast",
+        endDate: new Date(Date.now() + 5 * 86400000).toISOString(),
         status: "active",
         resolved: false,
         poolYes: marketId === "m1" ? 4500 : marketId === "m2" ? 150 : 0,
@@ -1545,7 +1759,7 @@ export async function processPolymarketWager(
       throw new Error("This prediction market has already closed or resolved.");
     }
 
-    const nextCash = userState.cash - amount;
+    const nextCash = Number(Math.max(0, userState.cash - amount).toFixed(2));
     const updatedUser = await saveAuthoritativeUser(
       user.userId,
       {
@@ -1554,25 +1768,22 @@ export async function processPolymarketWager(
       user.jwt
     );
 
-    // Update market pool
-    const newYesPool = choice === "YES" ? (Number(market.poolYes) || 0) + amount : Number(market.poolYes) || 0;
-    const newNoPool = choice === "NO" ? (Number(market.poolNo) || 0) + amount : Number(market.poolNo) || 0;
+    const prevYes = Number(market.poolYes ?? market.yesPool ?? 0);
+    const prevNo = Number(market.poolNo ?? market.noPool ?? 0);
+    const newYesPool = choice === "YES" ? prevYes + amount : prevYes;
+    const newNoPool = choice === "NO" ? prevNo + amount : prevNo;
 
-    try {
-      await databases.updateDocument("pumpforge", "polymarkets", marketId, {
-        poolYes: newYesPool,
-        poolNo: newNoPool,
-      });
-    } catch {
-      // Market may be a local/in-memory market
-    }
-    recordPolymarket({
+    const updatedMarketObj = normalizePolymarketDoc({
       ...market,
       $id: marketId,
       id: marketId,
       poolYes: newYesPool,
       poolNo: newNoPool,
+      yesPool: newYesPool,
+      noPool: newNoPool,
     });
+
+    await persistPolymarketToDatabase(updatedMarketObj, user.jwt);
 
     // Create wager document
     let wagerDoc: any = {
@@ -1584,6 +1795,8 @@ export async function processPolymarketWager(
       timestamp: new Date().toISOString(),
       isPaid: false,
     };
+    recordWagerLog(wagerDoc);
+
     try {
       const doc = await databases.createDocument(
         "pumpforge",
@@ -1600,12 +1813,13 @@ export async function processPolymarketWager(
         [Permission.read(Role.any())]
       );
       wagerDoc = doc;
+      recordWagerLog(wagerDoc);
     } catch (_e) {}
-    recordWagerLog(wagerDoc);
 
     return {
       success: true,
       wager: wagerDoc,
+      market: updatedMarketObj,
       userStats: updatedUser,
       newPoolYes: newYesPool,
       newPoolNo: newNoPool,
@@ -1614,9 +1828,15 @@ export async function processPolymarketWager(
 }
 
 export async function getUserWagers(user: AuthenticatedUser) {
-  if (!user || user.isGuest || !user.userId) {
-    const guestWagers = inMemoryWagers.filter(w => w.userId === user?.userId);
-    return { wagers: guestWagers };
+  if (!user || !user.userId) {
+    return { wagers: [] };
+  }
+
+  const map = new Map<string, any>();
+  for (const w of inMemoryWagers) {
+    if (w.userId === user.userId) {
+      map.set(w.id || w.$id, w);
+    }
   }
 
   try {
@@ -1627,22 +1847,20 @@ export async function getUserWagers(user: AuthenticatedUser) {
     ]);
     const docs = res.documents || [];
     for (const d of docs) {
-      if (!inMemoryWagers.some(w => (w.id || w.$id) === (d.id || d.$id))) {
-        inMemoryWagers.push(d);
-      }
+      map.set(d.$id || d.id, d);
+      recordWagerLog(d);
     }
-    return { wagers: docs };
   } catch (_err: any) {
-    // Return cached user wagers cleanly without throwing or noisy warning
-    const local = inMemoryWagers.filter(w => w.userId === user.userId);
-    return { wagers: local };
+    // Non-fatal, use in-memory wagers
   }
+
+  return { wagers: Array.from(map.values()) };
 }
 
 // ----------------------------------------------------
 // 12. PREDICTION MARKET CREATION ENGINE
 // ----------------------------------------------------
-const predictionMarketCreationLimiter = new RateLimiter(2, 60 * 60 * 1000); // 2 per hour per user
+const predictionMarketCreationLimiter = new RateLimiter(30, 60 * 60 * 1000); // 30 per hour per user
 
 export async function processCreatePredictionMarket(
   user: AuthenticatedUser,
@@ -1655,7 +1873,7 @@ export async function processCreatePredictionMarket(
   const { allowed, retryAfterMs } = predictionMarketCreationLimiter.isAllowed(user.userId);
   if (!allowed) {
     const mins = Math.ceil(retryAfterMs / 60000);
-    throw new Error(`Creation limit reached (max 2 markets/hour). Try again in ${mins} minutes.`);
+    throw new Error(`Creation limit reached. Try again in ${mins} minutes.`);
   }
 
   const question = sanitizePlainText(params.question || "");
@@ -1669,24 +1887,19 @@ export async function processCreatePredictionMarket(
     expiryTimestamp = Date.now() + 7 * 24 * 60 * 60 * 1000;
   }
 
-  const creationCost = 0; // Free market proposal for authenticated users
-
   return withUserLock(user.userId, async () => {
-    const userState = await getAuthoritativeUser(user.userId, user.jwt);
-    const nextCash = Math.max(0, userState.cash - creationCost);
-    const updatedUser = creationCost > 0
-      ? await saveAuthoritativeUser(user.userId, { cash: nextCash }, user.jwt)
-      : userState;
+    const userState = await getAuthoritativeUser(user.userId, user.jwt, user.name);
 
     const marketId = ID.unique();
     const combinedQuestion = (description ? `${question} --- ${description}` : question).slice(0, 500);
     const endDateIso = new Date(expiryTimestamp).toISOString();
-    const creatorName = String(user.name || `@${user.userId.slice(0, 6)}`).slice(0, 64);
+    const creatorName = String(userState.handle || user.name || `@${user.userId.slice(0, 6)}`).slice(0, 64);
 
-    const marketDoc = {
+    const marketDoc = normalizePolymarketDoc({
       $id: marketId,
       id: marketId,
       question: combinedQuestion,
+      description,
       creatorId: String(user.userId).slice(0, 64),
       creator: creatorName,
       createdAt: new Date().toISOString(),
@@ -1697,35 +1910,14 @@ export async function processCreatePredictionMarket(
       resolved: false,
       winningOutcome: null,
       resolvedAt: null,
-    };
+    });
 
-    try {
-      const databases = getDatabases(user.jwt);
-      await databases.createDocument(
-        "pumpforge",
-        "polymarkets",
-        marketId,
-        {
-          question: combinedQuestion,
-          creatorId: String(user.userId).slice(0, 64),
-          creator: creatorName,
-          endDate: endDateIso,
-          status: "active",
-          poolYes: 0,
-          poolNo: 0,
-          resolved: false,
-        },
-        [Permission.read(Role.any())]
-      );
-    } catch (err) {
-      console.warn("Could not save prediction market in Appwrite directly:", err);
-    }
-    recordPolymarket(marketDoc);
+    await persistPolymarketToDatabase(marketDoc, user.jwt);
 
     return {
       success: true,
       market: marketDoc,
-      userStats: updatedUser,
+      userStats: userState,
     };
   });
 }
@@ -1744,7 +1936,7 @@ export interface CommentItem {
   reported?: boolean;
 }
 
-const commentRateLimiter = new RateLimiter(5, 30 * 1000); // 5 comments per 30s
+const commentRateLimiter = new RateLimiter(10, 30 * 1000); // 10 comments per 30s
 
 export async function processAddComment(
   user: AuthenticatedUser,
@@ -1765,7 +1957,7 @@ export async function processAddComment(
     throw new Error("Comment text must be between 1 and 500 characters.");
   }
 
-  const userState = await getAuthoritativeUser(user.userId, user.jwt);
+  const userState = await getAuthoritativeUser(user.userId, user.jwt, user.name);
   const commentId = ID.unique();
   const createdAt = new Date().toISOString();
 
@@ -1867,40 +2059,42 @@ export async function processUpdateProfile(
     throw new Error("Authentication required to update profile.");
   }
 
-  const sanitizedUpdates: any = {};
+  return withUserLock(user.userId, async () => {
+    const sanitizedUpdates: any = {};
 
-  if (updates.username !== undefined) {
-    const cleanUser = sanitizePlainText(updates.username);
-    if (cleanUser.length >= 2 && cleanUser.length <= 30) {
-      sanitizedUpdates.username = cleanUser;
+    if (updates.username !== undefined) {
+      const cleanUser = sanitizePlainText(updates.username);
+      if (cleanUser.length >= 2 && cleanUser.length <= 30) {
+        sanitizedUpdates.username = cleanUser;
+      }
     }
-  }
 
-  if (updates.handle !== undefined) {
-    const rawHandle = updates.handle.replace(/[^a-zA-Z0-9_@]/g, "");
-    const cleanHandle = rawHandle.startsWith("@") ? rawHandle : `@${rawHandle}`;
-    if (cleanHandle.length >= 2 && cleanHandle.length <= 30) {
-      sanitizedUpdates.handle = cleanHandle;
+    if (updates.handle !== undefined) {
+      const rawHandle = updates.handle.replace(/[^a-zA-Z0-9_@]/g, "");
+      const cleanHandle = rawHandle.startsWith("@") ? rawHandle : `@${rawHandle}`;
+      if (cleanHandle.length >= 2 && cleanHandle.length <= 30) {
+        sanitizedUpdates.handle = cleanHandle;
+      }
     }
-  }
 
-  if (updates.title !== undefined) {
-    const cleanTitle = sanitizePlainText(updates.title);
-    if (cleanTitle.length <= 30) {
-      sanitizedUpdates.title = cleanTitle;
+    if (updates.title !== undefined) {
+      const cleanTitle = sanitizePlainText(updates.title);
+      if (cleanTitle.length <= 30) {
+        sanitizedUpdates.title = cleanTitle;
+      }
     }
-  }
 
-  if (updates.nameColor !== undefined) {
-    sanitizedUpdates.nameColor = String(updates.nameColor).slice(0, 100);
-  }
+    if (updates.nameColor !== undefined) {
+      sanitizedUpdates.nameColor = String(updates.nameColor).slice(0, 100);
+    }
 
-  if (updates.isPremium !== undefined) {
-    sanitizedUpdates.isPremium = !!updates.isPremium;
-  }
+    if (updates.isPremium !== undefined) {
+      sanitizedUpdates.isPremium = !!updates.isPremium;
+    }
 
-  const updatedUser = await saveAuthoritativeUser(user.userId, sanitizedUpdates, user.jwt);
-  return { success: true, userStats: updatedUser };
+    const updatedUser = await saveAuthoritativeUser(user.userId, sanitizedUpdates, user.jwt);
+    return { success: true, userStats: updatedUser };
+  });
 }
 
 // ----------------------------------------------------
@@ -1934,7 +2128,6 @@ export async function processGetCoinCandles(
 
     const trades = res.documents;
     if (!trades || trades.length === 0) {
-      // Return 15 synthetic 1-minute seed candles based on coin's price & history
       const history = coin?.history && coin.history.length > 0 ? coin.history : [basePrice];
       const now = Date.now();
       const count = 15;
@@ -1969,15 +2162,14 @@ export async function processGetCoinCandles(
       return candles;
     }
 
-    // Group actual trades into 1-minute time buckets
     const bucketMap = new Map<number, { prices: number[]; volume: number; timestamp: number }>();
     const intervalMs = Math.max(1, intervalMinutes) * 60 * 1000;
 
     for (const t of trades) {
       const ts = new Date(t.timestamp || (t as any).$createdAt || Date.now()).getTime();
       const bucketKey = Math.floor(ts / intervalMs) * intervalMs;
-      const price = Number(t.price) || basePrice;
-      const total = Number(t.total) || (Number(t.amount) || 0) * price;
+      const price = Number(t.pricePerCoin ?? t.price) || basePrice;
+      const total = Number(t.totalCash ?? t.total) || (Number(t.amountCoins ?? t.amount) || 0) * price;
 
       if (!bucketMap.has(bucketKey)) {
         bucketMap.set(bucketKey, { prices: [], volume: 0, timestamp: bucketKey });
@@ -2087,7 +2279,6 @@ export async function processGetLeaderboard(category: string = "gains", limit: n
     } else if (category === "rugpulls") {
       queryOrder = Query.orderDesc("rugPullsCount");
     } else {
-      // default: "gains" or "profit"
       queryOrder = Query.orderDesc("totalProfit");
     }
 
@@ -2102,18 +2293,18 @@ export async function processGetLeaderboard(category: string = "gains", limit: n
       name: doc.username || "Trader",
       handle: doc.handle || `@user${doc.playerId || idx + 1}`,
       totalProfit: Number(doc.totalProfit || 0),
-      tradesCount: Number(doc.tradesCount || 0),
+      tradesCount: Number(doc.tradesCount ?? doc.allTimeTrades ?? 0),
       coinsCreatedCount: Number(doc.coinsCreatedCount || 0),
       rugPullsCount: Number(doc.rugPullsCount || 0),
       prestigeLevel: Number(doc.prestigeLevel || 0),
-      nameColor: doc.nameColor || "text-zinc-200",
+      nameColor: doc.nameColor || doc.equippedColor || "text-zinc-200",
       title: doc.title || "Trader",
       badges: computeUserBadges({
         userId: doc.$id,
         playerId: doc.playerId,
         cash: Number(doc.cash || 0),
         totalProfit: Number(doc.totalProfit || 0),
-        tradesCount: Number(doc.tradesCount || 0),
+        tradesCount: Number(doc.tradesCount ?? doc.allTimeTrades ?? 0),
         coinsCreatedCount: Number(doc.coinsCreatedCount || 0),
         rugPullsCount: Number(doc.rugPullsCount || 0),
         prestigeLevel: Number(doc.prestigeLevel || 0),
@@ -2124,5 +2315,3 @@ export async function processGetLeaderboard(category: string = "gains", limit: n
     return [];
   }
 }
-
-

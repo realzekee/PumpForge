@@ -1295,12 +1295,30 @@ export default function App() {
     }, 10);
   };
 
-  // 1. GLOBAL USER BETS LISTENER (REAL-TIME SYNCED FROM FIRESTORE)
+  // 1. GLOBAL USER BETS & CREATED HOLDINGS LISTENER
   useEffect(() => {
-    if (!currentUser) {
-      setUserBets({});
-      return;
-    }
+    const onHoldingCreated = (e: any) => {
+      const h = e?.detail;
+      if (!h || !h.coinId) return;
+      setHoldings((prev) => {
+        const others = prev.filter((item) => item.coinId !== h.coinId);
+        const next = [
+          ...others,
+          {
+            coinId: h.coinId,
+            amount: Number(h.amount || 0),
+            avgBuyPrice: Number(h.avgBuyPrice || 0.001),
+          },
+        ];
+        const uid = currentUser?.$id || currentUser?.uid || currentUser?.userId;
+        if (uid) {
+          safeStorage.setItem(`memex_holdings_${uid}`, JSON.stringify(next));
+        }
+        return next;
+      });
+    };
+    window.addEventListener("pf_holding_created", onHoldingCreated);
+    return () => window.removeEventListener("pf_holding_created", onHoldingCreated);
   }, [currentUser]);
 
   // 2. FIRESTORE AUTHENTICATION & MULTI-USER REAL-TIME SUBSCRIPTIONS
@@ -1342,9 +1360,7 @@ export default function App() {
                 delete c.$collectionId;
                 delete c.$permissions;
                 delete c.$updatedAt;
-                if (c.creator === "@zeke" || c.creator === "zeke") {
-                  c.creator = "@system";
-                }
+                // Preserve actual coin creator handle
                 c.id = d.$id;
                 c.createdAt = d.$createdAt;
 
@@ -1497,14 +1513,15 @@ export default function App() {
           const list: PredictionMarket[] = rawDocs.map((d: any) => {
             const parts = (d.question || "").split(" --- ");
             const question = parts[0] || d.question || "Untitled Prediction";
-            const description = parts[1] || "";
-            const yesPool = Number(d.poolYes || 0);
-            const noPool = Number(d.poolNo || 0);
+            const description = d.description || parts[1] || "";
+            const yesPool = Number(d.poolYes ?? d.yesPool ?? 0);
+            const noPool = Number(d.poolNo ?? d.noPool ?? 0);
             const total = yesPool + noPool;
             const yesPercentage = total > 0 ? Math.round((yesPool / total) * 100) : 50;
 
-            const endDateIso = d.endDate || undefined;
-            const resolvedAt = d.resolvedAt || (d.status === "closed" ? d.$updatedAt : undefined);
+            const endDateIso = d.endDate || d.endDateIso || d.endTime || undefined;
+            const isResolved = Boolean(d.resolved || d.status === "closed");
+            const resolvedAt = d.resolvedAt || (isResolved ? d.$updatedAt : undefined);
 
             return {
               id: d.$id || d.id,
@@ -1515,10 +1532,12 @@ export default function App() {
               yesPercentage,
               userBetAmount: 0,
               userBetSide: null,
-              resolved: d.status === "closed",
+              resolved: isResolved,
               resolvedOutcome:
                 d.winningOutcome === "YES" || d.winningOutcome === "NO"
                   ? d.winningOutcome
+                  : d.resolvedOutcome === "YES" || d.resolvedOutcome === "NO"
+                  ? d.resolvedOutcome
                   : null,
               resolvedAt,
               endTime: endDateIso || "TBD",
@@ -1527,10 +1546,44 @@ export default function App() {
             };
           });
 
+          // Merge with locally stored markets so user-created markets and recent bets never disappear across serverless instances
+          let cachedMarkets: PredictionMarket[] = [];
+          try {
+            const cachedRaw = safeStorage.getItem("pumpforge_polymarkets");
+            if (cachedRaw) {
+              const parsed = JSON.parse(cachedRaw);
+              if (Array.isArray(parsed)) cachedMarkets = parsed;
+            }
+          } catch {}
+
+          const mergedMap = new Map<string, PredictionMarket>();
+          for (const srvM of list) {
+            mergedMap.set(srvM.id, srvM);
+          }
+          for (const locM of cachedMarkets) {
+            if (!locM || !locM.id) continue;
+            const existing = mergedMap.get(locM.id);
+            if (!existing) {
+              mergedMap.set(locM.id, locM);
+            } else {
+              const locTotal = (Number(locM.yesPool) || 0) + (Number(locM.noPool) || 0);
+              const srvTotal = (Number(existing.yesPool) || 0) + (Number(existing.noPool) || 0);
+              if (locTotal > srvTotal) {
+                const total = locTotal;
+                mergedMap.set(locM.id, {
+                  ...existing,
+                  yesPool: Number(locM.yesPool) || 0,
+                  noPool: Number(locM.noPool) || 0,
+                  yesPercentage: total > 0 ? Math.round(((Number(locM.yesPool) || 0) / total) * 100) : 50,
+                });
+              }
+            }
+          }
+
           // Filter: Active markets always stay; resolved markets only stay for 3 days (72 hours)
           const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
           const nowMs = Date.now();
-          const filteredList = list.filter((m) => {
+          const filteredList = Array.from(mergedMap.values()).filter((m) => {
             if (!m.resolved) return true;
             const resolvedTime = new Date(m.resolvedAt || m.endDateIso || m.endTime || 0).getTime();
             if (resolvedTime <= 0) return true;
@@ -1540,6 +1593,16 @@ export default function App() {
           setMarkets(filteredList);
           safeStorage.setItem("pumpforge_polymarkets", JSON.stringify(filteredList));
         } else {
+          const existingCached = safeStorage.getItem("pumpforge_polymarkets");
+          if (existingCached) {
+            try {
+              const parsed = JSON.parse(existingCached);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                setMarkets(parsed);
+                return;
+              }
+            } catch {}
+          }
           const nowMs = Date.now();
           const DEFAULT_MARKETS: PredictionMarket[] = [
             {
@@ -1774,11 +1837,15 @@ export default function App() {
           }
         );
 
-        // Appwrite Real-time user stats subscription (authoritative cash & gems sync)
+        // Appwrite Real-time user stats subscription (guarded against stale echo overwrites)
         userDocUnsub = client.subscribe(
           `databases.pumpforge.collections.users.documents.${uid}`,
           (response: any) => {
             const updatedDoc = response.payload;
+            const lastLocalUpdate = Number(localStorage.getItem("pf_stats_updated_at") || 0);
+            if (Date.now() - lastLocalUpdate < 4000) {
+              return;
+            }
             if (updatedDoc) {
               setUserStats((prev) => {
                 const next = {
@@ -1831,17 +1898,33 @@ export default function App() {
           const betsMap: { [marketId: string]: { side: "YES" | "NO"; amount: number } } = {};
           if (Array.isArray(res?.wagers)) {
             for (const w of res.wagers) {
-              betsMap[w.polymarketId] = {
-                side: w.choice === "YES" || w.choice === "NO" ? w.choice : "YES",
-                amount: Number(w.amount || 0),
-              };
+              if (!w.polymarketId || String(w.polymarketId).startsWith("arcade_")) continue;
+              const side = w.choice === "YES" || w.choice === "NO" ? w.choice : "YES";
+              const amt = Number(w.amount || 0);
+              if (betsMap[w.polymarketId]) {
+                betsMap[w.polymarketId] = {
+                  side,
+                  amount: betsMap[w.polymarketId].amount + amt,
+                };
+              } else {
+                betsMap[w.polymarketId] = { side, amount: amt };
+              }
             }
           }
-          setUserBets((prev) => {
-            const merged = { ...prev, ...betsMap };
-            safeStorage.setItem("pumpforge_user_bets", JSON.stringify(merged));
-            return merged;
-          });
+          if (Object.keys(betsMap).length > 0) {
+            setUserBets((prev) => {
+              const merged = { ...prev };
+              for (const [mId, srvBet] of Object.entries(betsMap)) {
+                const locBet = prev[mId];
+                merged[mId] = {
+                  side: srvBet.side,
+                  amount: Math.max(srvBet.amount, locBet?.amount || 0),
+                };
+              }
+              safeStorage.setItem("pumpforge_user_bets", JSON.stringify(merged));
+              return merged;
+            });
+          }
         } catch (err) {
           console.warn("Failed to fetch user wagers from server:", err);
         }
@@ -1962,10 +2045,12 @@ export default function App() {
       timestamp: new Date().toLocaleTimeString(),
       type,
     };
-    setNotifications((prev) => [newItem, ...prev.slice(0, 5)]);
+    setNotifications((prev) => [newItem, ...prev.slice(0, 19)]);
 
-    // Trigger universal toast popup system (marked as error type if it is a black swan / crash)
-    triggerToast(title, msg, type === "crash");
+    // Only trigger popup banner for critical crash alerts so standard actions don't spawn duplicate overlapping toasts
+    if (type === "crash") {
+      triggerToast(title, msg, true);
+    }
   }
 
   function handleDismissBroadcast(id: string) {
@@ -2391,23 +2476,53 @@ export default function App() {
 
     try {
       const res = await apiPolymarketBet(marketId, side, amount);
-      if (res.userStats) {
-        setUserStats((prev) => ({
-          ...prev,
-          cash: res.userStats.cash,
-        }));
+      if (res.userStats && res.userStats.cash !== undefined) {
+        const nextCash = Number(res.userStats.cash);
+        setContextCash(nextCash);
+        setUserStats((prev) => {
+          const next = { ...prev, cash: nextCash };
+          safeStorage.setItem("cached_appwrite_stats", JSON.stringify(next));
+          return next;
+        });
       }
 
-      if (res.market) {
-        setMarkets((prev) =>
-          prev.map((m) => (m.id === marketId ? res.market : m))
-        );
-      }
+      setMarkets((prev) => {
+        const nextMarkets = prev.map((m) => {
+          if (m.id !== marketId) return m;
+          const nextYes =
+            res.newPoolYes !== undefined
+              ? Number(res.newPoolYes)
+              : res.market?.yesPool !== undefined
+              ? Number(res.market.yesPool)
+              : side === "YES"
+              ? (Number(m.yesPool) || 0) + amount
+              : Number(m.yesPool) || 0;
+          const nextNo =
+            res.newPoolNo !== undefined
+              ? Number(res.newPoolNo)
+              : res.market?.noPool !== undefined
+              ? Number(res.market.noPool)
+              : side === "NO"
+              ? (Number(m.noPool) || 0) + amount
+              : Number(m.noPool) || 0;
+          const total = nextYes + nextNo;
+          const nextPct = total > 0 ? Math.round((nextYes / total) * 100) : 50;
+          return {
+            ...m,
+            yesPool: nextYes,
+            noPool: nextNo,
+            yesPercentage: nextPct,
+          };
+        });
+        safeStorage.setItem("pumpforge_polymarkets", JSON.stringify(nextMarkets));
+        return nextMarkets;
+      });
 
       setUserBets((prev) => {
+        const prevAmt = prev[marketId]?.amount || 0;
         const updated = {
           ...prev,
-          [marketId]: { side, amount },
+          [marketId]: { side, amount: prevAmt + amount },
         };
         safeStorage.setItem("pumpforge_user_bets", JSON.stringify(updated));
         return updated;
@@ -2517,24 +2632,36 @@ export default function App() {
     return true;
   };
 
-  const handleUpdateStats = (updater: (stats: UserStats) => void) => {
+  const handleUpdateStats = (updater: (stats: UserStats) => any) => {
     setUserStats((prev) => {
       const clone = { ...prev };
-      updater(clone);
+      const maybeReturned = updater(clone);
+      const next: UserStats =
+        maybeReturned && typeof maybeReturned === "object"
+          ? { ...clone, ...maybeReturned }
+          : clone;
 
-      safeStorage.setItem("cached_appwrite_stats", JSON.stringify(clone));
+      localStorage.setItem("pf_stats_updated_at", String(Date.now()));
+      safeStorage.setItem("cached_appwrite_stats", JSON.stringify(next));
 
-      if (currentUser && !currentUser.isGuest) {
+      const profileChanged =
+        next.title !== prev.title ||
+        next.username !== prev.username ||
+        next.handle !== prev.handle ||
+        next.nameColor !== prev.nameColor ||
+        next.isPremium !== prev.isPremium;
+
+      if (profileChanged && currentUser && !currentUser.isGuest) {
         apiUpdateProfile({
-          title: clone.title,
-          username: clone.username,
-          handle: clone.handle,
-          nameColor: clone.nameColor,
-          isPremium: clone.isPremium,
-        }).catch(e => console.warn("Backend cosmetic profile sync notice:", e));
+          title: next.title,
+          username: next.username,
+          handle: next.handle,
+          nameColor: next.nameColor,
+          isPremium: next.isPremium,
+        }).catch((e) => console.warn("Backend cosmetic profile sync notice:", e));
       }
 
-      return clone;
+      return next;
     });
   };
 
@@ -2676,8 +2803,14 @@ export default function App() {
   });
 
   const handleCreatePredictionLocal = async (marketData: any) => {
+    if (!currentUser) {
+      setSignInReason("propose prediction markets");
+      setShowSignInModal(true);
+      return;
+    }
+
+    const isoDate = marketData.endDateIso || parseDateToIso(marketData.endTime);
     try {
-      const isoDate = marketData.endDateIso || parseDateToIso(marketData.endTime);
       const res = await apiCreatePredictionMarket({
         question: marketData.question,
         description: marketData.description,
@@ -2691,9 +2824,9 @@ export default function App() {
         }));
       }
 
-      const marketDoc = res.market;
+      const marketDoc = res?.market || {};
       const newMarket: PredictionMarket = {
-        id: marketDoc.id,
+        id: marketDoc.id || marketDoc.$id || marketData.id || `m_${Date.now()}`,
         question: marketData.question,
         description: marketData.description || "",
         yesPool: 0,
@@ -2703,18 +2836,21 @@ export default function App() {
         userBetSide: null,
         resolved: false,
         resolvedOutcome: null,
-        endTime: marketDoc.endDate,
-        endDateIso: marketDoc.endDate,
+        endTime: marketDoc.endDate || isoDate,
+        endDateIso: marketDoc.endDate || isoDate,
         category: "general",
       };
 
-      setMarkets((prev) => [newMarket, ...prev]);
-      safeStorage.setItem("pumpforge_polymarkets", JSON.stringify([newMarket, ...markets]));
+      setMarkets((prev) => {
+        const next = [newMarket, ...prev.filter((m) => m.id !== newMarket.id)];
+        safeStorage.setItem("pumpforge_polymarkets", JSON.stringify(next));
+        return next;
+      });
       toast.success("Prediction market proposed & published live!");
       onAddNotification(
         "MARKET PROPOSED",
         `New prediction market created: "${marketData.question}"`,
-        "info"
+        "info",
       );
     } catch (err: any) {
       console.error("Error creating polymarket:", err);

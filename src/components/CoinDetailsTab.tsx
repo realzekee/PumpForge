@@ -92,9 +92,29 @@ export default function CoinDetailsTab({
     msg: string;
   } | null>(null);
 
-  // Fair Launch Anti-Bot 60s cooldown
+  // Fair Launch 60s window indicator
   const [launchTimer, setLaunchTimer] = useState<number>(0);
-  const isCreator = (currentUser?.$id === activeCoin?.creatorId) || (currentUser?.uid === activeCoin?.creatorId) || (userStats?.uid && activeCoin?.creatorId && userStats.uid === activeCoin.creatorId) || userStats?.handle?.toLowerCase() === activeCoin?.creator?.toLowerCase();
+  const isCreator = useMemo(() => {
+    if (!activeCoin) return false;
+    const uid = currentUser?.$id || currentUser?.uid || currentUser?.userId || (userStats as any)?.uid;
+    if (uid && activeCoin.creatorId && String(uid) === String(activeCoin.creatorId)) return true;
+    const cleanCreator = String(activeCoin.creator || "").toLowerCase().replace(/^@/, "").trim();
+    const cleanCreatorName = String((activeCoin as any).creatorName || "").toLowerCase().replace(/^@/, "").trim();
+    const cleanHandle = String(userStats?.handle || "").toLowerCase().replace(/^@/, "").trim();
+    const cleanUser = String(userStats?.username || currentUser?.name || "").toLowerCase().replace(/^@/, "").trim();
+    if (cleanCreator && (cleanCreator === cleanHandle || cleanCreator === cleanUser)) return true;
+    if (cleanCreatorName && (cleanCreatorName === cleanHandle || cleanCreatorName === cleanUser)) return true;
+    try {
+      const rawOwned = localStorage.getItem("pf_my_created_coins");
+      if (rawOwned) {
+        const list: string[] = JSON.parse(rawOwned);
+        if (list.includes(activeCoin.id) || (activeCoin.symbol && list.includes(activeCoin.symbol))) {
+          return true;
+        }
+      }
+    } catch {}
+    return false;
+  }, [activeCoin, currentUser, userStats]);
   const [topHolders, setTopHolders] = useState<any[]>([]);
 
   useEffect(() => {
@@ -209,13 +229,7 @@ export default function CoinDetailsTab({
       return;
     }
 
-    if (launchTimer > 0 && !isCreator) {
-       setFeedback({
-         type: "error",
-         msg: `Fair Launch cooldown active. Please wait ${launchTimer} seconds.`,
-       });
-       return;
-    }
+    // Fair Launch allows creator and early participants to buy without lockouts
 
     if (activeTradeMode === "BUY") {
       const totalCost = numericAmt * activeCoin.price;
@@ -258,12 +272,9 @@ export default function CoinDetailsTab({
       });
       setTradeAmountCoins("");
       setTradePercentage(null);
-      fetchCoinTrades();
-      fetchCandles();
       setTimeout(() => {
-        setActiveTradeMode("NONE");
         setFeedback(null);
-      }, 1500);
+      }, 2500);
     } catch (err: any) {
       console.error("Trade execution failed:", err);
       setFeedback({
@@ -373,16 +384,22 @@ export default function CoinDetailsTab({
     fetchCandles();
     fetchCoinTrades();
     fetchComments();
+    let debounceTimer: any = null;
     const onTradesUpdated = () => {
-      fetchCoinTrades();
-      fetchCandles();
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        fetchCoinTrades();
+        fetchCandles();
+      }, 250);
     };
     window.addEventListener("pf_trades_updated", onTradesUpdated);
     const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
       fetchCandles();
       fetchCoinTrades();
-    }, 10000);
+    }, 20000);
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       window.removeEventListener("pf_trades_updated", onTradesUpdated);
       clearInterval(interval);
     };
@@ -828,8 +845,8 @@ export default function CoinDetailsTab({
               <Zap className="w-3.5 h-3.5 text-rose-500 animate-pulse" />
               TRANSACTION EXECUTION
               {launchTimer > 0 && (
-                <span className="ml-auto text-[9px] bg-red-950/80 text-red-400 px-2 py-0.5 rounded-full border border-red-500/40 font-mono animate-pulse">
-                  {launchTimer}s FAIR LAUNCH
+                <span className="ml-auto text-[9px] bg-emerald-950/80 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/40 font-mono">
+                  ⚡ {launchTimer}s FAIR LAUNCH {isCreator ? "(OWNER)" : "OPEN"}
                 </span>
               )}
             </h3>
@@ -839,32 +856,20 @@ export default function CoinDetailsTab({
               <div className="flex flex-col gap-3">
                 <button
                   onClick={() => {
-                    if (launchTimer > 0 && !isCreator) return;
                     setActiveTradeMode("BUY");
                     setFeedback(null);
                   }}
-                  disabled={launchTimer > 0 && !isCreator}
-                  className={`w-full py-4 px-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-xl flex items-center justify-center gap-2 ${
-                    launchTimer > 0 && !isCreator
-                      ? "bg-zinc-800 text-zinc-500 border border-zinc-700 cursor-not-allowed"
-                      : "bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 active:scale-98 text-white shadow-emerald-950/30 border border-white/20 cursor-pointer"
-                  }`}
+                  className="w-full py-4 px-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-xl flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 active:scale-98 text-white shadow-emerald-950/30 border border-white/20 cursor-pointer"
                   id="massive-buy-btn"
                 >
                   ⚡ Buy ${activeCoin.symbol}
                 </button>
                 <button
                   onClick={() => {
-                    if (launchTimer > 0 && !isCreator) return;
                     setActiveTradeMode("SELL");
                     setFeedback(null);
                   }}
-                  disabled={launchTimer > 0 && !isCreator}
-                  className={`w-full py-4 px-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all border flex items-center justify-center gap-2 ${
-                    launchTimer > 0 && !isCreator
-                      ? "bg-zinc-800 text-zinc-500 border border-zinc-700 cursor-not-allowed"
-                      : "glass-pill hover:bg-rose-950/40 active:scale-98 text-rose-300 hover:text-white border-rose-500/30 cursor-pointer shadow-lg"
-                  }`}
+                  className="w-full py-4 px-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all border flex items-center justify-center gap-2 glass-pill hover:bg-rose-950/40 active:scale-98 text-rose-300 hover:text-white border-rose-500/30 cursor-pointer shadow-lg"
                   id="massive-sell-btn"
                 >
                   ⚡ Sell ${activeCoin.symbol}

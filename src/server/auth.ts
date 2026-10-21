@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import crypto from "crypto";
 import { AuthenticatedUser } from "./types";
+import { hydrateUserHintsFromHeaders } from "./db";
 
 const DEFAULT_ADMIN_EMAILS = ["realzekeee@gmail.com", "realzekee@gmail.com"];
 
@@ -70,24 +71,56 @@ const jwtCache = new Map<string, CachedAuth>();
  */
 export async function authenticateRequest(req: Request): Promise<AuthenticatedUser> {
   const authHeader = req.headers.authorization || "";
-  const jwtHeader = (req.headers["x-appwrite-jwt"] as string) || "";
+  const jwtHeader = ((req.headers["x-appwrite-jwt"] as string) || "").trim();
   const headerUserId = ((req.headers["x-user-id"] as string) || "").trim();
   const headerUserEmail = ((req.headers["x-user-email"] as string) || "").trim().toLowerCase();
   const headerUserName = ((req.headers["x-user-name"] as string) || "").trim();
   const guestId = ((req.headers["x-guest-id"] as string) || "").trim() || "guest_player";
 
+  // Extract optional client balance hints for serverless cold-start protection
+  const hintCashRaw = req.headers["x-user-cash"] as string | undefined;
+  const hintGemsRaw = req.headers["x-user-gems"] as string | undefined;
+  const hintProfitRaw = req.headers["x-user-profit"] as string | undefined;
+  const hintTradesRaw = req.headers["x-user-trades"] as string | undefined;
+  const hintUpdatedRaw = req.headers["x-user-updated-at"] as string | undefined;
+
   let jwt = "";
   if (authHeader.startsWith("Bearer ")) {
     jwt = authHeader.substring(7).trim();
   } else if (jwtHeader) {
-    jwt = jwtHeader.trim();
+    jwt = jwtHeader;
   }
+
+  // Prefer the 3-part Appwrite JWT for downstream Appwrite REST calls if provided in X-Appwrite-JWT
+  const effectiveAppwriteJwt =
+    jwtHeader && jwtHeader.split(".").length === 3
+      ? jwtHeader
+      : jwt && jwt.split(".").length === 3
+      ? jwt
+      : undefined;
+
+  const applyHints = (u: AuthenticatedUser): AuthenticatedUser => {
+    if (effectiveAppwriteJwt) {
+      u.jwt = effectiveAppwriteJwt;
+    }
+    if (u.userId && !u.isGuest) {
+      hydrateUserHintsFromHeaders(u.userId, {
+        cash: hintCashRaw !== undefined ? Number(hintCashRaw) : undefined,
+        gems: hintGemsRaw !== undefined ? Number(hintGemsRaw) : undefined,
+        totalProfit: hintProfitRaw !== undefined ? Number(hintProfitRaw) : undefined,
+        tradesCount: hintTradesRaw !== undefined ? Number(hintTradesRaw) : undefined,
+        updatedAt: hintUpdatedRaw !== undefined ? Number(hintUpdatedRaw) : undefined,
+        username: u.name,
+      });
+    }
+    return u;
+  };
 
   // 1. Cryptographically verify HMAC-signed custom tokens first
   if (jwt) {
     const verifiedUser = verifyCustomToken(jwt);
     if (verifiedUser) {
-      return verifiedUser;
+      return applyHints(verifiedUser);
     }
 
     // 2. Legacy token fallback for standard players & owner
@@ -115,14 +148,14 @@ export async function authenticateRequest(req: Request): Promise<AuthenticatedUs
         }
         const email = (userData.email || headerUserEmail || "").toLowerCase().trim();
         const isOwner = getAdminEmails().includes(email) || uId === "admin_realzekeee";
-        return {
+        return applyHints({
           userId: uId || headerUserId || "player_user",
           email,
           name: userData.name || headerUserName || (email ? email.split("@")[0] : "Player"),
           isAdmin: isOwner,
           isGuest: false,
-          jwt,
-        };
+          jwt: effectiveAppwriteJwt || jwt,
+        });
       } catch {
         // fallback
       }
@@ -131,7 +164,7 @@ export async function authenticateRequest(req: Request): Promise<AuthenticatedUs
     // 3. Check in-memory cache for Appwrite JWTs
     const cached = jwtCache.get(jwt);
     if (cached && cached.expiresAt > Date.now()) {
-      return cached.user;
+      return applyHints({ ...cached.user });
     }
 
     // 4. Verify standard 3-part JWT with Appwrite Cloud API
@@ -165,7 +198,7 @@ export async function authenticateRequest(req: Request): Promise<AuthenticatedUs
               user: authenticatedUser,
               expiresAt: Date.now() + 60000,
             });
-            return authenticatedUser;
+            return applyHints(authenticatedUser);
           }
         }
       } catch (err) {
@@ -177,14 +210,14 @@ export async function authenticateRequest(req: Request): Promise<AuthenticatedUs
   // 5. Fallback to explicit X-User-ID header if the client has an active logged-in user session
   if (headerUserId && headerUserId !== "guest_player" && !headerUserId.startsWith("g_")) {
     const isOwner = getAdminEmails().includes(headerUserEmail) || headerUserId === "admin_realzekeee";
-    return {
+    return applyHints({
       userId: headerUserId,
       email: headerUserEmail,
       name: headerUserName || (headerUserEmail ? headerUserEmail.split("@")[0] : "Trader"),
       isAdmin: isOwner,
       isGuest: false,
-      jwt: jwt || undefined,
-    };
+      jwt: effectiveAppwriteJwt || jwt || undefined,
+    });
   }
 
   // 6. Unauthenticated Guest Fallback (uses persistent browser guestId)

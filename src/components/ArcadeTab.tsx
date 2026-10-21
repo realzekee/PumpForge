@@ -1,24 +1,18 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Gamepad2,
-  DollarSign,
-  Bomb,
-  Dice5,
-  Coins,
-  ChevronUp,
-  RotateCcw,
   Sparkles,
-  HelpCircle,
-  Gem,
-  AlertTriangle,
-  Flame,
   Shield,
   Skull,
   Lock,
-  Play,
+  AlertTriangle,
   X,
 } from "lucide-react";
 import { UserStats } from "../types";
+import { useAppContext } from "../context/AppContext";
+import { apiArcadeWager, apiCoinflip } from "../api/gameClient";
+import { toast } from "sonner";
+import { formatErrorMessage } from "../utils/formatError";
 
 interface ArcadeTabProps {
   userStats: UserStats;
@@ -32,18 +26,15 @@ interface ArcadeTabProps {
 
 type MenuGameType = "coinflip" | "slots" | "mines" | "dice" | "tower";
 
-import { useAppContext } from "../context/AppContext";
-import { apiArcadeWager, apiCoinflip } from "../api/gameClient";
-import { toast } from "sonner";
-import { formatErrorMessage } from "../utils/formatError";
-
 export default function ArcadeTab({
   userStats,
   onUpdateStats,
   onAddNotification,
 }: ArcadeTabProps) {
-  const { adminSettings } = useAppContext();
+  const { setCash } = useAppContext();
   const [selectedGame, setSelectedGame] = useState<MenuGameType>("coinflip");
+  const isSubmittingRef = useRef(false);
+
   const [localNotice, setLocalNotice] = useState<{
     title: string;
     message: string;
@@ -57,6 +48,18 @@ export default function ArcadeTab({
     multiplier?: number;
   } | null>(null);
 
+  const applyServerUserStats = (srvStats: any) => {
+    if (!srvStats) return;
+    if (srvStats.cash !== undefined && setCash) {
+      setCash(Number(srvStats.cash));
+    }
+    onUpdateStats((stats) => {
+      if (srvStats.cash !== undefined) stats.cash = Number(srvStats.cash);
+      if (srvStats.totalProfit !== undefined) stats.totalProfit = Number(srvStats.totalProfit);
+      if (srvStats.gems !== undefined) stats.gems = Number(srvStats.gems);
+    });
+  };
+
   const triggerLocalNotice = (
     title: string,
     message: any,
@@ -64,12 +67,9 @@ export default function ArcadeTab({
   ) => {
     const cleanMessage = formatErrorMessage(
       message,
-      isError ? "Failed to complete arcade transaction. Please try again." : ""
+      isError ? "Failed to complete arcade transaction. Please try again." : "",
     );
     setLocalNotice({ title, message: cleanMessage, isError });
-    if (isError) {
-      toast.error(cleanMessage);
-    }
     setTimeout(() => {
       setLocalNotice((current) => {
         if (current?.title === title && current?.message === cleanMessage) {
@@ -77,7 +77,7 @@ export default function ArcadeTab({
         }
         return current;
       });
-    }, 4500);
+    }, 3500);
   };
 
   const formatCash = (val: number) => {
@@ -91,57 +91,49 @@ export default function ArcadeTab({
   };
 
   // Coinflip States
-  const [coinBet, setCoinBet] = useState(100);
+  const [coinBetInput, setCoinBetInput] = useState("100");
+  const coinBet = Math.max(0, Number(coinBetInput) || 0);
   const [coinSide, setCoinSide] = useState<"heads" | "tails">("heads");
   const [coinIsFlapping, setCoinIsFlapping] = useState(false);
-  const [coinOutcome, setCoinOutcome] = useState<"heads" | "tails" | null>(
-    Math.random() > 0.5 ? "heads" : "tails"
-  );
+  const [coinOutcome, setCoinOutcome] = useState<"heads" | "tails" | null>("heads");
   const [coinResultMsg, setCoinResultMsg] = useState("");
 
-  // Idle Animation Toggle
-  const [idlePulse, setIdlePulse] = useState(false);
-  useEffect(() => {
-    const int = setInterval(() => {
-      if (!coinIsFlapping) setIdlePulse(p => !p);
-    }, 2000);
-    return () => clearInterval(int);
-  }, [coinIsFlapping]);
-
-
-  // Rapidly flip coinFace during animation
+  // Rapidly flip coinFace during animation only
   useEffect(() => {
     let int: NodeJS.Timeout;
     if (coinIsFlapping) {
       int = setInterval(() => {
-        setCoinOutcome(prev => prev === "heads" ? "tails" : "heads");
-      }, 100);
+        setCoinOutcome((prev) => (prev === "heads" ? "tails" : "heads"));
+      }, 110);
     }
     return () => clearInterval(int);
   }, [coinIsFlapping]);
 
   // Slots States
-  const [slotBet, setSlotBet] = useState(100);
+  const [slotBetInput, setSlotBetInput] = useState("100");
+  const slotBet = Math.max(0, Number(slotBetInput) || 0);
   const [slotIsSpinning, setSlotIsSpinning] = useState(false);
   const [slotReels, setSlotReels] = useState(["🍒", "🍒", "🍒"]);
   const [slotResultMsg, setSlotResultMsg] = useState("");
 
   // Mines States
-  const [minesBet, setMinesBet] = useState(100);
+  const [minesBetInput, setMinesBetInput] = useState("100");
+  const minesBet = Math.max(0, Number(minesBetInput) || 0);
   const [minesCount, setMinesCount] = useState(3);
   const [minesActive, setMinesActive] = useState(false);
+  const [minesSessionToken, setMinesSessionToken] = useState<string | null>(null);
   const [minesGrid, setMinesGrid] = useState<
     ("hidden" | "gem" | "mine" | "revealed-gem")[]
   >(Array(25).fill("hidden"));
-  const [minesSecretMap, setMinesSecretMap] = useState<boolean[]>(
-    Array(25).fill(false),
-  ); // true if mine
   const [minesMultiplier, setMinesMultiplier] = useState(1);
   const [minesSafeSelections, setMinesSafeSelections] = useState(0);
 
-  // Dice States (1-6 choice with amazing 3D animation rollout!)
-  const [diceBet, setDiceBet] = useState(10);
+  // Dice States (1-6 choice with exact 3D face alignment!)
+  const [diceBetInput, setDiceBetInput] = useState("10");
+  const diceBet = Math.max(0, Number(diceBetInput) || 0);
   const [diceSelectedNum, setDiceSelectedNum] = useState<number>(1);
+  const [dicePickedOnRoll, setDicePickedOnRoll] = useState<number>(1);
+  const [diceBetOnRoll, setDiceBetOnRoll] = useState<number>(10);
   const [diceIsRollingState, setDiceIsRollingState] = useState<boolean>(false);
   const [diceRotX, setDiceRotX] = useState<number>(0);
   const [diceRotY, setDiceRotY] = useState<number>(0);
@@ -149,133 +141,105 @@ export default function ArcadeTab({
   const [diceResultMsg, setDiceResultMsg] = useState("");
 
   // Tower States
-  const [towerBet, setTowerBet] = useState(10);
+  const [towerBetInput, setTowerBetInput] = useState("10");
+  const towerBet = Math.max(0, Number(towerBetInput) || 0);
   const [towerDifficulty, setTowerDifficulty] = useState<
     "easy" | "medium" | "hard"
   >("easy");
   const [towerActive, setTowerActive] = useState(false);
+  const [towerSessionToken, setTowerSessionToken] = useState<string | null>(null);
   const [towerLevel, setTowerLevel] = useState(0); // 0 to 10
-  const [towerGrid, setTowerGrid] = useState<number[][]>([]); // Grid of level selections: 1 = safe, 0 = skull
-  const [towerUserHistory, setTowerUserHistory] = useState<number[]>([]); // User chosen column indices
+  const [towerGrid, setTowerGrid] = useState<number[][]>([]); // 1 = safe, 0 = skull
+  const [towerUserHistory, setTowerUserHistory] = useState<number[]>([]);
   const [towerReveal, setTowerReveal] = useState(false);
 
   const slotEmojis = ["🍒", "🍋", "🍇", "💎", "🔔", "7️⃣"];
 
-  // Multipliers map for Mines
-  const getMinesMultiplier = (mines: number, safeCount: number) => {
-    if (safeCount === 0) return 1;
-    // Simple math multiplier formula used in online casinos with 15% house edge
-    let mult = 1;
-    for (let i = 0; i < safeCount; i++) {
-      mult *= (25 - i) / (25 - mines - i);
-    }
-    let baseMult = mult * 0.85;
-
-    // Reduce multiplier for 1st, 2nd, and 3rd selections to prevent easy "win once and cash out" economy inflation
-    if (safeCount === 1) {
-      baseMult = Math.min(baseMult, 1.05);
-    } else if (safeCount === 2) {
-      baseMult = Math.min(baseMult, 1.15);
-    } else if (safeCount === 3) {
-      baseMult = Math.min(baseMult, 1.3);
-    }
-
-    return Number(baseMult.toFixed(2));
+  // Helper to safely set percentage bet without exceeding cash
+  const getPercentageBet = (pct: number, minBet = 1): string => {
+    const avail = Math.max(0, Number(userStats.cash) || 0);
+    if (avail <= 0) return String(minBet);
+    const raw = pct >= 1 ? Math.floor(avail) : Math.floor(avail * pct);
+    const clamped = Math.min(1000000, Math.max(minBet, Math.min(Math.floor(avail), raw)));
+    return String(clamped > 0 ? clamped : Math.min(avail, minBet));
   };
 
   // --- Game Executions ---
 
   // 1. Coinflip
   const playCoinflip = async () => {
-    // 6. Verify numbers: Parse betAmount as Number(betAmount) before comparison or payload dispatch
-    const betAmount = Number(coinBet);
+    if (coinIsFlapping || isSubmittingRef.current) return;
+    const betAmount = Number(coinBetInput);
     if (typeof betAmount !== "number" || isNaN(betAmount) || betAmount <= 0) {
-      triggerLocalNotice(
-        "Invalid Bet",
-        "Please enter a valid positive bet amount.",
-        true,
-      );
+      triggerLocalNotice("Invalid Bet", "Please enter a valid positive bet amount.", true);
       return;
     }
 
     if (Number(userStats.cash) < betAmount) {
       triggerLocalNotice(
         "Insufficient Funds",
-        "You do not have enough cash to place this Coinflip bet!",
+        `You only have $${Number(userStats.cash).toLocaleString("en-US", { minimumFractionDigits: 2 })} available.`,
         true,
       );
       return;
     }
 
+    isSubmittingRef.current = true;
     setCoinIsFlapping(true);
     setCoinOutcome(null);
     setCoinResultMsg("");
 
     try {
-      // 3. Ensure the Coinflip action calls /api/arcade/coinflip
       const res = await apiCoinflip(betAmount, coinSide);
 
       setTimeout(() => {
         setCoinOutcome(res.outcome);
         setCoinIsFlapping(false);
+        isSubmittingRef.current = false;
 
-        if (res.userStats) {
-          onUpdateStats((stats) => {
-            stats.cash = res.userStats.cash;
-            stats.totalProfit = res.userStats.totalProfit;
-          });
-        }
+        applyServerUserStats(res.userStats);
 
         if (res.won) {
           setCoinResultMsg(
-            `🎉 YOU WON! Received $${res.payout.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}!`,
+            `🎉 YOU WON! Landed on ${res.outcome.toUpperCase()} — Paid $${res.payout.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}!`,
           );
           onAddNotification(
             "Winner Coinflip",
             `Won $${res.payout.toLocaleString("en-US")} on ${coinSide.toUpperCase()}!`,
             "info",
           );
-          toast.success(`🎉 Won $${res.payout.toLocaleString("en-US")} on ${coinSide.toUpperCase()}!`);
         } else {
           setCoinResultMsg(
-            `😓 Unfortunate, it landed on ${res.outcome.toUpperCase()}. You lost your bet.`,
+            `❌ Landed on ${res.outcome.toUpperCase()} (You picked ${coinSide.toUpperCase()}) • Lost $${betAmount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
           );
         }
-      }, 1200);
+      }, 900);
     } catch (err: any) {
       setCoinIsFlapping(false);
-      // 4. Update error handling around the flip action:
-      // Handle failed requests by reading error.message or the server JSON response.
-      // Do NOT pass raw error objects into the toast notification, preventing "[object Object]" banners.
-      const errorText =
-        typeof err === "string" && err.trim() !== "[object Object]"
-          ? err
-          : typeof err?.message === "string" && err.message.trim() !== "[object Object]"
-          ? err.message
-          : typeof err?.error === "string" && err.error.trim() !== "[object Object]"
-          ? err.error
-          : "Failed to place coinflip bet.";
-
-      triggerLocalNotice("Coinflip Error", errorText, true);
+      isSubmittingRef.current = false;
+      triggerLocalNotice("Coinflip Error", formatErrorMessage(err, "Failed to place coinflip bet."), true);
     }
   };
 
   // 2. Slots
   const playSlots = async () => {
-    if (userStats.cash < slotBet) {
-      triggerLocalNotice(
-        "Insufficient Funds",
-        "You do not have enough cash to spin the Slots reels!",
-        true,
-      );
+    if (slotIsSpinning || isSubmittingRef.current) return;
+    const betAmount = Number(slotBetInput);
+    if (isNaN(betAmount) || betAmount <= 0) {
+      triggerLocalNotice("Invalid Bet", "Please enter a valid positive bet amount.", true);
+      return;
+    }
+    if (userStats.cash < betAmount) {
+      triggerLocalNotice("Insufficient Funds", "You do not have enough cash to spin the Slots reels!", true);
       return;
     }
 
+    isSubmittingRef.current = true;
     setSlotIsSpinning(true);
     setSlotResultMsg("");
 
     try {
-      const res = await apiArcadeWager("slots", "play", { bet: slotBet });
+      const res = await apiArcadeWager("slots", "play", { bet: betAmount });
 
       let spinCounter = 0;
       const interval = setInterval(() => {
@@ -285,21 +249,17 @@ export default function ArcadeTab({
           slotEmojis[Math.floor(Math.random() * slotEmojis.length)],
         ]);
         spinCounter++;
-        if (spinCounter >= 8) {
+        if (spinCounter >= 7) {
           clearInterval(interval);
           setSlotReels(res.reels);
           setSlotIsSpinning(false);
+          isSubmittingRef.current = false;
 
-          if (res.userStats) {
-            onUpdateStats((stats) => {
-              stats.cash = res.userStats.cash;
-              stats.totalProfit = res.userStats.totalProfit;
-            });
-          }
+          applyServerUserStats(res.userStats);
 
           if (res.matchCount === 1) {
             setSlotResultMsg(
-              `🎰 TRIPLE MATCH jackpot! You got three ${res.reels[0]}! Payout: $${res.payout.toLocaleString()}`,
+              `🎰 TRIPLE MATCH JACKPOT! Three ${res.reels[0]}! Payout: $${res.payout.toLocaleString()}`,
             );
             onAddNotification(
               "JACKPOT SLOT",
@@ -308,58 +268,67 @@ export default function ArcadeTab({
             );
           } else if (res.matchCount === 2) {
             setSlotResultMsg(
-              `✨ Double Match! Two of the same emojis matched. Payout: $${res.payout.toLocaleString()}`,
+              `✨ Double Match! Two matching symbols. Payout: $${res.payout.toLocaleString()}`,
             );
           } else {
             setSlotResultMsg(
-              "❌ No matches this spin. Try again, the jackpot is close!",
+              `❌ No match (${res.reels.join(" ")}) • Lost $${betAmount.toLocaleString()}`,
             );
           }
         }
-      }, 100);
+      }, 95);
     } catch (err: any) {
       setSlotIsSpinning(false);
+      isSubmittingRef.current = false;
       triggerLocalNotice("Slots Error", formatErrorMessage(err, "Failed to spin slots."), true);
     }
   };
 
-  // 3. Mines (Server-Side Secrets)
+  // 3. Mines (Server-Side Secrets + Signed Session Token)
   const startMinesGame = async () => {
-    if (userStats.cash < minesBet) {
-      triggerLocalNotice(
-        "Insufficient Funds",
-        "You do not have enough cash to place a Mines bet!",
-        true,
-      );
+    if (minesActive || isSubmittingRef.current) return;
+    const betAmount = Number(minesBetInput);
+    if (isNaN(betAmount) || betAmount <= 0) {
+      triggerLocalNotice("Invalid Bet", "Please enter a valid positive bet amount.", true);
+      return;
+    }
+    if (userStats.cash < betAmount) {
+      triggerLocalNotice("Insufficient Funds", "You do not have enough cash to place a Mines bet!", true);
       return;
     }
 
+    isSubmittingRef.current = true;
     try {
       const res = await apiArcadeWager("mines", "start", {
-        bet: minesBet,
+        bet: betAmount,
         minesCount,
       });
 
-      if (res.userStats) {
-        onUpdateStats((stats) => {
-          stats.cash = res.userStats.cash;
-        });
-      }
-
+      applyServerUserStats(res.userStats);
+      setMinesSessionToken(res.sessionToken || null);
       setMinesGrid(Array(25).fill("hidden"));
       setMinesActive(true);
       setMinesSafeSelections(0);
       setMinesMultiplier(1);
     } catch (err: any) {
       triggerLocalNotice("Mines Error", formatErrorMessage(err, "Could not start Mines game."), true);
+    } finally {
+      isSubmittingRef.current = false;
     }
   };
 
   const handleMinesCellClick = async (cellIdx: number) => {
-    if (!minesActive || minesGrid[cellIdx] !== "hidden") return;
+    if (!minesActive || minesGrid[cellIdx] !== "hidden" || isSubmittingRef.current) return;
 
+    isSubmittingRef.current = true;
     try {
-      const res = await apiArcadeWager("mines", "step", { cellIndex: cellIdx });
+      const res = await apiArcadeWager("mines", "step", {
+        cellIndex: cellIdx,
+        sessionToken: minesSessionToken,
+      });
+      if (res.sessionToken) {
+        setMinesSessionToken(res.sessionToken);
+      }
       const nextGrid = [...minesGrid];
 
       if (res.hitMine) {
@@ -371,11 +340,9 @@ export default function ArcadeTab({
         }
         setMinesGrid(nextGrid);
         setMinesActive(false);
-        triggerLocalNotice(
-          "KABOOM! Mine Hit!",
-          "You clicked on a direct crash mine! Bet lost.",
-          true,
-        );
+        setMinesSessionToken(null);
+        applyServerUserStats(res.userStats);
+        triggerLocalNotice("KABOOM! Mine Hit!", "You hit a mine! Bet lost.", true);
       } else {
         nextGrid[cellIdx] = "revealed-gem";
         setMinesSafeSelections(res.safeSelections);
@@ -383,59 +350,66 @@ export default function ArcadeTab({
         setMinesMultiplier(res.multiplier);
 
         if (res.clearedAll) {
-          if (res.userStats) {
-            onUpdateStats((stats) => {
-              stats.cash = res.userStats.cash;
-              stats.totalProfit = res.userStats.totalProfit;
-            });
-          }
+          applyServerUserStats(res.userStats);
           if (res.secretMinesMap) {
-            const revealed = nextGrid.map((cell, idx) =>
-              res.secretMinesMap[idx] ? "mine" : "revealed-gem"
+            const revealed = nextGrid.map((_, idx) =>
+              res.secretMinesMap[idx] ? "mine" : "revealed-gem",
             );
             setMinesGrid(revealed);
           }
           setMinesActive(false);
+          setMinesSessionToken(null);
           triggerLocalNotice(
-            "Mines Completely Cleared!",
-            `You cleared all safe tiles! Cashed out $${res.winnings.toLocaleString()} at ${res.multiplier}x!`,
+            "Mines Cleared!",
+            `Cleared all safe tiles! Cashed out $${res.winnings.toLocaleString()} at ${res.multiplier}x!`,
           );
         }
       }
     } catch (err: any) {
       triggerLocalNotice("Mines Error", formatErrorMessage(err, "Failed tile step."), true);
+    } finally {
+      isSubmittingRef.current = false;
     }
   };
 
-  const minesCashout = async (overrideMult?: number) => {
-    if (!minesActive) return;
+  const minesCashout = async () => {
+    if (!minesActive || isSubmittingRef.current) return;
 
+    isSubmittingRef.current = true;
     try {
-      const res = await apiArcadeWager("mines", "cashout", {});
-      if (res.userStats) {
-        onUpdateStats((stats) => {
-          stats.cash = res.userStats.cash;
-          stats.totalProfit = res.userStats.totalProfit;
-        });
-      }
-
-      const nextGrid = minesGrid.map((cell, idx) => {
-        if (res.secretMinesMap && res.secretMinesMap[idx]) return "mine";
-        return cell === "revealed-gem" ? "revealed-gem" : "gem";
+      const actionType = minesSafeSelections === 0 ? "abort" : "cashout";
+      const res = await apiArcadeWager("mines", actionType, {
+        sessionToken: minesSessionToken,
+        bet: minesBet,
       });
-      setMinesGrid(nextGrid);
-      setMinesActive(false);
+      applyServerUserStats(res.userStats);
 
-      triggerLocalNotice(
-        "Mines Cashout!",
-        `You successfully cashed out $${res.winnings.toLocaleString()} at ${res.multiplier}x multiplier!`,
-      );
+      if (actionType === "abort") {
+        setMinesGrid(Array(25).fill("hidden"));
+        setMinesActive(false);
+        setMinesSessionToken(null);
+        triggerLocalNotice("Bet Refunded", `Refunded $${(res.refunded || minesBet).toLocaleString()} to your balance.`);
+      } else {
+        const nextGrid = minesGrid.map((cell, idx) => {
+          if (res.secretMinesMap && res.secretMinesMap[idx]) return "mine";
+          return cell === "revealed-gem" ? "revealed-gem" : "gem";
+        });
+        setMinesGrid(nextGrid);
+        setMinesActive(false);
+        setMinesSessionToken(null);
+        triggerLocalNotice(
+          "Mines Cashout!",
+          `Cashed out $${res.winnings.toLocaleString()} at ${res.multiplier}x multiplier!`,
+        );
+      }
     } catch (err: any) {
       triggerLocalNotice("Mines Error", formatErrorMessage(err, "Could not cash out."), true);
+    } finally {
+      isSubmittingRef.current = false;
     }
   };
 
-  // 4. Dice Betting (1-6 choice with amazing 3D animation rollout!)
+  // 4. Dice Betting (Exact 3D Face Alignment — Zero Drift!)
   const getFaceRotation = (face: number) => {
     switch (face) {
       case 1:
@@ -475,7 +449,9 @@ export default function ArcadeTab({
             <div key={i} className="flex items-center justify-center">
               {activeDots.includes(i) && (
                 <div
-                  className={`w-3 h-3 rounded-full bg-zinc-950 shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)] ${val === 1 ? "w-4 h-4 bg-zinc-950" : ""}`}
+                  className={`rounded-full shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)] ${
+                    val === 1 ? "w-4 h-4 bg-rose-600" : "w-3 h-3 bg-zinc-950"
+                  }`}
                 />
               )}
             </div>
@@ -484,143 +460,149 @@ export default function ArcadeTab({
     );
   };
 
-  // 4. Dice Betting (Server-Authoritative Roll)
   const playDiceRoll = async () => {
-    if (userStats.cash < diceBet) {
-      triggerLocalNotice(
-        "Insufficient Funds",
-        "You need additional cash to execute the Dice Roll!",
-        true,
-      );
+    if (diceIsRollingState || isSubmittingRef.current) return;
+    const betAmount = Number(diceBetInput);
+    if (isNaN(betAmount) || betAmount <= 0) {
+      triggerLocalNotice("Invalid Bet", "Please enter a valid positive bet amount.", true);
       return;
     }
-    if (diceIsRollingState) return;
+    if (userStats.cash < betAmount) {
+      triggerLocalNotice("Insufficient Funds", "You need additional cash to execute the Dice Roll!", true);
+      return;
+    }
 
+    const chosenNumber = diceSelectedNum;
+    isSubmittingRef.current = true;
     setDiceIsRollingState(true);
     setDiceResultVal(null);
     setDiceResultMsg("");
+    setDicePickedOnRoll(chosenNumber);
+    setDiceBetOnRoll(betAmount);
 
     try {
       const res = await apiArcadeWager("dice", "play", {
-        bet: diceBet,
-        selectedNum: diceSelectedNum,
+        bet: betAmount,
+        selectedNum: chosenNumber,
       });
 
-      const landedFace = res.landedFace;
+      const landedFace = Number(res.landedFace);
       const baseRot = getFaceRotation(landedFace);
-      const spinsX = (Math.floor(Math.random() * 2) + 3) * 360;
-      const spinsY = (Math.floor(Math.random() * 2) + 3) * 360;
-      const nextRotX = diceRotX + spinsX + baseRot.x;
-      const nextRotY = diceRotY + spinsY + baseRot.y;
+
+      // Snap current rotation to an exact multiple of 360 BEFORE adding spins + baseRot
+      // so previous rolls' 90/-90/180 offsets NEVER accumulate and misalign the 3D cube!
+      const cleanSpinsX = (Math.floor(diceRotX / 360) + 3 + Math.floor(Math.random() * 2)) * 360;
+      const cleanSpinsY = (Math.floor(diceRotY / 360) + 3 + Math.floor(Math.random() * 2)) * 360;
+      const nextRotX = cleanSpinsX + baseRot.x;
+      const nextRotY = cleanSpinsY + baseRot.y;
 
       setDiceRotX(nextRotX);
       setDiceRotY(nextRotY);
 
       setTimeout(() => {
         setDiceIsRollingState(false);
+        isSubmittingRef.current = false;
         setDiceResultVal(landedFace);
 
-        if (res.userStats) {
-          onUpdateStats((stats) => {
-            stats.cash = res.userStats.cash;
-            stats.totalProfit = res.userStats.totalProfit;
-          });
-        }
+        applyServerUserStats(res.userStats);
 
         if (res.won) {
+          const netWin = res.payout - betAmount;
           setDiceResultMsg(
-            `Won $${(res.payout - diceBet).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} on ${landedFace}`,
+            `Rolled ${landedFace} (You picked ${chosenNumber}) • Won +$${netWin.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}!`,
           );
           onAddNotification(
             "Winner Dice Roll",
-            `Hit ${landedFace} on Dice Roll for 3x!`,
+            `Hit ${landedFace} on Dice Roll for 3x ($${res.payout.toLocaleString()})!`,
             "info",
           );
         } else {
           setDiceResultMsg(
-            `Lost $${diceBet.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} on ${landedFace}`,
+            `Rolled ${landedFace} (You picked ${chosenNumber}) • Lost $${betAmount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
           );
         }
-      }, 1200);
+      }, 1080);
     } catch (err: any) {
       setDiceIsRollingState(false);
+      isSubmittingRef.current = false;
       triggerLocalNotice("Dice Error", formatErrorMessage(err, "Failed dice roll."), true);
     }
   };
 
-  // 5. Tower Climb (Server-Authoritative Grid)
+  // 5. Tower Climb (Server-Authoritative Grid + Signed Session Token)
   const startTowerGame = async () => {
-    if (userStats.cash < towerBet) {
-      triggerLocalNotice(
-        "Insufficient Funds",
-        "Not enough cash to start Tower Climb!",
-        true,
-      );
+    if (towerActive || isSubmittingRef.current) return;
+    const betAmount = Number(towerBetInput);
+    if (isNaN(betAmount) || betAmount <= 0) {
+      triggerLocalNotice("Invalid Bet", "Please enter a valid positive bet amount.", true);
+      return;
+    }
+    if (userStats.cash < betAmount) {
+      triggerLocalNotice("Insufficient Funds", "Not enough cash to start Tower Climb!", true);
       return;
     }
 
+    isSubmittingRef.current = true;
     try {
       const res = await apiArcadeWager("tower", "start", {
-        bet: towerBet,
+        bet: betAmount,
         difficulty: towerDifficulty,
       });
 
-      if (res.userStats) {
-        onUpdateStats((stats) => {
-          stats.cash = res.userStats.cash;
-        });
-      }
-
+      applyServerUserStats(res.userStats);
+      setTowerSessionToken(res.sessionToken || null);
       setTowerUserHistory([]);
       setTowerLevel(0);
       setTowerReveal(false);
       setTowerActive(true);
     } catch (err: any) {
       triggerLocalNotice("Tower Error", formatErrorMessage(err, "Could not start Tower climb."), true);
+    } finally {
+      isSubmittingRef.current = false;
     }
   };
 
   const handleTowerStep = async (colIndex: number) => {
-    if (!towerActive) return;
+    if (!towerActive || isSubmittingRef.current) return;
 
+    isSubmittingRef.current = true;
     try {
-      const res = await apiArcadeWager("tower", "step", { colIndex });
+      const res = await apiArcadeWager("tower", "step", {
+        colIndex,
+        sessionToken: towerSessionToken,
+      });
+      if (res.sessionToken) {
+        setTowerSessionToken(res.sessionToken);
+      }
       const nextHistory = [...towerUserHistory, colIndex];
       setTowerUserHistory(nextHistory);
 
       if (res.hitSkull) {
         setTowerActive(false);
+        setTowerSessionToken(null);
         setTowerReveal(true);
         if (res.secretGrid) {
           setTowerGrid(res.secretGrid);
         }
+        applyServerUserStats(res.userStats);
         setShowTowerResultModal({
           success: false,
           title: "TOWER OVER!",
           message: "💀 You hit a trap block. Your climb bet has been lost.",
         });
-        triggerLocalNotice(
-          "TOWER OVER!",
-          "💀 You hit a trap block. Your climb bet has been lost.",
-          true,
-        );
       } else {
         setTowerLevel(res.level);
 
         if (res.clearedTop) {
-          if (res.userStats) {
-            onUpdateStats((stats) => {
-              stats.cash = res.userStats.cash;
-              stats.totalProfit = res.userStats.totalProfit;
-            });
-          }
+          applyServerUserStats(res.userStats);
           if (res.secretGrid) setTowerGrid(res.secretGrid);
           setTowerActive(false);
+          setTowerSessionToken(null);
           setTowerReveal(true);
           setShowTowerResultModal({
             success: true,
             title: "CONGRATULATIONS!",
-            message: "🗼 GRAND CLEAR! You conquered the tower and cashed out floor 10 successfully!",
+            message: "🗼 GRAND CLEAR! You conquered floor 10 and cashed out!",
             payout: res.winnings,
             multiplier: res.multiplier,
           });
@@ -628,6 +610,8 @@ export default function ArcadeTab({
       }
     } catch (err: any) {
       triggerLocalNotice("Tower Error", formatErrorMessage(err, "Tower step error."), true);
+    } finally {
+      isSubmittingRef.current = false;
     }
   };
 
@@ -653,18 +637,17 @@ export default function ArcadeTab({
   };
 
   const towerCashout = async () => {
-    if (!towerActive) return;
+    if (!towerActive || isSubmittingRef.current) return;
 
+    isSubmittingRef.current = true;
     try {
-      const res = await apiArcadeWager("tower", "cashout", {});
-      if (res.userStats) {
-        onUpdateStats((stats) => {
-          stats.cash = res.userStats.cash;
-          stats.totalProfit = res.userStats.totalProfit;
-        });
-      }
+      const res = await apiArcadeWager("tower", "cashout", {
+        sessionToken: towerSessionToken,
+      });
+      applyServerUserStats(res.userStats);
 
       setTowerActive(false);
+      setTowerSessionToken(null);
       setTowerReveal(true);
       if (res.secretGrid) setTowerGrid(res.secretGrid);
 
@@ -675,19 +658,32 @@ export default function ArcadeTab({
         payout: res.winnings,
         multiplier: res.multiplier,
       });
-      triggerLocalNotice(
-        "Tower Claim Complete!",
-        `🗼 Cashed out successfully for a return of $${res.winnings.toLocaleString()} (${res.multiplier}x)!`,
-      );
     } catch (err: any) {
       triggerLocalNotice("Tower Error", formatErrorMessage(err, "Cashout failed."), true);
+    } finally {
+      isSubmittingRef.current = false;
     }
   };
 
-  const abortTowerBet = () => {
-    if (!towerActive || towerLevel > 0) return;
-    setTowerActive(false);
-    setTowerReveal(false);
+  const abortTowerBet = async () => {
+    if (!towerActive || towerLevel > 0 || isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+    try {
+      const res = await apiArcadeWager("tower", "abort", {
+        sessionToken: towerSessionToken,
+        bet: towerBet,
+      });
+      applyServerUserStats(res.userStats);
+      setTowerActive(false);
+      setTowerSessionToken(null);
+      setTowerReveal(false);
+      triggerLocalNotice("Bet Refunded", `Refunded $${(res.refunded || towerBet).toLocaleString()} to your balance.`);
+    } catch (err: any) {
+      setTowerActive(false);
+      setTowerSessionToken(null);
+    } finally {
+      isSubmittingRef.current = false;
+    }
   };
 
   return (
@@ -804,7 +800,9 @@ export default function ArcadeTab({
                   ? "1.9x"
                   : game === "slots"
                     ? "Jackpot"
-                    : "Multi"}
+                    : game === "dice"
+                      ? "3.0x"
+                      : "Multi"}
               </span>
             </button>
           ),
@@ -827,7 +825,7 @@ export default function ArcadeTab({
               {selectedGame === "mines" &&
                 "Evade hidden direct delist mines to stack mults."}
               {selectedGame === "dice" &&
-                "Choose a number and roll the dice to win 3x your bet!"}
+                "Choose a number (1-6) and roll the dice to win 3x your bet!"}
               {selectedGame === "tower" &&
                 "Step columns without skull surprises to rise payout."}
             </span>
@@ -852,7 +850,7 @@ export default function ArcadeTab({
               <div className="flex bg-zinc-950 p-1 rounded-xl border border-zinc-900 gap-1 w-full text-center text-xs font-bold uppercase select-none">
                 <button
                   onClick={() => setCoinSide("heads")}
-                  className={`flex-1 py-1.5 rounded-lg transition-colors ${
+                  className={`flex-1 py-1.5 rounded-lg transition-colors cursor-pointer ${
                     coinSide === "heads"
                       ? "bg-orange-600 text-white shadow"
                       : "text-zinc-500 hover:text-zinc-300"
@@ -862,7 +860,7 @@ export default function ArcadeTab({
                 </button>
                 <button
                   onClick={() => setCoinSide("tails")}
-                  className={`flex-1 py-1.5 rounded-lg transition-colors ${
+                  className={`flex-1 py-1.5 rounded-lg transition-colors cursor-pointer ${
                     coinSide === "tails"
                       ? "bg-orange-600 text-white shadow"
                       : "text-zinc-500 hover:text-zinc-300"
@@ -875,8 +873,8 @@ export default function ArcadeTab({
               {/* Graphical Flipping Coin */}
               <div className="h-28 flex items-center justify-center relative perspective-1000">
                 <div
-                  className={`w-24 h-24 rounded-full bg-gradient-to-tr from-amber-600 via-orange-500 to-yellow-400 flex items-center justify-center border-4 border-amber-950 shadow-lg shadow-orange-950/20 text-3xl font-black text-white select-none transition-transform duration-700 ${
-                    coinIsFlapping ? "animate-spin-fast" : idlePulse ? "scale-105 shadow-orange-500/50" : "scale-100"
+                  className={`w-24 h-24 rounded-full bg-gradient-to-tr from-amber-600 via-orange-500 to-yellow-400 flex items-center justify-center border-4 border-amber-950 shadow-lg shadow-orange-950/20 text-3xl font-black text-white select-none ${
+                    coinIsFlapping ? "animate-spin-fast" : "animate-pulse-subtle"
                   }`}
                 >
                   {coinOutcome === "heads"
@@ -898,15 +896,11 @@ export default function ArcadeTab({
                 <div className="relative">
                   <input
                     type="number"
-                    min="10"
+                    min="1"
                     max="1000000"
                     placeholder="Bet amount..."
-                    value={coinBet}
-                    onChange={(e) =>
-                      setCoinBet(
-                        Math.min(1000000, Math.max(0, Number(e.target.value))),
-                      )
-                    }
+                    value={coinBetInput}
+                    onChange={(e) => setCoinBetInput(e.target.value)}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-orange-500 font-mono"
                   />
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-zinc-500 font-bold uppercase select-none">
@@ -921,56 +915,28 @@ export default function ArcadeTab({
                 <div className="grid grid-cols-4 gap-1.5 w-full text-xs font-bold text-zinc-400">
                   <button
                     type="button"
-                    onClick={() =>
-                      setCoinBet(
-                        Math.max(
-                          10,
-                          Math.min(1000000, Math.floor(userStats.cash * 0.25)),
-                        ),
-                      )
-                    }
+                    onClick={() => setCoinBetInput(getPercentageBet(0.25, 10))}
                     className="bg-zinc-950 hover:bg-zinc-900 border border-zinc-800 hover:border-zinc-700 py-1.5 rounded-lg text-center transition-colors cursor-pointer text-zinc-300 hover:text-white"
                   >
                     25%
                   </button>
                   <button
                     type="button"
-                    onClick={() =>
-                      setCoinBet(
-                        Math.max(
-                          10,
-                          Math.min(1000000, Math.floor(userStats.cash * 0.5)),
-                        ),
-                      )
-                    }
+                    onClick={() => setCoinBetInput(getPercentageBet(0.5, 10))}
                     className="bg-zinc-950 hover:bg-zinc-900 border border-zinc-800 hover:border-zinc-700 py-1.5 rounded-lg text-center transition-colors cursor-pointer text-zinc-300 hover:text-white"
                   >
                     50%
                   </button>
                   <button
                     type="button"
-                    onClick={() =>
-                      setCoinBet(
-                        Math.max(
-                          10,
-                          Math.min(1000000, Math.floor(userStats.cash * 0.75)),
-                        ),
-                      )
-                    }
+                    onClick={() => setCoinBetInput(getPercentageBet(0.75, 10))}
                     className="bg-zinc-950 hover:bg-zinc-900 border border-zinc-800 hover:border-zinc-700 py-1.5 rounded-lg text-center transition-colors cursor-pointer text-zinc-300 hover:text-white"
                   >
                     75%
                   </button>
                   <button
                     type="button"
-                    onClick={() =>
-                      setCoinBet(
-                        Math.max(
-                          10,
-                          Math.min(1000000, Math.floor(userStats.cash)),
-                        ),
-                      )
-                    }
+                    onClick={() => setCoinBetInput(getPercentageBet(1, 10))}
                     className="bg-zinc-950 hover:bg-zinc-900 border border-zinc-800 hover:border-zinc-700 py-1.5 rounded-lg text-center transition-colors cursor-pointer text-zinc-300 hover:text-white"
                   >
                     Max
@@ -980,9 +946,9 @@ export default function ArcadeTab({
                 <button
                   onClick={playCoinflip}
                   disabled={coinIsFlapping}
-                  className="w-full bg-gradient-to-r from-orange-600 to-rose-600 hover:from-orange-500 hover:to-rose-500 cursor-pointer active:scale-98 transition-all text-white font-black uppercase text-xs tracking-widest py-3 rounded-xl shadow-lg border border-orange-500 mt-1"
+                  className="w-full bg-gradient-to-r from-orange-600 to-rose-600 hover:from-orange-500 hover:to-rose-500 disabled:opacity-50 cursor-pointer active:scale-98 transition-all text-white font-black uppercase text-xs tracking-widest py-3 rounded-xl shadow-lg border border-orange-500 mt-1"
                 >
-                  Flip Coin
+                  {coinIsFlapping ? "Flipping..." : "Flip Coin"}
                 </button>
               </div>
             </div>
@@ -997,7 +963,7 @@ export default function ArcadeTab({
                 {slotReels.map((emoji, idx) => (
                   <span
                     key={idx}
-                    className={`text-4xl transition-all ${slotIsSpinning ? "animate-flicker brightness-110 scale-102 font-bold" : "scale-100"}`}
+                    className={`text-4xl transition-transform ${slotIsSpinning ? "scale-105 brightness-110" : "scale-100"}`}
                   >
                     {emoji}
                   </span>
@@ -1015,15 +981,11 @@ export default function ArcadeTab({
                 <div className="relative">
                   <input
                     type="number"
-                    min="10"
+                    min="1"
                     max="1000000"
                     placeholder="Bet amount..."
-                    value={slotBet}
-                    onChange={(e) =>
-                      setSlotBet(
-                        Math.min(1000000, Math.max(0, Number(e.target.value))),
-                      )
-                    }
+                    value={slotBetInput}
+                    onChange={(e) => setSlotBetInput(e.target.value)}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-orange-500 font-mono"
                   />
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-zinc-500 font-bold uppercase select-none">
@@ -1038,56 +1000,28 @@ export default function ArcadeTab({
                 <div className="grid grid-cols-4 gap-1.5 w-full text-xs font-bold text-zinc-400">
                   <button
                     type="button"
-                    onClick={() =>
-                      setSlotBet(
-                        Math.max(
-                          10,
-                          Math.min(1000000, Math.floor(userStats.cash * 0.25)),
-                        ),
-                      )
-                    }
+                    onClick={() => setSlotBetInput(getPercentageBet(0.25, 10))}
                     className="bg-zinc-950 hover:bg-zinc-900 border border-zinc-800 hover:border-zinc-700 py-1.5 rounded-lg text-center transition-colors cursor-pointer text-zinc-300 hover:text-white"
                   >
                     25%
                   </button>
                   <button
                     type="button"
-                    onClick={() =>
-                      setSlotBet(
-                        Math.max(
-                          10,
-                          Math.min(1000000, Math.floor(userStats.cash * 0.5)),
-                        ),
-                      )
-                    }
+                    onClick={() => setSlotBetInput(getPercentageBet(0.5, 10))}
                     className="bg-zinc-950 hover:bg-zinc-900 border border-zinc-800 hover:border-zinc-700 py-1.5 rounded-lg text-center transition-colors cursor-pointer text-zinc-300 hover:text-white"
                   >
                     50%
                   </button>
                   <button
                     type="button"
-                    onClick={() =>
-                      setSlotBet(
-                        Math.max(
-                          10,
-                          Math.min(1000000, Math.floor(userStats.cash * 0.75)),
-                        ),
-                      )
-                    }
+                    onClick={() => setSlotBetInput(getPercentageBet(0.75, 10))}
                     className="bg-zinc-950 hover:bg-zinc-900 border border-zinc-800 hover:border-zinc-700 py-1.5 rounded-lg text-center transition-colors cursor-pointer text-zinc-300 hover:text-white"
                   >
                     75%
                   </button>
                   <button
                     type="button"
-                    onClick={() =>
-                      setSlotBet(
-                        Math.max(
-                          10,
-                          Math.min(1000000, Math.floor(userStats.cash)),
-                        ),
-                      )
-                    }
+                    onClick={() => setSlotBetInput(getPercentageBet(1, 10))}
                     className="bg-zinc-950 hover:bg-zinc-900 border border-zinc-800 hover:border-zinc-700 py-1.5 rounded-lg text-center transition-colors cursor-pointer text-zinc-300 hover:text-white"
                   >
                     Max
@@ -1097,9 +1031,9 @@ export default function ArcadeTab({
                 <button
                   onClick={playSlots}
                   disabled={slotIsSpinning}
-                  className="w-full bg-gradient-to-r from-orange-600 to-rose-600 hover:from-orange-500 hover:to-rose-500 cursor-pointer active:scale-98 transition-all text-white font-black uppercase text-xs tracking-widest py-3 rounded-xl shadow-lg border border-orange-500 mt-1"
+                  className="w-full bg-gradient-to-r from-orange-600 to-rose-600 hover:from-orange-500 hover:to-rose-500 disabled:opacity-50 cursor-pointer active:scale-98 transition-all text-white font-black uppercase text-xs tracking-widest py-3 rounded-xl shadow-lg border border-orange-500 mt-1"
                 >
-                  Spin Slots
+                  {slotIsSpinning ? "Spinning..." : "Spin Slots"}
                 </button>
               </div>
             </div>
@@ -1118,10 +1052,10 @@ export default function ArcadeTab({
                       state === "hidden"
                         ? "bg-zinc-900 border-zinc-800 hover:bg-zinc-800 cursor-pointer hover:border-zinc-700"
                         : state === "mine"
-                          ? "bg-red-950 border-red-500 text-red-400 text-glow animate-shake"
+                          ? "bg-red-950 border-red-500 text-red-400"
                           : state === "revealed-gem"
-                            ? "bg-emerald-950 border-emerald-500 text-emerald-400 text-glow scale-96"
-                            : "bg-zinc-950 border-zinc-900 text-zinc-600 font-medium" // cleared gem
+                            ? "bg-emerald-950 border-emerald-500 text-emerald-400 scale-95"
+                            : "bg-zinc-950 border-zinc-900 text-zinc-600 font-medium"
                     }`}
                   >
                     {state === "mine"
@@ -1146,7 +1080,7 @@ export default function ArcadeTab({
                   </div>
                   <div className="flex justify-between text-[11px] text-zinc-500">
                     <span>Safe cleared:</span>
-                    <span className="font-extrabold text-zinc-350">
+                    <span className="font-extrabold text-zinc-300">
                       {minesSafeSelections}
                     </span>
                   </div>
@@ -1161,10 +1095,15 @@ export default function ArcadeTab({
                 {minesActive ? (
                   <button
                     onClick={() => minesCashout()}
-                    className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 rounded-xl font-bold font-mono text-xs shadow-md uppercase tracking-wider text-glow"
+                    className={`w-full py-2.5 rounded-xl font-bold font-mono text-xs shadow-md uppercase tracking-wider cursor-pointer ${
+                      minesSafeSelections === 0
+                        ? "bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700"
+                        : "bg-emerald-600 hover:bg-emerald-500 text-white"
+                    }`}
                   >
-                    Cashout $
-                    {Math.floor(minesBet * minesMultiplier).toLocaleString()}
+                    {minesSafeSelections === 0
+                      ? `Cancel & Refund $${minesBet.toLocaleString()}`
+                      : `Cashout $${Math.floor(minesBet * minesMultiplier).toLocaleString()}`}
                   </button>
                 ) : (
                   <div className="flex flex-col gap-2">
@@ -1176,18 +1115,11 @@ export default function ArcadeTab({
                       <div className="relative font-mono">
                         <input
                           type="number"
-                          min="10"
+                          min="1"
                           max="1000000"
-                          value={minesBet}
-                          onChange={(e) =>
-                            setMinesBet(
-                              Math.min(
-                                1000000,
-                                Math.max(0, Number(e.target.value)),
-                              ),
-                            )
-                          }
-                          className="w-full bg-zinc-950 border border-zinc-800 px-2.5 py-1.5 rounded-lg text-xs font-bold focus:outline-none font-mono"
+                          value={minesBetInput}
+                          onChange={(e) => setMinesBetInput(e.target.value)}
+                          className="w-full bg-zinc-950 border border-zinc-800 px-2.5 py-1.5 rounded-lg text-xs font-bold focus:outline-none font-mono text-white"
                         />
                       </div>
                       <span className="text-[9px] text-zinc-500 font-semibold px-1">
@@ -1197,65 +1129,28 @@ export default function ArcadeTab({
                       <div className="grid grid-cols-4 gap-1 mt-1 text-[10px] font-bold text-zinc-400">
                         <button
                           type="button"
-                          onClick={() =>
-                            setMinesBet(
-                              Math.max(
-                                10,
-                                Math.min(
-                                  1000000,
-                                  Math.floor(userStats.cash * 0.25),
-                                ),
-                              ),
-                            )
-                          }
+                          onClick={() => setMinesBetInput(getPercentageBet(0.25, 10))}
                           className="bg-zinc-950 hover:bg-zinc-900 border border-zinc-800 hover:border-zinc-700 py-1 rounded text-center transition-colors cursor-pointer text-zinc-300 hover:text-white"
                         >
                           25%
                         </button>
                         <button
                           type="button"
-                          onClick={() =>
-                            setMinesBet(
-                              Math.max(
-                                10,
-                                Math.min(
-                                  1000000,
-                                  Math.floor(userStats.cash * 0.5),
-                                ),
-                              ),
-                            )
-                          }
+                          onClick={() => setMinesBetInput(getPercentageBet(0.5, 10))}
                           className="bg-zinc-950 hover:bg-zinc-900 border border-zinc-800 hover:border-zinc-700 py-1 rounded text-center transition-colors cursor-pointer text-zinc-300 hover:text-white"
                         >
                           50%
                         </button>
                         <button
                           type="button"
-                          onClick={() =>
-                            setMinesBet(
-                              Math.max(
-                                10,
-                                Math.min(
-                                  1000000,
-                                  Math.floor(userStats.cash * 0.75),
-                                ),
-                              ),
-                            )
-                          }
+                          onClick={() => setMinesBetInput(getPercentageBet(0.75, 10))}
                           className="bg-zinc-950 hover:bg-zinc-900 border border-zinc-800 hover:border-zinc-700 py-1 rounded text-center transition-colors cursor-pointer text-zinc-300 hover:text-white"
                         >
                           75%
                         </button>
                         <button
                           type="button"
-                          onClick={() =>
-                            setMinesBet(
-                              Math.max(
-                                10,
-                                Math.min(1000000, Math.floor(userStats.cash)),
-                              ),
-                            )
-                          }
+                          onClick={() => setMinesBetInput(getPercentageBet(1, 10))}
                           className="bg-zinc-950 hover:bg-zinc-900 border border-zinc-800 hover:border-zinc-700 py-1 rounded text-center transition-colors cursor-pointer text-zinc-300 hover:text-white"
                         >
                           Max
@@ -1270,7 +1165,7 @@ export default function ArcadeTab({
                       <select
                         value={minesCount}
                         onChange={(e) => setMinesCount(Number(e.target.value))}
-                        className="bg-zinc-950 border border-zinc-800 px-2 py-1.5 rounded-lg text-xs font-bold focus:outline-none"
+                        className="bg-zinc-950 border border-zinc-800 px-2 py-1.5 rounded-lg text-xs font-bold focus:outline-none text-white"
                       >
                         {[1, 2, 3, 5, 8, 12, 18, 24].map((cnt) => (
                           <option key={cnt} value={cnt}>
@@ -1341,39 +1236,35 @@ export default function ArcadeTab({
 
                 {/* Banner outcome display overlay */}
                 {diceResultVal !== null && !diceIsRollingState && (
-                  <div className="absolute inset-x-0 bottom-[-14px] flex justify-center animate-in fade-in slide-in-from-bottom-2 duration-300 px-2">
+                  <div className="absolute inset-x-0 bottom-[-14px] flex justify-center animate-fade-in px-2">
                     <div
-                      className={`px-5 py-2 rounded-xl flex flex-col items-center shadow-2xl border text-center font-bold tracking-mono text-[11px] max-w-[95%] sm:min-w-[210px] backdrop-blur-md ${
-                        diceResultVal === diceSelectedNum
-                          ? "bg-emerald-950/90 border-emerald-500/40 text-emerald-300"
-                          : "bg-rose-950/90 border-rose-500/40 text-rose-300"
+                      className={`px-5 py-2 rounded-xl flex flex-col items-center shadow-2xl border text-center font-bold tracking-mono text-[11px] max-w-[95%] sm:min-w-[230px] backdrop-blur-md ${
+                        diceResultVal === dicePickedOnRoll
+                          ? "bg-emerald-950/95 border-emerald-500/50 text-emerald-300"
+                          : "bg-rose-950/95 border-rose-500/50 text-rose-300"
                       }`}
                     >
                       <span
                         className={`text-[12px] font-black tracking-widest leading-normal ${
-                          diceResultVal === diceSelectedNum
+                          diceResultVal === dicePickedOnRoll
                             ? "text-emerald-400"
                             : "text-rose-400"
                         }`}
                       >
-                        {diceResultVal === diceSelectedNum
-                          ? "🎉 WIN"
-                          : "❌ LOSS"}
+                        {diceResultVal === dicePickedOnRoll
+                          ? `🎉 WIN — ROLLED ${diceResultVal}`
+                          : `❌ LOSS — ROLLED ${diceResultVal}`}
                       </span>
-                      <span className="opacity-90 font-mono text-[10px] mt-0.5">
-                        {diceResultVal === diceSelectedNum
-                          ? `Won $` +
-                            (diceBet * 2).toLocaleString("en-US", {
+                      <span className="opacity-95 font-mono text-[10px] mt-0.5">
+                        {diceResultVal === dicePickedOnRoll
+                          ? `Picked ${dicePickedOnRoll} • Won +$${(diceBetOnRoll * 2).toLocaleString("en-US", {
                               minimumFractionDigits: 2,
                               maximumFractionDigits: 2,
-                            }) +
-                            ` on ${diceResultVal}`
-                          : `Lost $` +
-                            diceBet.toLocaleString("en-US", {
+                            })}`
+                          : `You picked ${dicePickedOnRoll} • Lost $${diceBetOnRoll.toLocaleString("en-US", {
                               minimumFractionDigits: 2,
                               maximumFractionDigits: 2,
-                            }) +
-                            ` on ${diceResultVal}`}
+                            })}`}
                       </span>
                     </div>
                   </div>
@@ -1393,7 +1284,6 @@ export default function ArcadeTab({
                       disabled={diceIsRollingState}
                       onClick={() => {
                         setDiceSelectedNum(num);
-                        // Clear past outcomes to make gameplay crisp
                         setDiceResultVal(null);
                       }}
                       className={`h-11 rounded-xl text-sm font-black font-mono transition-all border flex items-center justify-center select-none ${
@@ -1419,13 +1309,9 @@ export default function ArcadeTab({
                     min="1"
                     max="1000000"
                     placeholder="Bet amount..."
-                    value={diceBet}
+                    value={diceBetInput}
                     disabled={diceIsRollingState}
-                    onChange={(e) =>
-                      setDiceBet(
-                        Math.min(1000000, Math.max(1, Number(e.target.value))),
-                      )
-                    }
+                    onChange={(e) => setDiceBetInput(e.target.value)}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-rose-500 font-mono disabled:opacity-50"
                   />
                   <span className="absolute right-3.5 bottom-3 text-[10px] text-zinc-500 font-bold uppercase select-none">
@@ -1433,7 +1319,7 @@ export default function ArcadeTab({
                   </span>
                 </div>
 
-                <div className="flex justify-between items-center text-[9px] text-zinc-650 font-semibold px-1 tracking-wider leading-none">
+                <div className="flex justify-between items-center text-[9px] text-zinc-500 font-semibold px-1 tracking-wider leading-none">
                   <span>Max bet: 1,000,000</span>
                 </div>
 
@@ -1442,14 +1328,7 @@ export default function ArcadeTab({
                   <button
                     type="button"
                     disabled={diceIsRollingState}
-                    onClick={() =>
-                      setDiceBet(
-                        Math.max(
-                          10,
-                          Math.min(1000000, Math.floor(userStats.cash * 0.25)),
-                        ),
-                      )
-                    }
+                    onClick={() => setDiceBetInput(getPercentageBet(0.25, 1))}
                     className="bg-zinc-950 hover:bg-zinc-900 border border-zinc-800 hover:border-zinc-700 py-1.5 rounded-lg text-center transition-colors cursor-pointer text-zinc-300 hover:text-white disabled:opacity-50 text-[11px]"
                   >
                     25%
@@ -1457,14 +1336,7 @@ export default function ArcadeTab({
                   <button
                     type="button"
                     disabled={diceIsRollingState}
-                    onClick={() =>
-                      setDiceBet(
-                        Math.max(
-                          10,
-                          Math.min(1000000, Math.floor(userStats.cash * 0.5)),
-                        ),
-                      )
-                    }
+                    onClick={() => setDiceBetInput(getPercentageBet(0.5, 1))}
                     className="bg-zinc-950 hover:bg-zinc-900 border border-zinc-800 hover:border-zinc-700 py-1.5 rounded-lg text-center transition-colors cursor-pointer text-zinc-300 hover:text-white disabled:opacity-50 text-[11px]"
                   >
                     50%
@@ -1472,14 +1344,7 @@ export default function ArcadeTab({
                   <button
                     type="button"
                     disabled={diceIsRollingState}
-                    onClick={() =>
-                      setDiceBet(
-                        Math.max(
-                          10,
-                          Math.min(1000000, Math.floor(userStats.cash * 0.75)),
-                        ),
-                      )
-                    }
+                    onClick={() => setDiceBetInput(getPercentageBet(0.75, 1))}
                     className="bg-zinc-950 hover:bg-zinc-900 border border-zinc-800 hover:border-zinc-700 py-1.5 rounded-lg text-center transition-colors cursor-pointer text-zinc-300 hover:text-white disabled:opacity-50 text-[11px]"
                   >
                     75%
@@ -1487,14 +1352,7 @@ export default function ArcadeTab({
                   <button
                     type="button"
                     disabled={diceIsRollingState}
-                    onClick={() =>
-                      setDiceBet(
-                        Math.max(
-                          10,
-                          Math.min(1000000, Math.floor(userStats.cash)),
-                        ),
-                      )
-                    }
+                    onClick={() => setDiceBetInput(getPercentageBet(1, 1))}
                     className="bg-zinc-950 hover:bg-zinc-900 border border-zinc-800 hover:border-zinc-700 py-1.5 rounded-lg text-center transition-colors cursor-pointer text-zinc-300 hover:text-white disabled:opacity-50 text-[11px]"
                   >
                     Max
@@ -1505,7 +1363,7 @@ export default function ArcadeTab({
                   type="button"
                   onClick={playDiceRoll}
                   disabled={diceIsRollingState}
-                  className="w-full bg-rose-600 hover:bg-rose-500 disabled:bg-zinc-950 disabled:border-zinc-900 disabled:text-zinc-600 disabled:cursor-not-allowed py-3.5 rounded-xl font-black text-xs uppercase text-white tracking-widest shadow-xl border border-rose-500 mt-2 font-mono transition-all"
+                  className="w-full bg-rose-600 hover:bg-rose-500 disabled:bg-zinc-950 disabled:border-zinc-900 disabled:text-zinc-600 disabled:cursor-not-allowed py-3.5 rounded-xl font-black text-xs uppercase text-white tracking-widest shadow-xl border border-rose-500 mt-2 font-mono transition-all cursor-pointer"
                 >
                   {diceIsRollingState ? "Rolling..." : "Roll"}
                 </button>
@@ -1523,12 +1381,12 @@ export default function ArcadeTab({
                 </p>
               </div>
 
-              {/* Vertical ascending levels layout: bottom to top! */}
+              {/* Vertical ascending levels layout: bottom to top */}
               <div className="flex flex-col-reverse gap-1.5 bg-zinc-950 p-2.5 rounded-2xl border border-zinc-900 items-stretch font-mono w-full">
                 {Array(10)
                   .fill(0)
                   .map((_, idx) => {
-                    const lvlIdx = 9 - idx; // floor 10 is at the top (lvlIdx = 9), floor 1 is at the bottom (lvlIdx = 0)
+                    const lvlIdx = 9 - idx;
                     const isCurrent = lvlIdx === towerLevel;
                     const isPassed = lvlIdx < towerLevel;
                     const userChosenCol = towerUserHistory[lvlIdx];
@@ -1551,7 +1409,6 @@ export default function ArcadeTab({
                               : "bg-transparent border-transparent opacity-25"
                         }`}
                       >
-                        {/* Left prefix: Arrow indicator (only on current level) + Floor Number + Multiplier */}
                         <div className="flex items-center gap-1.5 w-[76px] shrink-0 font-mono font-black select-none text-[10px]">
                           <div className="w-3 text-center">
                             {isCurrent && (
@@ -1570,7 +1427,6 @@ export default function ArcadeTab({
                           </span>
                         </div>
 
-                        {/* Grid columns */}
                         <div
                           className="grid gap-1.5 flex-1"
                           style={{
@@ -1584,14 +1440,13 @@ export default function ArcadeTab({
                               const isCellSafe =
                                 towerGrid[lvlIdx]?.[colIdx] === 1;
 
-                              // Figure out styling & content
                               let cellStyle = "bg-zinc-900/45 border-zinc-900";
                               let iconContent = null;
 
                               if (towerActive) {
                                 if (isCurrent) {
                                   cellStyle =
-                                    "bg-zinc-900 border-zinc-800 hover:bg-zinc-800 hover:border-zinc-650 hover:text-white cursor-pointer active:scale-95";
+                                    "bg-zinc-900 border-zinc-800 hover:bg-zinc-800 hover:border-zinc-700 hover:text-white cursor-pointer active:scale-95";
                                 } else if (isPassed) {
                                   if (isChosen) {
                                     cellStyle =
@@ -1642,7 +1497,7 @@ export default function ArcadeTab({
                                   "bg-zinc-900/20 border-zinc-800/30 text-zinc-700/40";
                                 if ((lvlIdx + colIdx) % 3 === 0) {
                                   iconContent = (
-                                    <Lock className="w-2.5 h-2.5 text-zinc-805" />
+                                    <Lock className="w-2.5 h-2.5 text-zinc-800" />
                                   );
                                 }
                               }
@@ -1666,7 +1521,6 @@ export default function ArcadeTab({
 
               {/* Tower betting controls */}
               <div className="flex flex-col gap-4 w-full max-w-sm mt-3">
-                {/* Balance display */}
                 <div className="flex flex-col items-center justify-center py-1 select-none font-sans">
                   <span className="text-[10px] text-zinc-500 font-extrabold uppercase tracking-widest leading-none font-mono">
                     Balance
@@ -1694,7 +1548,7 @@ export default function ArcadeTab({
                         }}
                         className={`py-2 rounded-lg text-xs font-black capitalize transition-all font-mono select-none ${
                           towerDifficulty === diff
-                            ? "bg-rose-600 text-white shadow-md shadow-rose-955/40"
+                            ? "bg-rose-600 text-white shadow-md"
                             : "bg-transparent text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/40 cursor-pointer disabled:opacity-40"
                         }`}
                       >
@@ -1720,17 +1574,10 @@ export default function ArcadeTab({
                       type="number"
                       min="1"
                       max="1000000"
-                      value={towerBet}
+                      value={towerBetInput}
                       disabled={towerActive}
-                      onChange={(e) =>
-                        setTowerBet(
-                          Math.min(
-                            1000000,
-                            Math.max(1, Number(e.target.value)),
-                          ),
-                        )
-                      }
-                      className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-xs font-bold leading-none focus:outline-none focus:border-zinc-700 font-mono text-zinc-200 disabled:opacity-60"
+                      onChange={(e) => setTowerBetInput(e.target.value)}
+                      className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-xs font-bold leading-none focus:outline-none focus:border-zinc-700 font-mono text-zinc-200 disabled:opacity-60 rounded-lg"
                     />
                   </div>
                   <span className="text-[9px] text-zinc-500 font-semibold px-1 font-mono leading-none">
@@ -1742,17 +1589,7 @@ export default function ArcadeTab({
                     <button
                       type="button"
                       disabled={towerActive}
-                      onClick={() =>
-                        setTowerBet(
-                          Math.max(
-                            1,
-                            Math.min(
-                              1000000,
-                              Math.floor(userStats.cash * 0.25),
-                            ),
-                          ),
-                        )
-                      }
+                      onClick={() => setTowerBetInput(getPercentageBet(0.25, 1))}
                       className="bg-zinc-950 hover:bg-zinc-900 border border-zinc-800 hover:border-zinc-700 py-1 rounded text-center transition-colors cursor-pointer text-zinc-300 hover:text-white disabled:opacity-40"
                     >
                       25%
@@ -1760,14 +1597,7 @@ export default function ArcadeTab({
                     <button
                       type="button"
                       disabled={towerActive}
-                      onClick={() =>
-                        setTowerBet(
-                          Math.max(
-                            1,
-                            Math.min(1000000, Math.floor(userStats.cash * 0.5)),
-                          ),
-                        )
-                      }
+                      onClick={() => setTowerBetInput(getPercentageBet(0.5, 1))}
                       className="bg-zinc-950 hover:bg-zinc-900 border border-zinc-800 hover:border-zinc-700 py-1 rounded text-center transition-colors cursor-pointer text-zinc-300 hover:text-white disabled:opacity-40"
                     >
                       50%
@@ -1775,17 +1605,7 @@ export default function ArcadeTab({
                     <button
                       type="button"
                       disabled={towerActive}
-                      onClick={() =>
-                        setTowerBet(
-                          Math.max(
-                            1,
-                            Math.min(
-                              1000000,
-                              Math.floor(userStats.cash * 0.75),
-                            ),
-                          ),
-                        )
-                      }
+                      onClick={() => setTowerBetInput(getPercentageBet(0.75, 1))}
                       className="bg-zinc-950 hover:bg-zinc-900 border border-zinc-800 hover:border-zinc-700 py-1 rounded text-center transition-colors cursor-pointer text-zinc-300 hover:text-white disabled:opacity-40"
                     >
                       75%
@@ -1793,14 +1613,7 @@ export default function ArcadeTab({
                     <button
                       type="button"
                       disabled={towerActive}
-                      onClick={() =>
-                        setTowerBet(
-                          Math.max(
-                            1,
-                            Math.min(1000000, Math.floor(userStats.cash)),
-                          ),
-                        )
-                      }
+                      onClick={() => setTowerBetInput(getPercentageBet(1, 1))}
                       className="bg-zinc-950 hover:bg-zinc-900 border border-zinc-800 hover:border-zinc-700 py-1 rounded text-center transition-colors cursor-pointer text-zinc-300 hover:text-white disabled:opacity-40"
                     >
                       Max
@@ -1814,14 +1627,14 @@ export default function ArcadeTab({
                     towerLevel === 0 ? (
                       <button
                         onClick={abortTowerBet}
-                        className="w-full bg-zinc-900 hover:bg-zinc-800 hover:text-white py-3 rounded-xl text-zinc-300 font-extrabold text-[12px] uppercase tracking-wider border border-zinc-800 transition-all active:scale-98 font-mono shadow-md"
+                        className="w-full bg-zinc-900 hover:bg-zinc-800 hover:text-white py-3 rounded-xl text-zinc-300 font-extrabold text-[12px] uppercase tracking-wider border border-zinc-800 transition-all active:scale-98 font-mono shadow-md cursor-pointer"
                       >
-                        Abort Bet
+                        Cancel &amp; Refund Bet (${towerBet.toLocaleString()})
                       </button>
                     ) : (
                       <button
                         onClick={() => towerCashout()}
-                        className="w-full bg-emerald-600 hover:bg-emerald-500 py-2 rounded-xl text-white font-extrabold text-[12px] uppercase tracking-wider transition-all active:scale-98 font-mono shadow-md flex flex-col items-center justify-center h-12 leading-tight"
+                        className="w-full bg-emerald-600 hover:bg-emerald-500 py-2 rounded-xl text-white font-extrabold text-[12px] uppercase tracking-wider transition-all active:scale-98 font-mono shadow-md flex flex-col items-center justify-center h-12 leading-tight cursor-pointer"
                       >
                         <span>Cash Out</span>
                         <span className="text-[9.5px] text-emerald-100 font-bold mt-0.5">
@@ -1835,7 +1648,7 @@ export default function ArcadeTab({
                   ) : (
                     <button
                       onClick={startTowerGame}
-                      className="w-full bg-rose-600 hover:bg-rose-500 py-3 rounded-xl text-white font-black text-[12px] uppercase tracking-widest transition-all active:scale-98 font-mono shadow-md"
+                      className="w-full bg-rose-600 hover:bg-rose-500 py-3 rounded-xl text-white font-black text-[12px] uppercase tracking-widest transition-all active:scale-98 font-mono shadow-md cursor-pointer"
                     >
                       Start Game
                     </button>

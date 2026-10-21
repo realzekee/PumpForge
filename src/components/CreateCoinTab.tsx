@@ -1,16 +1,13 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAppContext } from "../context/AppContext";
 import {
   PlusCircle,
   HelpCircle,
   AlertOctagon,
-  Sparkles,
-  Coins,
-  DollarSign,
-  Gift,
-  CheckCircle,
+  Zap,
+  ArrowRight,
 } from "lucide-react";
-import { UserStats } from "../types";
 import { apiCreateCoin } from "../api/gameClient";
 import { formatErrorMessage } from "../utils/formatError";
 
@@ -20,12 +17,14 @@ interface CreateCoinProps {
 }
 
 export default function CreateCoinTab({ setCoins, coins }: CreateCoinProps) {
-  const { userStats, currentUser, cash, setCash, userId } = useAppContext();
+  const navigate = useNavigate();
+  const { userStats, currentUser, cash, setCash, setUserStats } = useAppContext();
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
   const [desc, setDesc] = useState("");
   const [selectedEmoji, setSelectedEmoji] = useState("🚀");
-  const [success, setSuccess] = useState(false);
+  const [initialBuyUsd, setInitialBuyUsd] = useState<string>("0");
+  const [launchedCoin, setLaunchedCoin] = useState<any | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isLaunching, setIsLaunching] = useState(false);
 
@@ -52,28 +51,35 @@ export default function CreateCoinTab({ setCoins, coins }: CreateCoinProps) {
     "🧠",
   ];
 
+  const initialBuyNum = Math.max(0, Number(initialBuyUsd) || 0);
+  const totalLaunchCost = 1100 + initialBuyNum;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
     if (isLaunching) return;
 
-    const activeUser = currentUser || (() => {
-      try {
-        const cached = localStorage.getItem("cached_appwrite_user");
-        return cached ? JSON.parse(cached) : null;
-      } catch {
-        return null;
-      }
-    })();
+    const activeUser =
+      currentUser ||
+      (() => {
+        try {
+          const cached = localStorage.getItem("cached_appwrite_user");
+          return cached ? JSON.parse(cached) : null;
+        } catch {
+          return null;
+        }
+      })();
 
-    const activeStats = userStats || (() => {
-      try {
-        const cached = localStorage.getItem("cached_appwrite_stats");
-        return cached ? JSON.parse(cached) : null;
-      } catch {
-        return null;
-      }
-    })();
+    const activeStats =
+      userStats ||
+      (() => {
+        try {
+          const cached = localStorage.getItem("cached_appwrite_stats");
+          return cached ? JSON.parse(cached) : null;
+        } catch {
+          return null;
+        }
+      })();
 
     if (!activeUser && !localStorage.getItem("pf_custom_token")) {
       setErrorMsg("User not signed in");
@@ -98,7 +104,11 @@ export default function CreateCoinTab({ setCoins, coins }: CreateCoinProps) {
     const userHandle = activeStats?.handle || "@player";
     const userCash = Number(activeStats?.cash ?? cash ?? 5000);
 
-    const userOwnCoins = (coins || []).filter((c) => c.creator === userHandle);
+    const userOwnCoins = (coins || []).filter(
+      (c) =>
+        c.creator?.toLowerCase() === userHandle.toLowerCase() ||
+        (activeUser?.$id && c.creatorId === activeUser.$id),
+    );
     if (userOwnCoins.length >= 10) {
       setErrorMsg(
         `❌ 10-COIN LIMIT: You already have 10 active coins. Delete one before launching another!`,
@@ -106,9 +116,9 @@ export default function CreateCoinTab({ setCoins, coins }: CreateCoinProps) {
       return;
     }
 
-    if (userCash < 1100) {
+    if (userCash < totalLaunchCost) {
       setErrorMsg(
-        "Insufficient funds. Launch costs require $1,100 ($100 list fee + $1,000 initial liquidity).",
+        `Insufficient funds. Total launch requires $${totalLaunchCost.toLocaleString("en-US", { minimumFractionDigits: 2 })} ($1,100 base launch + $${initialBuyNum.toLocaleString("en-US", { minimumFractionDigits: 2 })} initial Fair Launch buy).`,
       );
       return;
     }
@@ -120,28 +130,57 @@ export default function CreateCoinTab({ setCoins, coins }: CreateCoinProps) {
         symbol: symbol.trim().toUpperCase(),
         description: desc.trim(),
         avatarEmoji: selectedEmoji,
+        initialBuyUsd: initialBuyNum,
       });
 
-      if (res && res.coin) {
-        setCoins((prev) => [res.coin, ...prev]);
-      }
-      if (res && res.userStats && res.userStats.cash !== undefined) {
-        setCash(res.userStats.cash);
+      const createdCoin = res?.coin;
+      if (createdCoin) {
+        try {
+          const rawOwned = localStorage.getItem("pf_my_created_coins");
+          const ownedList: string[] = rawOwned ? JSON.parse(rawOwned) : [];
+          if (!ownedList.includes(createdCoin.id)) ownedList.push(createdCoin.id);
+          if (createdCoin.symbol && !ownedList.includes(createdCoin.symbol)) {
+            ownedList.push(createdCoin.symbol);
+          }
+          localStorage.setItem("pf_my_created_coins", JSON.stringify(ownedList));
+        } catch {}
+
+        setCoins((prev) => {
+          const next = [createdCoin, ...prev.filter((c) => c.id !== createdCoin.id)];
+          try {
+            localStorage.setItem("pumpforge_cached_coins", JSON.stringify(next));
+          } catch {}
+          return next;
+        });
+        setLaunchedCoin(createdCoin);
       }
 
-      setSuccess(true);
+      if (res?.userStats && res.userStats.cash !== undefined) {
+        setCash(Number(res.userStats.cash));
+        if (setUserStats) {
+          setUserStats((prev: any) => ({ ...(prev || {}), ...res.userStats }));
+        }
+      }
+
+      if (res?.holding) {
+        window.dispatchEvent(
+          new CustomEvent("pf_holding_created", { detail: res.holding }),
+        );
+      }
+      window.dispatchEvent(new CustomEvent("pf_coins_updated"));
+
       setName("");
       setSymbol("");
       setDesc("");
+      setInitialBuyUsd("0");
       setSelectedEmoji("🚀");
-
-      setTimeout(() => {
-        setSuccess(false);
-      }, 6000);
     } catch (err: any) {
       console.error("Launch coin failed:", err);
       setErrorMsg(
-        formatErrorMessage(err, "An unexpected error occurred during database launch."),
+        formatErrorMessage(
+          err,
+          "An unexpected error occurred during database launch.",
+        ),
       );
     } finally {
       setIsLaunching(false);
@@ -159,18 +198,35 @@ export default function CreateCoinTab({ setCoins, coins }: CreateCoinProps) {
           </h3>
         </div>
 
-        {success ? (
-          <div className="py-12 flex flex-col items-center justify-center text-center gap-3 animate-scale-up font-mono">
+        {launchedCoin ? (
+          <div className="py-10 flex flex-col items-center justify-center text-center gap-4 animate-fade-in font-mono">
             <div className="w-16 h-16 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded-3xl flex items-center justify-center text-3xl shadow-xl">
-              🚀
+              {launchedCoin.avatarEmoji || "🚀"}
             </div>
-            <h4 className="font-extrabold text-white text-sm uppercase tracking-wide mt-2">
-              Coin Launched Successfully!
+            <h4 className="font-extrabold text-white text-base uppercase tracking-wide">
+              *{launchedCoin.symbol} Launched Successfully!
             </h4>
             <p className="text-xs text-zinc-300 max-w-sm font-medium leading-relaxed">
-              Your coin has been listed on the main Market! Watch dynamic droll
-              users in the Shill Room discuss and trade your coin.
+              Your token <strong className="text-white">{launchedCoin.name}</strong> is now live in Fair Launch! As the creator, you have immediate full trading access.
             </p>
+            <div className="flex flex-col sm:flex-row gap-3 w-full max-w-sm mt-2">
+              <button
+                type="button"
+                onClick={() => navigate(`/coin/${launchedCoin.id}`)}
+                className="flex-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black py-3 px-4 rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-lg border border-white/20 cursor-pointer"
+              >
+                <Zap className="w-4 h-4" />
+                <span>Trade *{launchedCoin.symbol} Now</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setLaunchedCoin(null)}
+                className="py-3 px-4 glass-pill hover:bg-white/10 text-zinc-300 hover:text-white rounded-2xl text-xs font-bold uppercase cursor-pointer"
+              >
+                Launch Another
+              </button>
+            </div>
           </div>
         ) : (
           <form
@@ -244,26 +300,78 @@ export default function CreateCoinTab({ setCoins, coins }: CreateCoinProps) {
               />
             </div>
 
+            {/* Optional Creator Fair Launch Initial Buy */}
+            <div className="flex flex-col gap-2 glass-card p-3.5 rounded-2xl border border-emerald-500/20">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] text-emerald-400 uppercase tracking-widest font-black flex items-center gap-1">
+                  <Zap className="w-3.5 h-3.5" /> Creator Fair Launch Buy (Optional)
+                </label>
+                <span className="text-[10px] text-zinc-400 font-bold">
+                  0% Fee on Launch Buy
+                </span>
+              </div>
+              <div className="relative">
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  placeholder="0.00"
+                  value={initialBuyUsd}
+                  onChange={(e) => setInitialBuyUsd(e.target.value)}
+                  className="w-full glass-input rounded-xl px-3.5 py-2 text-xs text-white font-bold focus:outline-none focus:border-emerald-500"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-zinc-400 font-bold">
+                  USD
+                </span>
+              </div>
+              <div className="grid grid-cols-5 gap-1.5 text-[10px] font-bold">
+                {[0, 100, 250, 500, 1000].map((amt) => (
+                  <button
+                    key={amt}
+                    type="button"
+                    onClick={() => setInitialBuyUsd(String(amt))}
+                    className={`py-1 rounded-lg border transition-colors cursor-pointer ${
+                      Number(initialBuyUsd) === amt
+                        ? "bg-emerald-600/30 border-emerald-500 text-emerald-300 font-extrabold"
+                        : "bg-black/40 border-white/10 text-zinc-400 hover:text-white"
+                    }`}
+                  >
+                    {amt === 0 ? "None" : `$${amt}`}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* Launch Breakdown */}
             <div className="glass-card p-4 rounded-2xl border border-white/10 flex flex-col gap-2 font-mono text-[11px] leading-relaxed select-none">
               <div className="flex justify-between">
                 <span className="text-zinc-400">Listing fee:</span>
                 <span className="text-zinc-200 font-bold">$100.00</span>
               </div>
-              <div className="flex justify-between pb-1">
+              <div className="flex justify-between">
                 <span className="text-zinc-400">
                   Initial TVL Liquidity injection:
                 </span>
-                <span className="text-emerald-400 font-bold">
-                  $1,000.00
-                </span>
+                <span className="text-emerald-400 font-bold">$1,000.00</span>
               </div>
-              <div className="h-px bg-white/10" />
-              <div className="flex justify-between font-bold mt-1">
+              {initialBuyNum > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-emerald-300">
+                    Creator Fair Launch Token Buy:
+                  </span>
+                  <span className="text-emerald-400 font-bold">
+                    +${initialBuyNum.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+              )}
+              <div className="h-px bg-white/10 my-0.5" />
+              <div className="flex justify-between font-bold">
                 <span className="text-zinc-300 font-extrabold uppercase text-[10px]">
                   Total launching cost:
                 </span>
-                <span className="text-rose-400 font-extrabold text-sm">$1,100.00</span>
+                <span className="text-rose-400 font-extrabold text-sm">
+                  ${totalLaunchCost.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                </span>
               </div>
             </div>
 
@@ -301,10 +409,11 @@ export default function CreateCoinTab({ setCoins, coins }: CreateCoinProps) {
             <p>
               Inject{" "}
               <strong className="text-zinc-200">
-                $1,100 total simulated cash
+                $1,100 base simulated cash
               </strong>{" "}
-              to initiate listing. This creates your token and sets up its
-              liquid buying pool.
+              to initiate listing, and optionally include a{" "}
+              <strong className="text-emerald-400">Creator Fair Launch Buy</strong>{" "}
+              to immediately hold tokens in your new pool.
             </p>
           </div>
 
@@ -313,9 +422,10 @@ export default function CreateCoinTab({ setCoins, coins }: CreateCoinProps) {
               2
             </div>
             <p>
-              Once listed, other droll traders inside the sandbox shill-room
-              will automatically buy/sell your coin, fluctuating its marketcap
-              value up or down!
+              As the token creator, you can buy and sell your coin immediately
+              inside the{" "}
+              <strong className="text-zinc-200">60-second Fair Launch</strong>{" "}
+              window with zero lockouts.
             </p>
           </div>
         </div>

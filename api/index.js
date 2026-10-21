@@ -44,21 +44,48 @@ function verifyCustomToken(token) {
 var jwtCache = /* @__PURE__ */ new Map();
 async function authenticateRequest(req) {
   const authHeader = req.headers.authorization || "";
-  const jwtHeader = req.headers["x-appwrite-jwt"] || "";
+  const jwtHeader = (req.headers["x-appwrite-jwt"] || "").trim();
   const headerUserId = (req.headers["x-user-id"] || "").trim();
   const headerUserEmail = (req.headers["x-user-email"] || "").trim().toLowerCase();
   const headerUserName = (req.headers["x-user-name"] || "").trim();
   const guestId = (req.headers["x-guest-id"] || "").trim() || "guest_player";
+  const hintCashRaw = req.headers["x-user-cash"];
+  const hintGemsRaw = req.headers["x-user-gems"];
+  const hintProfitRaw = req.headers["x-user-profit"];
+  const hintTradesRaw = req.headers["x-user-trades"];
+  const hintUpdatedRaw = req.headers["x-user-updated-at"];
   let jwt = "";
   if (authHeader.startsWith("Bearer ")) {
     jwt = authHeader.substring(7).trim();
   } else if (jwtHeader) {
-    jwt = jwtHeader.trim();
+    jwt = jwtHeader;
   }
+  const effectiveAppwriteJwt =
+    jwtHeader && jwtHeader.split(".").length === 3
+      ? jwtHeader
+      : jwt && jwt.split(".").length === 3
+      ? jwt
+      : void 0;
+  const applyHints = (u) => {
+    if (effectiveAppwriteJwt) {
+      u.jwt = effectiveAppwriteJwt;
+    }
+    if (u.userId && !u.isGuest) {
+      hydrateUserHintsFromHeaders(u.userId, {
+        cash: hintCashRaw !== void 0 ? Number(hintCashRaw) : void 0,
+        gems: hintGemsRaw !== void 0 ? Number(hintGemsRaw) : void 0,
+        totalProfit: hintProfitRaw !== void 0 ? Number(hintProfitRaw) : void 0,
+        tradesCount: hintTradesRaw !== void 0 ? Number(hintTradesRaw) : void 0,
+        updatedAt: hintUpdatedRaw !== void 0 ? Number(hintUpdatedRaw) : void 0,
+        username: u.name
+      });
+    }
+    return u;
+  };
   if (jwt) {
     const verifiedUser = verifyCustomToken(jwt);
     if (verifiedUser) {
-      return verifiedUser;
+      return applyHints(verifiedUser);
     }
     if (jwt.startsWith("pf_user_") || jwt.startsWith("pf_session_") || jwt.startsWith("pf_owner_") || jwt.startsWith("pf_admin_")) {
       try {
@@ -79,19 +106,19 @@ async function authenticateRequest(req) {
         }
         const email = (userData.email || headerUserEmail || "").toLowerCase().trim();
         const isOwner = getAdminEmails().includes(email) || uId === "admin_realzekeee";
-        return {
+        return applyHints({
           userId: uId || headerUserId || "player_user",
           email,
           name: userData.name || headerUserName || (email ? email.split("@")[0] : "Player"),
           isAdmin: isOwner,
           isGuest: false,
-          jwt
-        };
+          jwt: effectiveAppwriteJwt || jwt
+        });
       } catch {}
     }
     const cached = jwtCache.get(jwt);
     if (cached && cached.expiresAt > Date.now()) {
-      return cached.user;
+      return applyHints({ ...cached.user });
     }
     if (jwt.split(".").length === 3) {
       try {
@@ -122,7 +149,7 @@ async function authenticateRequest(req) {
               user: authenticatedUser,
               expiresAt: Date.now() + 6e4
             });
-            return authenticatedUser;
+            return applyHints(authenticatedUser);
           }
         }
       } catch (err) {
@@ -132,14 +159,14 @@ async function authenticateRequest(req) {
   }
   if (headerUserId && headerUserId !== "guest_player" && !headerUserId.startsWith("g_")) {
     const isOwner = getAdminEmails().includes(headerUserEmail) || headerUserId === "admin_realzekeee";
-    return {
+    return applyHints({
       userId: headerUserId,
       email: headerUserEmail,
       name: headerUserName || (headerUserEmail ? headerUserEmail.split("@")[0] : "Trader"),
       isAdmin: isOwner,
       isGuest: false,
-      jwt: jwt || void 0
-    };
+      jwt: effectiveAppwriteJwt || jwt || void 0
+    });
   }
   return {
     userId: guestId,
@@ -470,6 +497,13 @@ class Databases {
       } catch (err) {
         const msg = String(err?.message || "");
         if (err?.code === 409 || err?.status === 409 || msg.toLowerCase().includes("already exists")) {
+          if (collectionId === "users") {
+            try {
+              return await this.getDocument(databaseId, collectionId, finalDocId);
+            } catch {
+              return await this.updateDocument(databaseId, collectionId, finalDocId, currentData);
+            }
+          }
           return await this.updateDocument(databaseId, collectionId, finalDocId, currentData);
         }
         const unknownMatch = msg.match(/Unknown attribute:\s*["']?([a-zA-Z0-9_]+)["']?/i);
@@ -483,6 +517,10 @@ class Databases {
             currentData.tokenAmount = currentData.amount;
           } else if (badAttr === "avgBuyPrice" && !("avgPrice" in currentData) && currentData.avgBuyPrice !== void 0) {
             currentData.avgPrice = currentData.avgBuyPrice;
+          } else if (badAttr === "poolYes" && !("yesPool" in currentData) && currentData.poolYes !== void 0) {
+            currentData.yesPool = currentData.poolYes;
+          } else if (badAttr === "poolNo" && !("noPool" in currentData) && currentData.poolNo !== void 0) {
+            currentData.noPool = currentData.poolNo;
           }
           if (badAttr in currentData) {
             delete currentData[badAttr];
@@ -553,6 +591,10 @@ class Databases {
             currentData.tokenAmount = currentData.amount;
           } else if (badAttr === "avgBuyPrice" && !("avgPrice" in currentData) && currentData.avgBuyPrice !== void 0) {
             currentData.avgPrice = currentData.avgBuyPrice;
+          } else if (badAttr === "poolYes" && !("yesPool" in currentData) && currentData.poolYes !== void 0) {
+            currentData.yesPool = currentData.poolYes;
+          } else if (badAttr === "poolNo" && !("noPool" in currentData) && currentData.poolNo !== void 0) {
+            currentData.noPool = currentData.poolNo;
           }
           if (badAttr in currentData) {
             delete currentData[badAttr];
@@ -877,6 +919,19 @@ var AuthoritativeCoinStore = class {
 };
 var coinStore = new AuthoritativeCoinStore();
 var userCache = /* @__PURE__ */ new Map();
+var userHintsMap = /* @__PURE__ */ new Map();
+function hydrateUserHintsFromHeaders(userId, hint) {
+  if (!userId) return;
+  const existing = userHintsMap.get(userId) || {};
+  userHintsMap.set(userId, {
+    cash: typeof hint.cash === "number" && !isNaN(hint.cash) && hint.cash >= 0 ? hint.cash : existing.cash,
+    gems: typeof hint.gems === "number" && !isNaN(hint.gems) && hint.gems >= 0 ? hint.gems : existing.gems,
+    totalProfit: typeof hint.totalProfit === "number" && !isNaN(hint.totalProfit) ? hint.totalProfit : existing.totalProfit,
+    tradesCount: typeof hint.tradesCount === "number" && !isNaN(hint.tradesCount) && hint.tradesCount >= 0 ? hint.tradesCount : existing.tradesCount,
+    updatedAt: typeof hint.updatedAt === "number" && !isNaN(hint.updatedAt) ? hint.updatedAt : existing.updatedAt,
+    username: hint.username || existing.username
+  });
+}
 var nextPlayerId = 1;
 var isPlayerCounterInitialized = false;
 async function initPlayerIdCounter(databases) {
@@ -911,7 +966,8 @@ function computeUserBadges(user) {
 }
 async function getAuthoritativeUser(userId, jwt, defaultName) {
   const cached = userCache.get(userId);
-  if (cached && Date.now() - cached.updatedAt < 1500) {
+  const hint = userHintsMap.get(userId);
+  if (cached && (cached.dirty || Date.now() - cached.updatedAt < 5e3)) {
     return cached;
   }
   const isOwnerAccount = userId === "admin_realzekeee";
@@ -922,7 +978,8 @@ async function getAuthoritativeUser(userId, jwt, defaultName) {
     try {
       doc = await databases.getDocument("pumpforge", "users", userId);
     } catch (getErr) {
-      if (getErr?.code === 404 || getErr?.status === 404) {
+      const errMsg = String(getErr?.message || "").toLowerCase();
+      if (getErr?.code === 404 || getErr?.status === 404 || errMsg.includes("not found")) {
         try {
           const listRes = await databases.listDocuments("pumpforge", "users", [
             Query.equal("userId", userId),
@@ -940,6 +997,7 @@ async function getAuthoritativeUser(userId, jwt, defaultName) {
       throw new Error("User document not found in Appwrite");
     }
     const docId = doc.$id || userId;
+    const docUpdatedAt = doc.$updatedAt ? new Date(doc.$updatedAt).getTime() : 0;
     let assignedPlayerId = doc.playerId ? Number(doc.playerId) : cached?.playerId;
     if (!assignedPlayerId) {
       assignedPlayerId = isOwnerAccount ? 1 : nextPlayerId++;
@@ -949,20 +1007,28 @@ async function getAuthoritativeUser(userId, jwt, defaultName) {
         });
       } catch (_) {}
     }
+    const useCachedBalance = Boolean(cached && (cached.dirty || docUpdatedAt > 0 && cached.updatedAt > docUpdatedAt + 2e3));
+    const useHintBalance = Boolean(
+      !useCachedBalance && hint && typeof hint.cash === "number" && hint.updatedAt && (!docUpdatedAt || hint.updatedAt > docUpdatedAt + 2e3)
+    );
+    const resolvedCash = useCachedBalance ? cached.cash : useHintBalance ? Number(hint.cash) : Number(doc.cash ?? cached?.cash ?? hint?.cash ?? (isOwnerAccount ? 1e5 : 5e3));
+    const resolvedGems = useCachedBalance ? cached.gems : useHintBalance && typeof hint.gems === "number" ? Number(hint.gems) : Number(doc.gems ?? cached?.gems ?? hint?.gems ?? (isOwnerAccount ? 5e3 : 90));
+    const resolvedProfit = useCachedBalance ? cached.totalProfit : useHintBalance && typeof hint.totalProfit === "number" ? Number(hint.totalProfit) : Number(doc.totalProfit ?? cached?.totalProfit ?? hint?.totalProfit ?? 0);
+    const resolvedTrades = useCachedBalance ? cached.tradesCount : useHintBalance && typeof hint.tradesCount === "number" ? Number(hint.tradesCount) : Number(doc.tradesCount ?? doc.allTimeTrades ?? cached?.tradesCount ?? hint?.tradesCount ?? 0);
     const state = {
       userId,
       docId,
       playerId: assignedPlayerId,
-      username: doc.username || doc.name || cached?.username || defaultName || (isOwnerAccount ? "Zeke (Owner)" : `Player_${assignedPlayerId}`),
+      username: doc.username || doc.name || cached?.username || defaultName || hint?.username || (isOwnerAccount ? "Zeke (Owner)" : `Player_${assignedPlayerId}`),
       handle: doc.handle || cached?.handle || (isOwnerAccount ? "@zeke" : `@user${assignedPlayerId}`),
       title: doc.title || cached?.title || (isOwnerAccount ? "Founder & Owner" : "Member"),
       isPremium: doc.isPremium !== void 0 ? !!doc.isPremium : cached?.isPremium ?? isOwnerAccount,
-      cash: Number(doc.cash ?? cached?.cash ?? (isOwnerAccount ? 1e5 : 5e3)),
-      gems: Number(doc.gems ?? cached?.gems ?? (isOwnerAccount ? 5e3 : 90)),
+      cash: resolvedCash,
+      gems: resolvedGems,
       prestigeLevel: Number(doc.prestigeLevel ?? cached?.prestigeLevel ?? 0),
-      tradesCount: Number(doc.tradesCount ?? doc.allTimeTrades ?? cached?.tradesCount ?? 0),
+      tradesCount: resolvedTrades,
       coinsCreatedCount: Number(doc.coinsCreatedCount ?? cached?.coinsCreatedCount ?? 0),
-      totalProfit: Number(doc.totalProfit ?? cached?.totalProfit ?? 0),
+      totalProfit: resolvedProfit,
       nameColor: doc.nameColor || doc.equippedColor || cached?.nameColor || (isOwnerAccount ? "text-rose-500 font-extrabold text-glow tracking-wider" : "text-zinc-400 font-extrabold"),
       dailyStreak: Number(doc.dailyStreak ?? cached?.dailyStreak ?? 1),
       lastDailyRewardClaim: doc.lastDailyRewardClaim || cached?.lastDailyRewardClaim || "",
@@ -972,7 +1038,8 @@ async function getAuthoritativeUser(userId, jwt, defaultName) {
       isSuspended: doc.isSuspended || false,
       suspendedUntil: doc.suspendedUntil || null,
       createdAt: doc.$createdAt || cached?.createdAt || (/* @__PURE__ */ new Date()).toISOString(),
-      updatedAt: Date.now()
+      updatedAt: Math.max(Date.now(), cached?.updatedAt || 0, hint?.updatedAt || 0),
+      dirty: useCachedBalance || useHintBalance
     };
     userCache.set(userId, state);
     return state;
@@ -982,8 +1049,10 @@ async function getAuthoritativeUser(userId, jwt, defaultName) {
       return cached;
     }
     const assignedPlayerId = isOwnerAccount ? 1 : nextPlayerId++;
-    const fallbackUsername = defaultName || (isOwnerAccount ? "Zeke (Owner)" : `Player_${assignedPlayerId}`);
+    const fallbackUsername = defaultName || hint?.username || (isOwnerAccount ? "Zeke (Owner)" : `Player_${assignedPlayerId}`);
     const fallbackHandle = isOwnerAccount ? "@zeke" : `@${fallbackUsername.toLowerCase().replace(/[^a-z0-9]/g, "")}` || `@user${assignedPlayerId}`;
+    const initialCash = typeof hint?.cash === "number" && !isNaN(hint.cash) ? hint.cash : isOwnerAccount ? 1e5 : 5e3;
+    const initialGems = typeof hint?.gems === "number" && !isNaN(hint.gems) ? hint.gems : isOwnerAccount ? 5e3 : 90;
     const initial = {
       userId,
       docId: userId,
@@ -992,23 +1061,24 @@ async function getAuthoritativeUser(userId, jwt, defaultName) {
       handle: fallbackHandle,
       title: isOwnerAccount ? "Founder & Owner" : "Member",
       isPremium: isOwnerAccount,
-      cash: isOwnerAccount ? 1e5 : 5e3,
-      gems: isOwnerAccount ? 5e3 : 90,
+      cash: initialCash,
+      gems: initialGems,
       prestigeLevel: 0,
-      tradesCount: 0,
+      tradesCount: typeof hint?.tradesCount === "number" ? hint.tradesCount : 0,
       coinsCreatedCount: 0,
-      totalProfit: 0,
+      totalProfit: typeof hint?.totalProfit === "number" ? hint.totalProfit : 0,
       nameColor: isOwnerAccount ? "text-rose-500 font-extrabold text-glow tracking-wider" : "text-zinc-400 font-bold",
       dailyStreak: 1,
       lastDailyRewardClaim: "",
       predictionWins: 0,
       rugPullsCount: 0,
       createdAt: (/* @__PURE__ */ new Date()).toISOString(),
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
+      dirty: true
     };
     userCache.set(userId, initial);
     try {
-      const serverDatabases = getDatabases();
+      const serverDatabases = getDatabases(jwt);
       await serverDatabases.createDocument(
         "pumpforge",
         "users",
@@ -1022,7 +1092,7 @@ async function getAuthoritativeUser(userId, jwt, defaultName) {
           gems: initial.gems,
           prestigeLevel: initial.prestigeLevel,
           totalProfit: initial.totalProfit,
-          tradesCount: 0,
+          tradesCount: initial.tradesCount,
           coinsCreatedCount: 0,
           dailyStreak: 1,
           lastDailyRewardClaim: "",
@@ -1031,6 +1101,7 @@ async function getAuthoritativeUser(userId, jwt, defaultName) {
         },
         [Permission.read(Role.any())]
       );
+      initial.dirty = false;
     } catch (createErr) {
       console.warn("Could not create initial user in Appwrite DB (in-memory cached):", createErr);
     }
@@ -1038,13 +1109,23 @@ async function getAuthoritativeUser(userId, jwt, defaultName) {
   }
 }
 async function saveAuthoritativeUser(userId, updates, jwt) {
-  const current = await getAuthoritativeUser(userId, jwt);
+  const current = userCache.get(userId) || await getAuthoritativeUser(userId, jwt);
+  const now = Date.now();
   const updated = {
     ...current,
     ...updates,
-    updatedAt: Date.now()
+    updatedAt: now,
+    dirty: true
   };
   userCache.set(userId, updated);
+  hydrateUserHintsFromHeaders(userId, {
+    cash: updated.cash,
+    gems: updated.gems,
+    totalProfit: updated.totalProfit,
+    tradesCount: updated.tradesCount,
+    updatedAt: now,
+    username: updated.username
+  });
   try {
     const databases = getDatabases(jwt);
     const targetDocId = updated.docId || userId;
@@ -1067,8 +1148,10 @@ async function saveAuthoritativeUser(userId, updates, jwt) {
     if (Object.keys(payload).length > 0) {
       try {
         await databases.updateDocument("pumpforge", "users", targetDocId, payload);
+        updated.dirty = false;
       } catch (updateErr) {
-        if (updateErr?.code === 404 || updateErr?.status === 404) {
+        const msg = String(updateErr?.message || "").toLowerCase();
+        if (updateErr?.code === 404 || updateErr?.status === 404 || msg.includes("not found")) {
           await databases.createDocument(
             "pumpforge",
             "users",
@@ -1091,17 +1174,20 @@ async function saveAuthoritativeUser(userId, updates, jwt) {
             },
             [Permission.read(Role.any())]
           );
+          updated.dirty = false;
         } else {
           await databases.updateDocument("pumpforge", "users", targetDocId, {
             cash: Number(Number(updated.cash ?? 5e3).toFixed(2)),
             gems: Math.floor(Number(updated.gems ?? 90))
           });
+          updated.dirty = false;
         }
       }
     }
   } catch (err) {
     console.warn("Could not sync user to Appwrite directly (cached state preserved):", err?.message || err);
   }
+  userCache.set(userId, updated);
   return updated;
 }
 async function getPublicUserProfile(identifier) {
@@ -1305,33 +1391,160 @@ async function getBroadcastsList(jwt) {
   } catch (e) {}
   return list;
 }
-var inMemoryPolymarkets = [];
+var DEFAULT_SEED_POLYMARKETS = [
+  {
+    $id: "m1",
+    id: "m1",
+    question: "Will *ROAD hit a $150K valuation by Friday? --- Based on shill room hype, ROAD represents the premium culture asset.",
+    creatorId: "admin_realzekeee",
+    creator: "@zeke",
+    endDate: new Date(Date.now() + 5 * 864e5).toISOString(),
+    status: "active",
+    poolYes: 4500,
+    poolNo: 3200,
+    resolved: false,
+    winningOutcome: null,
+    resolvedAt: null
+  },
+  {
+    $id: "m2",
+    id: "m2",
+    question: "Will the Slots return a grand Jackpot win on next 10 attempts? --- Probabilities dictate slot engines have a high variance output.",
+    creatorId: "admin_realzekeee",
+    creator: "@zeke",
+    endDate: new Date(Date.now() + 2 * 864e5).toISOString(),
+    status: "active",
+    poolYes: 150,
+    poolNo: 6400,
+    resolved: false,
+    winningOutcome: null,
+    resolvedAt: null
+  },
+  {
+    $id: "m3",
+    id: "m3",
+    question: "Will Zeke reach Prestige I status inside the next 12 hours? --- Requires $100K liquid cash balance to trigger Prestige system.",
+    creatorId: "admin_realzekeee",
+    creator: "@zeke",
+    endDate: new Date(Date.now() - 864e5).toISOString(),
+    status: "closed",
+    poolYes: 8500,
+    poolNo: 1e3,
+    resolved: true,
+    winningOutcome: "YES",
+    resolvedAt: new Date(Date.now() - 36e5).toISOString()
+  }
+];
+function normalizePolymarketDoc(doc) {
+  const id = doc.$id || doc.id || `m_${Date.now()}`;
+  const rawQuestion = String(doc.question || "Untitled Prediction");
+  const parts = rawQuestion.split(" --- ");
+  const cleanQuestion = parts[0] || rawQuestion;
+  const description = doc.description || parts[1] || "";
+  const poolYes = Number(doc.poolYes ?? doc.yesPool ?? 0);
+  const poolNo = Number(doc.poolNo ?? doc.noPool ?? 0);
+  const total = poolYes + poolNo;
+  const yesPercentage = total > 0 ? Math.round(poolYes / total * 100) : 50;
+  const endDate = doc.endDate || doc.endDateIso || doc.endTime || new Date(Date.now() + 7 * 864e5).toISOString();
+  const resolved = Boolean(doc.resolved || doc.status === "closed");
+  const status = resolved ? "closed" : doc.status || "active";
+  const winningOutcome = doc.winningOutcome || doc.resolvedOutcome || null;
+  const resolvedAt = doc.resolvedAt || (resolved ? doc.$updatedAt || (/* @__PURE__ */ new Date()).toISOString() : null);
+  return {
+    ...doc,
+    $id: id,
+    id,
+    question: rawQuestion,
+    title: cleanQuestion,
+    description,
+    poolYes,
+    poolNo,
+    yesPool: poolYes,
+    noPool: poolNo,
+    yesPercentage,
+    endDate,
+    endDateIso: endDate,
+    endTime: endDate,
+    status,
+    resolved,
+    winningOutcome,
+    resolvedOutcome: winningOutcome,
+    resolvedAt
+  };
+}
+var inMemoryPolymarkets = DEFAULT_SEED_POLYMARKETS.map(normalizePolymarketDoc);
+var polymarketsSeeded = false;
 function recordPolymarket(market) {
-  const existingIdx = inMemoryPolymarkets.findIndex((m) => (m.id || m.$id) === (market.id || market.$id));
+  const norm = normalizePolymarketDoc(market);
+  const existingIdx = inMemoryPolymarkets.findIndex((m) => (m.id || m.$id) === (norm.id || norm.$id));
   if (existingIdx >= 0) {
-    inMemoryPolymarkets[existingIdx] = { ...inMemoryPolymarkets[existingIdx], ...market };
+    inMemoryPolymarkets[existingIdx] = { ...inMemoryPolymarkets[existingIdx], ...norm, updatedAt: Date.now() };
   } else {
-    inMemoryPolymarkets.unshift(market);
+    inMemoryPolymarkets.unshift({ ...norm, updatedAt: Date.now() });
   }
 }
+async function persistPolymarketToDatabase(market, jwt) {
+  const norm = normalizePolymarketDoc(market);
+  recordPolymarket(norm);
+  try {
+    const databases = getDatabases(jwt);
+    const combinedQuestion = (norm.description && !String(norm.question).includes(" --- ") ? `${norm.question} --- ${norm.description}` : String(norm.question)).slice(0, 500);
+    const payload = {
+      question: combinedQuestion,
+      creatorId: String(norm.creatorId || "admin_realzekeee").slice(0, 64),
+      creator: String(norm.creator || "@zeke").slice(0, 64),
+      endDate: String(norm.endDate).slice(0, 64),
+      status: norm.status || "active",
+      poolYes: Number(norm.poolYes || 0),
+      poolNo: Number(norm.poolNo || 0),
+      resolved: Boolean(norm.resolved)
+    };
+    if (norm.winningOutcome) payload.winningOutcome = String(norm.winningOutcome).slice(0, 16);
+    if (norm.resolvedAt) payload.resolvedAt = String(norm.resolvedAt).slice(0, 64);
+    try {
+      await databases.updateDocument("pumpforge", "polymarkets", norm.id, payload);
+    } catch (upErr) {
+      const msg = String(upErr?.message || "").toLowerCase();
+      if (upErr?.code === 404 || upErr?.status === 404 || msg.includes("not found")) {
+        await databases.createDocument("pumpforge", "polymarkets", norm.id, payload, [Permission.read(Role.any())]);
+      }
+    }
+  } catch (e) {}
+}
 async function getPolymarketsList(jwt) {
-  const list = [...inMemoryPolymarkets];
+  const map = /* @__PURE__ */ new Map();
+  for (const m of inMemoryPolymarkets) {
+    const norm = normalizePolymarketDoc(m);
+    map.set(norm.id, norm);
+  }
   try {
     const databases = getDatabases(jwt);
     const res = await databases.listDocuments("pumpforge", "polymarkets", [
       Query.limit(100),
       Query.orderDesc("$createdAt")
     ]);
+    const foundIds = /* @__PURE__ */ new Set();
     for (const doc of res.documents) {
-      const idx = list.findIndex((m) => (m.id || m.$id) === doc.$id);
-      if (idx >= 0) {
-        list[idx] = doc;
+      const norm = normalizePolymarketDoc(doc);
+      foundIds.add(norm.id);
+      const local = map.get(norm.id);
+      if (local && (local.poolYes + local.poolNo > norm.poolYes + norm.poolNo || local.resolved && !norm.resolved)) {
+        map.set(norm.id, local);
       } else {
-        list.push(doc);
+        map.set(norm.id, norm);
+        recordPolymarket(norm);
+      }
+    }
+    if (!polymarketsSeeded) {
+      polymarketsSeeded = true;
+      for (const seed of DEFAULT_SEED_POLYMARKETS) {
+        if (!foundIds.has(seed.id)) {
+          persistPolymarketToDatabase(seed, jwt).catch(() => {});
+        }
       }
     }
   } catch (e) {}
-  return list;
+  return Array.from(map.values());
 }
 var inMemoryTrades = [];
 function normalizeTradeDoc(doc) {
@@ -1643,43 +1856,10 @@ async function executeCoinflipCore(user, betAmount, normalizedSide, userState) {
     resultSide = crypto2.randomInt(0, 2) === 0 ? "heads" : "tails";
   }
   const won = resultSide === normalizedSide;
-  const payout = won ? Math.floor(betAmount * 1.9) : 0;
-  const profit = won ? payout - betAmount : -betAmount;
-  const nextCash = Number((userCash + profit).toFixed(2));
+  const payout = won ? Number((betAmount * 1.9).toFixed(2)) : 0;
+  const profit = Number((won ? payout - betAmount : -betAmount).toFixed(2));
+  const nextCash = Number(Math.max(0, userCash + profit).toFixed(2));
   const nextTotalProfit = Number(((userState.totalProfit || 0) + profit).toFixed(2));
-  const nodeDb = getNodeAppwriteDatabases();
-  try {
-    await nodeDb.updateDocument("pumpforge", "users", user.userId, {
-      cash: nextCash,
-      totalProfit: nextTotalProfit
-    });
-  } catch (dbErr) {
-    console.warn(
-      "node-appwrite users balance update notice (cached state preserved):",
-      dbErr?.message || dbErr
-    );
-  }
-  try {
-    await nodeDb.createDocument(
-      "pumpforge",
-      "wagers",
-      NodeID.unique(),
-      {
-        userId: user.userId,
-        polymarketId: "arcade_coinflip",
-        amount: betAmount,
-        choice: normalizedSide.toUpperCase(),
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        isPaid: won
-      },
-      [NodePermission.read(NodeRole.any())]
-    );
-  } catch (wagerErr) {
-    console.warn(
-      "node-appwrite wagers create notice:",
-      wagerErr?.message || wagerErr
-    );
-  }
   const updatedUser = await saveAuthoritativeUser(
     user.userId,
     {
@@ -1688,6 +1868,35 @@ async function executeCoinflipCore(user, betAmount, normalizedSide, userState) {
     },
     user.jwt
   );
+  const wagerId = NodeID.unique();
+  const wagerEntry = {
+    id: wagerId,
+    $id: wagerId,
+    userId: user.userId,
+    polymarketId: "arcade_coinflip",
+    amount: betAmount,
+    choice: normalizedSide.toUpperCase(),
+    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+    isPaid: won
+  };
+  recordWagerLog(wagerEntry);
+  try {
+    const nodeDb = getDatabases(user.jwt);
+    await nodeDb.createDocument(
+      "pumpforge",
+      "wagers",
+      wagerId,
+      {
+        userId: user.userId,
+        polymarketId: "arcade_coinflip",
+        amount: betAmount,
+        choice: normalizedSide.toUpperCase(),
+        timestamp: wagerEntry.timestamp,
+        isPaid: won
+      },
+      [NodePermission.read(NodeRole.any())]
+    );
+  } catch (_) {}
   return {
     success: true,
     game: "coinflip",
@@ -2157,13 +2366,36 @@ async function processTrade(user, coinId, type, amountCoins) {
 var activeMinesSessions = /* @__PURE__ */ new Map();
 var activeTowerSessions = /* @__PURE__ */ new Map();
 var slotEmojis = ["\u{1F352}", "\u{1F34B}", "\u{1F514}", "7\uFE0F\u20E3", "\u{1F48E}"];
+function getArcadeSessionSecret() {
+  return (process.env.APPWRITE_API_KEY || process.env.SESSION_SECRET || "pumpforge_arcade_session_secret_v1").trim();
+}
+function signArcadeSessionToken(payload) {
+  const data = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const sig = crypto3.createHmac("sha256", getArcadeSessionSecret()).update(data).digest("base64url");
+  return `as_${data}.${sig}`;
+}
+function verifyArcadeSessionToken(token, expectedUserId, expectedGame) {
+  if (!token || typeof token !== "string" || !token.startsWith("as_")) return null;
+  const parts = token.slice(3).split(".");
+  if (parts.length !== 2) return null;
+  const [data, sig] = parts;
+  try {
+    const expectedSig = crypto3.createHmac("sha256", getArcadeSessionSecret()).update(data).digest("base64url");
+    if (sig !== expectedSig) return null;
+    const parsed = JSON.parse(Buffer.from(data, "base64url").toString("utf-8"));
+    if (!parsed || parsed.userId !== expectedUserId || parsed.game !== expectedGame) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
 async function processArcadeWager(user, game, action, params) {
   const { allowed, retryAfterMs } = arcadeLimiter.isAllowed(user.userId);
   if (!allowed) {
     throw new Error(`Arcade rate limit exceeded. Please wait ${Math.ceil(retryAfterMs / 1e3)}s.`);
   }
   return withUserLock(user.userId, async () => {
-    const userState = await getAuthoritativeUser(user.userId, user.jwt);
+    const userState = await getAuthoritativeUser(user.userId, user.jwt, user.name);
     const rigMode = globalAdminSettings.arcadeRigMode;
     if (game === "coinflip") {
       const rawBet = params.betAmount !== void 0 ? params.betAmount : params.bet;
@@ -2172,19 +2404,14 @@ async function processArcadeWager(user, game, action, params) {
       if (chosenSide !== "heads" && chosenSide !== "tails") {
         throw new Error("Choose heads or tails.");
       }
-      if (typeof bet !== "number" || isNaN(bet) || bet <= 0 || bet > Number(userState.cash)) {
+      if (typeof bet !== "number" || isNaN(bet) || !isFinite(bet) || bet <= 0 || bet > Number(userState.cash)) {
         throw new Error("Invalid bet amount or insufficient cash.");
       }
-      return executeCoinflipCore(
-        user,
-        bet,
-        chosenSide,
-        userState
-      );
+      return executeCoinflipCore(user, bet, chosenSide, userState);
     }
     if (game === "slots") {
       const bet = Number(params.bet);
-      if (typeof bet !== "number" || isNaN(bet) || bet <= 0 || bet > userState.cash) {
+      if (typeof bet !== "number" || isNaN(bet) || !isFinite(bet) || bet <= 0 || bet > userState.cash) {
         throw new Error("Invalid bet amount or insufficient cash.");
       }
       let reels;
@@ -2201,22 +2428,21 @@ async function processArcadeWager(user, game, action, params) {
       }
       const matchCount = new Set(reels).size;
       let payout = 0;
-      let nextCash = userState.cash - bet;
+      let nextCash = Number((userState.cash - bet).toFixed(2));
       if (matchCount === 1) {
         let multiplier = 3;
         if (reels[0] === "7\uFE0F\u20E3") multiplier = 6;
         else if (reels[0] === "\u{1F48E}") multiplier = 4;
-        payout = bet * multiplier;
+        payout = Number((bet * multiplier).toFixed(2));
       } else if (matchCount === 2) {
         payout = Math.floor(bet * 0.95);
       }
-      nextCash += payout;
-      const won = payout > 0;
+      nextCash = Number(Math.max(0, nextCash + payout).toFixed(2));
       const updatedUser = await saveAuthoritativeUser(
         user.userId,
         {
           cash: nextCash,
-          totalProfit: (userState.totalProfit || 0) + (payout - bet)
+          totalProfit: Number(((userState.totalProfit || 0) + (payout - bet)).toFixed(2))
         },
         user.jwt
       );
@@ -2235,7 +2461,7 @@ async function processArcadeWager(user, game, action, params) {
       if (!selectedNum || selectedNum < 1 || selectedNum > 6) {
         throw new Error("Choose a face number between 1 and 6.");
       }
-      if (typeof bet !== "number" || isNaN(bet) || bet <= 0 || bet > userState.cash) {
+      if (typeof bet !== "number" || isNaN(bet) || !isFinite(bet) || bet <= 0 || bet > userState.cash) {
         throw new Error("Invalid bet amount or insufficient cash.");
       }
       let landedFace;
@@ -2248,22 +2474,23 @@ async function processArcadeWager(user, game, action, params) {
       }
       const won = landedFace === selectedNum;
       let payout = 0;
-      let nextCash = userState.cash - bet;
+      let nextCash = Number((userState.cash - bet).toFixed(2));
       if (won) {
         payout = Math.floor(bet * 3);
-        nextCash += payout;
+        nextCash = Number((nextCash + payout).toFixed(2));
       }
       const updatedUser = await saveAuthoritativeUser(
         user.userId,
         {
-          cash: nextCash,
-          totalProfit: (userState.totalProfit || 0) + (won ? payout - bet : -bet)
+          cash: Math.max(0, nextCash),
+          totalProfit: Number(((userState.totalProfit || 0) + (won ? payout - bet : -bet)).toFixed(2))
         },
         user.jwt
       );
       return {
         game: "dice",
         landedFace,
+        selectedNum,
         won,
         payout,
         profit: won ? payout - bet : -bet,
@@ -2277,15 +2504,13 @@ async function processArcadeWager(user, game, action, params) {
         if (minesCount < 1 || minesCount > 24) {
           throw new Error("Mines count must be between 1 and 24.");
         }
-        if (typeof bet !== "number" || isNaN(bet) || bet <= 0 || bet > userState.cash) {
+        if (typeof bet !== "number" || isNaN(bet) || !isFinite(bet) || bet <= 0 || bet > userState.cash) {
           throw new Error("Invalid bet amount or insufficient cash.");
         }
-        const nextCash = userState.cash - bet;
+        const nextCash = Number(Math.max(0, userState.cash - bet).toFixed(2));
         const updatedUser = await saveAuthoritativeUser(
           user.userId,
-          {
-            cash: nextCash
-          },
+          { cash: nextCash },
           user.jwt
         );
         const secretMap = Array(25).fill(false);
@@ -2307,15 +2532,42 @@ async function processArcadeWager(user, game, action, params) {
           active: true
         };
         activeMinesSessions.set(user.userId, session2);
+        const sessionToken = signArcadeSessionToken({ userId: user.userId, game: "mines", ...session2 });
         return {
           game: "mines",
           action: "start",
           safeSelections: 0,
           multiplier: 1,
+          sessionToken,
           userStats: updatedUser
         };
       }
-      const session = activeMinesSessions.get(user.userId);
+      let session = activeMinesSessions.get(user.userId);
+      if ((!session || !session.active) && params.sessionToken) {
+        const restored = verifyArcadeSessionToken(params.sessionToken, user.userId, "mines");
+        if (restored && restored.active) {
+          session = {
+            bet: Number(restored.bet),
+            minesCount: Number(restored.minesCount),
+            secretMinesMap: Array.isArray(restored.secretMinesMap) ? restored.secretMinesMap : Array(25).fill(false),
+            revealedGrid: Array.isArray(restored.revealedGrid) ? restored.revealedGrid : Array(25).fill("hidden"),
+            safeSelections: Number(restored.safeSelections || 0),
+            multiplier: Number(restored.multiplier || 1),
+            active: true
+          };
+          activeMinesSessions.set(user.userId, session);
+        }
+      }
+      if (action === "abort") {
+        const refundAmt = session ? session.bet : Number(params.bet || 0);
+        activeMinesSessions.delete(user.userId);
+        if (refundAmt > 0 && (!session || session.safeSelections === 0)) {
+          const nextCash = Number((userState.cash + refundAmt).toFixed(2));
+          const updatedUser = await saveAuthoritativeUser(user.userId, { cash: nextCash }, user.jwt);
+          return { game: "mines", action: "abort", refunded: refundAmt, userStats: updatedUser };
+        }
+        return { game: "mines", action: "abort", refunded: 0, userStats: userState };
+      }
       if (!session || !session.active) {
         throw new Error("No active Mines game found. Please place a bet to start.");
       }
@@ -2340,15 +2592,19 @@ async function processArcadeWager(user, game, action, params) {
         if (isMine) {
           session.active = false;
           activeMinesSessions.delete(user.userId);
+          const updatedUser = await saveAuthoritativeUser(
+            user.userId,
+            { totalProfit: Number(((userState.totalProfit || 0) - session.bet).toFixed(2)) },
+            user.jwt
+          );
           return {
             game: "mines",
             action: "step",
             hitMine: true,
             explodedCell: cellIdx,
             secretMinesMap: session.secretMinesMap,
-            // Revealed on loss for transparency
             multiplier: 0,
-            userStats: userState
+            userStats: updatedUser
           };
         }
         session.revealedGrid[cellIdx] = "revealed-gem";
@@ -2363,14 +2619,14 @@ async function processArcadeWager(user, game, action, params) {
         const clearedAll = session.safeSelections >= maxSafe;
         if (clearedAll) {
           const winnings = Math.floor(session.bet * session.multiplier);
-          const nextCash = userState.cash + winnings;
+          const nextCash = Number((userState.cash + winnings).toFixed(2));
           session.active = false;
           activeMinesSessions.delete(user.userId);
           const updatedUser = await saveAuthoritativeUser(
             user.userId,
             {
               cash: nextCash,
-              totalProfit: (userState.totalProfit || 0) + (winnings - session.bet)
+              totalProfit: Number(((userState.totalProfit || 0) + (winnings - session.bet)).toFixed(2))
             },
             user.jwt
           );
@@ -2385,28 +2641,42 @@ async function processArcadeWager(user, game, action, params) {
             userStats: updatedUser
           };
         }
+        const nextSessionToken = signArcadeSessionToken({ userId: user.userId, game: "mines", ...session });
         return {
           game: "mines",
           action: "step",
           hitMine: false,
           cellIndex: cellIdx,
           safeSelections: session.safeSelections,
-          multiplier: session.multiplier
+          multiplier: session.multiplier,
+          sessionToken: nextSessionToken
         };
       }
       if (action === "cashout") {
         if (session.safeSelections === 0) {
-          throw new Error("Must select at least one safe cell before cashing out.");
+          const refundAmt = session.bet;
+          const nextCash = Number((userState.cash + refundAmt).toFixed(2));
+          session.active = false;
+          activeMinesSessions.delete(user.userId);
+          const updatedUser = await saveAuthoritativeUser(user.userId, { cash: nextCash }, user.jwt);
+          return {
+            game: "mines",
+            action: "cashout",
+            winnings: refundAmt,
+            multiplier: 1,
+            secretMinesMap: session.secretMinesMap,
+            userStats: updatedUser
+          };
         }
         const winnings = Math.floor(session.bet * session.multiplier);
-        const nextCash = userState.cash + winnings;
+        const nextCash = Number((userState.cash + winnings).toFixed(2));
         session.active = false;
         activeMinesSessions.delete(user.userId);
         const updatedUser = await saveAuthoritativeUser(
           user.userId,
           {
             cash: nextCash,
-            totalProfit: (userState.totalProfit || 0) + (winnings - session.bet)
+            totalProfit: Number(((userState.totalProfit || 0) + (winnings - session.bet)).toFixed(2))
           },
           user.jwt
         );
@@ -2424,15 +2694,13 @@ async function processArcadeWager(user, game, action, params) {
       if (action === "start") {
         const bet = Number(params.bet);
         const difficulty = params.difficulty || "easy";
-        if (typeof bet !== "number" || isNaN(bet) || bet <= 0 || bet > userState.cash) {
+        if (typeof bet !== "number" || isNaN(bet) || !isFinite(bet) || bet <= 0 || bet > userState.cash) {
           throw new Error("Invalid bet amount or insufficient cash.");
         }
-        const nextCash = userState.cash - bet;
+        const nextCash = Number(Math.max(0, userState.cash - bet).toFixed(2));
         const updatedUser = await saveAuthoritativeUser(
           user.userId,
-          {
-            cash: nextCash
-          },
+          { cash: nextCash },
           user.jwt
         );
         let colsCount = 3;
@@ -2463,16 +2731,42 @@ async function processArcadeWager(user, game, action, params) {
           active: true
         };
         activeTowerSessions.set(user.userId, session2);
+        const sessionToken = signArcadeSessionToken({ userId: user.userId, game: "tower", ...session2 });
         return {
           game: "tower",
           action: "start",
           colsCount,
           safeCount,
           currentLevel: 0,
+          sessionToken,
           userStats: updatedUser
         };
       }
-      const session = activeTowerSessions.get(user.userId);
+      let session = activeTowerSessions.get(user.userId);
+      if ((!session || !session.active) && params.sessionToken) {
+        const restored = verifyArcadeSessionToken(params.sessionToken, user.userId, "tower");
+        if (restored && restored.active) {
+          session = {
+            bet: Number(restored.bet),
+            difficulty: restored.difficulty || "easy",
+            currentLevel: Number(restored.currentLevel || 0),
+            secretGrid: Array.isArray(restored.secretGrid) ? restored.secretGrid : [],
+            multiplier: Number(restored.multiplier || 1),
+            active: true
+          };
+          activeTowerSessions.set(user.userId, session);
+        }
+      }
+      if (action === "abort") {
+        const refundAmt = session ? session.bet : Number(params.bet || 0);
+        activeTowerSessions.delete(user.userId);
+        if (refundAmt > 0 && (!session || session.currentLevel === 0)) {
+          const nextCash = Number((userState.cash + refundAmt).toFixed(2));
+          const updatedUser = await saveAuthoritativeUser(user.userId, { cash: nextCash }, user.jwt);
+          return { game: "tower", action: "abort", refunded: refundAmt, userStats: updatedUser };
+        }
+        return { game: "tower", action: "abort", refunded: 0, userStats: userState };
+      }
       if (!session || !session.active) {
         throw new Error("No active Tower game found. Please place a bet.");
       }
@@ -2488,31 +2782,36 @@ async function processArcadeWager(user, game, action, params) {
         if (!isSafe) {
           session.active = false;
           activeTowerSessions.delete(user.userId);
+          const updatedUser = await saveAuthoritativeUser(
+            user.userId,
+            { totalProfit: Number(((userState.totalProfit || 0) - session.bet).toFixed(2)) },
+            user.jwt
+          );
           return {
             game: "tower",
             action: "step",
             hitSkull: true,
             secretGrid: session.secretGrid,
-            userStats: userState
+            userStats: updatedUser
           };
         }
         session.currentLevel += 1;
         const multTable = {
-          easy: [1.35, 1.85, 2.5, 3.4, 4.6, 6.2, 8.4, 11.5, 15.6, 21],
-          medium: [1.8, 3.2, 5.8, 10.5, 19, 34, 61, 110, 198, 350],
-          hard: [2.7, 7.3, 19.8, 53.5, 144, 390, 1050, 2800, 7600, 2e4]
+          easy: [1.05, 1.15, 1.3, 2.85, 3.7, 4.8, 6.25, 8.1, 10.5, 13.5],
+          medium: [1.15, 1.4, 1.8, 8, 13.2, 21.8, 36, 59.5, 98, 162],
+          hard: [1.3, 2, 4, 63.22, 178.29, 502.77, 1417.82, 3998.24, 11275.05, 31795.63]
         };
         session.multiplier = multTable[session.difficulty][session.currentLevel - 1] || 1;
         if (session.currentLevel >= 10) {
           const winnings = Math.floor(session.bet * session.multiplier);
-          const nextCash = userState.cash + winnings;
+          const nextCash = Number((userState.cash + winnings).toFixed(2));
           session.active = false;
           activeTowerSessions.delete(user.userId);
           const updatedUser = await saveAuthoritativeUser(
             user.userId,
             {
               cash: nextCash,
-              totalProfit: (userState.totalProfit || 0) + (winnings - session.bet)
+              totalProfit: Number(((userState.totalProfit || 0) + (winnings - session.bet)).toFixed(2))
             },
             user.jwt
           );
@@ -2528,27 +2827,41 @@ async function processArcadeWager(user, game, action, params) {
             userStats: updatedUser
           };
         }
+        const nextSessionToken = signArcadeSessionToken({ userId: user.userId, game: "tower", ...session });
         return {
           game: "tower",
           action: "step",
           hitSkull: false,
           level: session.currentLevel,
-          multiplier: session.multiplier
+          multiplier: session.multiplier,
+          sessionToken: nextSessionToken
         };
       }
       if (action === "cashout") {
         if (session.currentLevel === 0) {
-          throw new Error("Climb at least one floor before cashing out.");
+          const refundAmt = session.bet;
+          const nextCash = Number((userState.cash + refundAmt).toFixed(2));
+          session.active = false;
+          activeTowerSessions.delete(user.userId);
+          const updatedUser = await saveAuthoritativeUser(user.userId, { cash: nextCash }, user.jwt);
+          return {
+            game: "tower",
+            action: "cashout",
+            winnings: refundAmt,
+            multiplier: 1,
+            secretGrid: session.secretGrid,
+            userStats: updatedUser
+          };
         }
         const winnings = Math.floor(session.bet * session.multiplier);
-        const nextCash = userState.cash + winnings;
+        const nextCash = Number((userState.cash + winnings).toFixed(2));
         session.active = false;
         activeTowerSessions.delete(user.userId);
         const updatedUser = await saveAuthoritativeUser(
           user.userId,
           {
             cash: nextCash,
-            totalProfit: (userState.totalProfit || 0) + (winnings - session.bet)
+            totalProfit: Number(((userState.totalProfit || 0) + (winnings - session.bet)).toFixed(2))
           },
           user.jwt
         );
@@ -2758,6 +3071,7 @@ async function processCreateCoin(user, params) {
   const rawSymbol = (params.symbol || "").trim().toUpperCase();
   const rawDescription = (params.description || "").trim();
   const avatarEmoji = params.avatarEmoji || "\u{1FA99}";
+  const initialBuyUsd = Math.max(0, Number(params.initialBuyUsd) || 0);
   const cleanName = sanitizePlainText(rawName);
   const cleanSymbol = rawSymbol.replace(/[^A-Z0-9]/g, "");
   const cleanDescription = sanitizePlainText(rawDescription);
@@ -2779,25 +3093,31 @@ async function processCreateCoin(user, params) {
     throw new Error(`A token with symbol "${cleanSymbol}" or name "${cleanName}" already exists.`);
   }
   return withUserLock(user.userId, async () => {
-    const userState = await getAuthoritativeUser(user.userId, user.jwt);
+    const userState = await getAuthoritativeUser(user.userId, user.jwt, user.name);
     const creationCost = 1100;
-    if (userState.cash < creationCost) {
-      throw new Error(`Insufficient funds. Creation fee is $${creationCost.toFixed(2)}.`);
+    const totalRequired = creationCost + initialBuyUsd;
+    if (userState.cash < totalRequired) {
+      throw new Error(`Insufficient funds. Required: $${totalRequired.toFixed(2)}.`);
     }
     if ((userState.coinsCreatedCount || 0) >= 10) {
       throw new Error("10-Coin Limit reached for this account.");
     }
     const newCoinId = ID2.unique();
-    const initSupply = 1e9;
-    const initMarketCap = 1e3;
-    const initPrice = 1e-6;
-    const initLiquidity = 1e3;
+    const initSupply = 1e6;
+    const initMarketCap = 1e3 + initialBuyUsd;
+    const initPrice = Number((initMarketCap / initSupply).toFixed(6));
+    const initLiquidity = 1e3 + initialBuyUsd;
+    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+    const creatorHandle = userState.handle || (user.name ? `@${user.name.toLowerCase().replace(/[^a-z0-9]/g, "")}` : `@${user.userId.slice(0, 6)}`);
+    const creatorName = userState.username || user.name || creatorHandle;
     const newCoin = {
       id: newCoinId,
+      coinId: newCoinId,
       name: cleanName,
       symbol: cleanSymbol,
       slug,
-      creator: user.name || `@${user.userId.slice(0, 6)}`,
+      creator: creatorHandle,
+      creatorName,
       creatorId: user.userId,
       description: cleanDescription,
       avatarEmoji,
@@ -2806,42 +3126,77 @@ async function processCreateCoin(user, params) {
       marketCap: initMarketCap,
       supply: initSupply,
       totalLiquidity: initLiquidity,
-      volume24h: 0,
-      change24h: 0,
-      history: [initPrice],
-      createdAt: (/* @__PURE__ */ new Date()).toISOString()
+      volume24h: initialBuyUsd,
+      change24h: initialBuyUsd > 0 ? Number((initialBuyUsd / 1e3 * 100).toFixed(2)) : 0,
+      history: [1e-3, initPrice],
+      createdAt: nowIso,
+      isUserCreated: true
     };
     coinStore.setCoin(newCoin);
-    try {
-      const databases = getDatabases(user.jwt);
-      await databases.createDocument(
-        "pumpforge",
-        "coins",
-        newCoinId,
-        {
-          coinId: newCoinId,
-          creator: String(newCoin.creator).slice(0, 64),
-          creatorId: String(user.userId).slice(0, 64),
-          name: String(newCoin.name).slice(0, 64),
-          symbol: String(newCoin.symbol).slice(0, 16),
-          slug: String(slug).slice(0, 64),
-          description: String(newCoin.description).slice(0, 1e3),
-          price: initPrice,
-          marketCap: initMarketCap,
-          totalLiquidity: initLiquidity,
-          volume24h: 0,
-          change24h: 0,
-          avatarEmoji: String(avatarEmoji).slice(0, 16),
-          avatarBg: String(newCoin.avatarBg).slice(0, 64),
-          supply: initSupply
-        },
-        [Permission2.read(Role2.any())]
-        // Least privilege: read-only for public, NO Role.any() update/delete!
-      );
-    } catch (e) {
-      console.warn("Non-fatal error creating coin doc in Appwrite:", e);
+    await coinStore.persistCoinToDatabase(newCoin, user.jwt);
+    let initialHolding = null;
+    if (initialBuyUsd > 0) {
+      const boughtTokens = Number((initialBuyUsd / 1e-3).toFixed(4));
+      const detHoldingId = "h_" + crypto3.createHash("md5").update(`${user.userId}_${newCoinId}`).digest("hex").slice(0, 28);
+      initialHolding = {
+        coinId: newCoinId,
+        coinSymbol: cleanSymbol,
+        amount: boughtTokens,
+        avgBuyPrice: 1e-3
+      };
+      recordHoldingLog({
+        $id: detHoldingId,
+        id: detHoldingId,
+        userId: user.userId,
+        coinId: newCoinId,
+        coinSymbol: cleanSymbol,
+        amount: boughtTokens,
+        avgBuyPrice: 1e-3,
+        totalInvested: initialBuyUsd,
+        lastUpdated: nowIso
+      });
+      try {
+        const databases = getDatabases(user.jwt);
+        await databases.createDocument(
+          "pumpforge",
+          "holdings",
+          detHoldingId,
+          {
+            userId: user.userId,
+            coinId: newCoinId,
+            coinSymbol: cleanSymbol,
+            amount: boughtTokens,
+            avgBuyPrice: 1e-3,
+            totalInvested: initialBuyUsd,
+            lastUpdated: nowIso
+          },
+          [Permission2.read(Role2.any())]
+        );
+      } catch (_) {}
+      recordTradeLog({
+        id: ID2.unique(),
+        userId: user.userId,
+        userName: creatorName,
+        userHandle: creatorHandle,
+        coinId: newCoinId,
+        coinSymbol: cleanSymbol,
+        coinTicker: cleanSymbol,
+        coinName: cleanName,
+        type: "BUY",
+        amountCoins: boughtTokens,
+        amountTokens: boughtTokens,
+        pricePerCoin: 1e-3,
+        price: 1e-3,
+        totalCash: initialBuyUsd,
+        total: initialBuyUsd,
+        amountUsd: initialBuyUsd,
+        amount: initialBuyUsd,
+        fee: 0,
+        timestamp: nowIso,
+        $createdAt: nowIso
+      });
     }
-    const nextCash = userState.cash - creationCost;
+    const nextCash = Number(Math.max(0, userState.cash - totalRequired).toFixed(2));
     const nextCreated = (userState.coinsCreatedCount || 0) + 1;
     const updatedUser = await saveAuthoritativeUser(
       user.userId,
@@ -2854,6 +3209,7 @@ async function processCreateCoin(user, params) {
     return {
       success: true,
       coin: newCoin,
+      holding: initialHolding,
       userStats: updatedUser
     };
   });
@@ -2899,11 +3255,11 @@ async function processPolymarketWager(user, marketId, choice, amount) {
   if (!["YES", "NO"].includes(choice)) {
     throw new Error("Must select YES or NO outcome.");
   }
-  if (typeof amount !== "number" || isNaN(amount) || amount <= 0) {
+  if (typeof amount !== "number" || isNaN(amount) || !isFinite(amount) || amount <= 0) {
     throw new Error("Invalid bet amount.");
   }
   return withUserLock(user.userId, async () => {
-    const userState = await getAuthoritativeUser(user.userId, user.jwt);
+    const userState = await getAuthoritativeUser(user.userId, user.jwt, user.name);
     if (userState.cash < amount) {
       throw new Error(`Insufficient cash balance. Available: $${userState.cash.toFixed(2)}`);
     }
@@ -2916,6 +3272,8 @@ async function processPolymarketWager(user, marketId, choice, amount) {
       market = allMarkets.find((m) => (m.$id || m.id) === marketId) || {
         $id: marketId,
         id: marketId,
+        question: "Community Forecast",
+        endDate: new Date(Date.now() + 5 * 864e5).toISOString(),
         status: "active",
         resolved: false,
         poolYes: marketId === "m1" ? 4500 : marketId === "m2" ? 150 : 0,
@@ -2925,30 +3283,26 @@ async function processPolymarketWager(user, marketId, choice, amount) {
     if (market.status === "closed" || market.resolved) {
       throw new Error("This prediction market has already closed or resolved.");
     }
-    const nextCash = userState.cash - amount;
+    const nextCash = Number(Math.max(0, userState.cash - amount).toFixed(2));
     const updatedUser = await saveAuthoritativeUser(
       user.userId,
-      {
-        cash: nextCash
-      },
+      { cash: nextCash },
       user.jwt
     );
-    const newYesPool = choice === "YES" ? (Number(market.poolYes) || 0) + amount : Number(market.poolYes) || 0;
-    const newNoPool = choice === "NO" ? (Number(market.poolNo) || 0) + amount : Number(market.poolNo) || 0;
-    try {
-      await databases.updateDocument("pumpforge", "polymarkets", marketId, {
-        poolYes: newYesPool,
-        poolNo: newNoPool
-      });
-    } catch {
-    }
-    recordPolymarket({
+    const prevYes = Number(market.poolYes ?? market.yesPool ?? 0);
+    const prevNo = Number(market.poolNo ?? market.noPool ?? 0);
+    const newYesPool = choice === "YES" ? prevYes + amount : prevYes;
+    const newNoPool = choice === "NO" ? prevNo + amount : prevNo;
+    const updatedMarketObj = normalizePolymarketDoc({
       ...market,
       $id: marketId,
       id: marketId,
       poolYes: newYesPool,
-      poolNo: newNoPool
+      poolNo: newNoPool,
+      yesPool: newYesPool,
+      noPool: newNoPool
     });
+    await persistPolymarketToDatabase(updatedMarketObj, user.jwt);
     let wagerDoc = {
       id: ID2.unique(),
       userId: user.userId,
@@ -2958,6 +3312,7 @@ async function processPolymarketWager(user, marketId, choice, amount) {
       timestamp: (/* @__PURE__ */ new Date()).toISOString(),
       isPaid: false
     };
+    recordWagerLog(wagerDoc);
     try {
       const doc = await databases.createDocument(
         "pumpforge",
@@ -2974,12 +3329,12 @@ async function processPolymarketWager(user, marketId, choice, amount) {
         [Permission2.read(Role2.any())]
       );
       wagerDoc = doc;
-    } catch (_e) {
-    }
-    recordWagerLog(wagerDoc);
+      recordWagerLog(wagerDoc);
+    } catch (_e) {}
     return {
       success: true,
       wager: wagerDoc,
+      market: updatedMarketObj,
       userStats: updatedUser,
       newPoolYes: newYesPool,
       newPoolNo: newNoPool
@@ -2987,9 +3342,14 @@ async function processPolymarketWager(user, marketId, choice, amount) {
   });
 }
 async function getUserWagers(user) {
-  if (!user || user.isGuest || !user.userId) {
-    const guestWagers = inMemoryWagers.filter((w) => w.userId === user?.userId);
-    return { wagers: guestWagers };
+  if (!user || !user.userId) {
+    return { wagers: [] };
+  }
+  const map = /* @__PURE__ */ new Map();
+  for (const w of inMemoryWagers) {
+    if (w.userId === user.userId) {
+      map.set(w.id || w.$id, w);
+    }
   }
   try {
     const databases = getDatabases(user.jwt);
@@ -2999,17 +3359,13 @@ async function getUserWagers(user) {
     ]);
     const docs = res.documents || [];
     for (const d of docs) {
-      if (!inMemoryWagers.some((w) => (w.id || w.$id) === (d.id || d.$id))) {
-        inMemoryWagers.push(d);
-      }
+      map.set(d.$id || d.id, d);
+      recordWagerLog(d);
     }
-    return { wagers: docs };
-  } catch (_err) {
-    const local = inMemoryWagers.filter((w) => w.userId === user.userId);
-    return { wagers: local };
-  }
+  } catch (_err) {}
+  return { wagers: Array.from(map.values()) };
 }
-var predictionMarketCreationLimiter = new RateLimiter(2, 60 * 60 * 1e3);
+var predictionMarketCreationLimiter = new RateLimiter(30, 60 * 60 * 1e3);
 async function processCreatePredictionMarket(user, params) {
   if (user.isGuest) {
     throw new Error("Authentication required to create prediction markets.");
@@ -3017,7 +3373,7 @@ async function processCreatePredictionMarket(user, params) {
   const { allowed, retryAfterMs } = predictionMarketCreationLimiter.isAllowed(user.userId);
   if (!allowed) {
     const mins = Math.ceil(retryAfterMs / 6e4);
-    throw new Error(`Creation limit reached (max 2 markets/hour). Try again in ${mins} minutes.`);
+    throw new Error(`Creation limit reached. Try again in ${mins} minutes.`);
   }
   const question = sanitizePlainText(params.question || "");
   const description = sanitizePlainText(params.description || "");
@@ -3028,19 +3384,17 @@ async function processCreatePredictionMarket(user, params) {
   if (isNaN(expiryTimestamp) || expiryTimestamp <= Date.now() + 60 * 1e3) {
     expiryTimestamp = Date.now() + 7 * 24 * 60 * 60 * 1e3;
   }
-  const creationCost = 0;
   return withUserLock(user.userId, async () => {
-    const userState = await getAuthoritativeUser(user.userId, user.jwt);
-    const nextCash = Math.max(0, userState.cash - creationCost);
-    const updatedUser = creationCost > 0 ? await saveAuthoritativeUser(user.userId, { cash: nextCash }, user.jwt) : userState;
+    const userState = await getAuthoritativeUser(user.userId, user.jwt, user.name);
     const marketId = ID2.unique();
     const combinedQuestion = (description ? `${question} --- ${description}` : question).slice(0, 500);
     const endDateIso = new Date(expiryTimestamp).toISOString();
-    const creatorName = String(user.name || `@${user.userId.slice(0, 6)}`).slice(0, 64);
-    const marketDoc = {
+    const creatorName = String(userState.handle || user.name || `@${user.userId.slice(0, 6)}`).slice(0, 64);
+    const marketDoc = normalizePolymarketDoc({
       $id: marketId,
       id: marketId,
       question: combinedQuestion,
+      description,
       creatorId: String(user.userId).slice(0, 64),
       creator: creatorName,
       createdAt: (/* @__PURE__ */ new Date()).toISOString(),
@@ -3051,33 +3405,12 @@ async function processCreatePredictionMarket(user, params) {
       resolved: false,
       winningOutcome: null,
       resolvedAt: null
-    };
-    try {
-      const databases = getDatabases(user.jwt);
-      await databases.createDocument(
-        "pumpforge",
-        "polymarkets",
-        marketId,
-        {
-          question: combinedQuestion,
-          creatorId: String(user.userId).slice(0, 64),
-          creator: creatorName,
-          endDate: endDateIso,
-          status: "active",
-          poolYes: 0,
-          poolNo: 0,
-          resolved: false
-        },
-        [Permission2.read(Role2.any())]
-      );
-    } catch (err) {
-      console.warn("Could not save prediction market in Appwrite directly:", err);
-    }
-    recordPolymarket(marketDoc);
+    });
+    await persistPolymarketToDatabase(marketDoc, user.jwt);
     return {
       success: true,
       market: marketDoc,
-      userStats: updatedUser
+      userStats: userState
     };
   });
 }
@@ -4121,7 +4454,7 @@ var app = express();
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept, X-Requested-With, X-Appwrite-JWT, X-Guest-ID, X-User-ID, X-User-Email, X-User-Name");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept, X-Requested-With, X-Appwrite-JWT, X-Guest-ID, X-User-ID, X-User-Email, X-User-Name, X-User-Cash, X-User-Gems, X-User-Profit, X-User-Trades, X-User-Updated-At");
   if (req.method === "OPTIONS") {
     return res.status(204).end();
   }

@@ -4,6 +4,9 @@ import { formatErrorMessage } from "../utils/formatError";
 let cachedJwt: string | null = null;
 let jwtExpiresAt = 0;
 
+let cachedAppwriteJwt: string | null = null;
+let appwriteJwtExpiresAt = 0;
+
 export function getCustomAuthToken(): string | null {
   if (typeof window === "undefined" || !window.localStorage) return null;
   return localStorage.getItem("pf_custom_token");
@@ -18,6 +21,33 @@ export function setCustomAuthToken(token: string) {
 }
 
 /**
+ * Retrieves a 3-part Appwrite session JWT if the browser has an active Appwrite session.
+ */
+export async function getAppwriteSessionJwt(): Promise<string | null> {
+  if (typeof window === "undefined" || !window.localStorage) return null;
+  const isSessionValid = localStorage.getItem("pf_session_valid");
+  if (isSessionValid !== "true") return null;
+
+  const now = Date.now();
+  if (cachedAppwriteJwt && now < appwriteJwtExpiresAt) {
+    return cachedAppwriteJwt;
+  }
+
+  try {
+    const sessionRes = await account.createJWT();
+    if (sessionRes && sessionRes.jwt) {
+      cachedAppwriteJwt = sessionRes.jwt;
+      appwriteJwtExpiresAt = now + 9 * 60 * 1000;
+      return cachedAppwriteJwt;
+    }
+  } catch {
+    cachedAppwriteJwt = null;
+    appwriteJwtExpiresAt = now + 60 * 1000;
+  }
+  return null;
+}
+
+/**
  * Retrieves an Appwrite JWT or Dev Owner token for authenticating API requests.
  */
 let isUpgradingToken = false;
@@ -25,7 +55,6 @@ let isUpgradingToken = false;
 export async function getAuthJwt(): Promise<string | null> {
   const custom = getCustomAuthToken();
   if (custom) {
-    // If browser has an unsigned offline fallback token (e.g. pf_owner_...), upgrade it to a signed server HMAC token
     if (!isUpgradingToken && (custom.startsWith("pf_owner_") || custom.startsWith("pf_user_"))) {
       isUpgradingToken = true;
       try {
@@ -54,42 +83,19 @@ export async function getAuthJwt(): Promise<string | null> {
     return custom;
   }
 
-  // If client is a visitor with no active Appwrite session, do not attempt createJWT()
-  // to avoid spamming the console with 401 unauthorized errors
-  if (typeof window !== "undefined" && window.localStorage) {
-    const isSessionValid = localStorage.getItem("pf_session_valid");
-    if (isSessionValid !== "true") {
-      return null;
-    }
-  }
-
-  const now = Date.now();
-  if (cachedJwt && now < jwtExpiresAt) {
-    return cachedJwt;
-  }
-
-  try {
-    const sessionRes = await account.createJWT();
-    if (sessionRes && sessionRes.jwt) {
-      cachedJwt = sessionRes.jwt;
-      jwtExpiresAt = now + 9 * 60 * 1000; // 9 minutes cache
-      return cachedJwt;
-    }
-  } catch (err) {
-    // User not signed in or session expired
-    cachedJwt = null;
-    jwtExpiresAt = now + 60 * 1000; // Backoff for 1 minute before retrying
-  }
-  return null;
+  return getAppwriteSessionJwt();
 }
 
 export function clearAuthJwt() {
   cachedJwt = null;
   jwtExpiresAt = 0;
+  cachedAppwriteJwt = null;
+  appwriteJwtExpiresAt = 0;
   if (typeof window !== "undefined" && window.localStorage) {
     localStorage.removeItem("pf_custom_token");
     localStorage.removeItem("pf_session_valid");
     localStorage.removeItem("pf_fallback_userId");
+    localStorage.removeItem("pf_stats_updated_at");
   }
 }
 
@@ -103,31 +109,80 @@ function getGuestId(): string {
   return gid;
 }
 
-function getCachedUserIdentity(): { userId?: string; email?: string; name?: string } {
+function getCachedUserIdentity(): {
+  userId?: string;
+  email?: string;
+  name?: string;
+  cash?: string;
+  gems?: string;
+  profit?: string;
+  trades?: string;
+  updatedAt?: string;
+} {
   if (typeof window === "undefined" || !window.localStorage) return {};
   try {
+    let userId: string | undefined;
+    let email: string | undefined;
+    let name: string | undefined;
     const raw = localStorage.getItem("cached_appwrite_user");
     if (raw) {
       const parsed = JSON.parse(raw);
       const uid = parsed?.$id || parsed?.uid || parsed?.userId;
       if (uid) {
-        return {
-          userId: String(uid),
-          email: parsed?.email ? String(parsed.email) : "",
-          name: parsed?.name || parsed?.displayName ? String(parsed.name || parsed.displayName) : "",
-        };
+        userId = String(uid);
+        email = parsed?.email ? String(parsed.email) : "";
+        name = parsed?.name || parsed?.displayName ? String(parsed.name || parsed.displayName) : "";
       }
     }
-    const fallbackUid = localStorage.getItem("pf_fallback_userId");
-    if (fallbackUid) {
-      return { userId: fallbackUid };
+    if (!userId) {
+      const fallbackUid = localStorage.getItem("pf_fallback_userId");
+      if (fallbackUid) userId = fallbackUid;
     }
+
+    let cash: string | undefined;
+    let gems: string | undefined;
+    let profit: string | undefined;
+    let trades: string | undefined;
+    const statsRaw = localStorage.getItem("cached_appwrite_stats");
+    if (statsRaw) {
+      const stats = JSON.parse(statsRaw);
+      if (stats && typeof stats === "object") {
+        if (typeof stats.cash === "number" && !isNaN(stats.cash)) cash = String(stats.cash);
+        if (typeof stats.gems === "number" && !isNaN(stats.gems)) gems = String(stats.gems);
+        if (typeof stats.totalProfit === "number" && !isNaN(stats.totalProfit)) profit = String(stats.totalProfit);
+        if (typeof stats.tradesCount === "number" && !isNaN(stats.tradesCount)) trades = String(stats.tradesCount);
+      }
+    }
+    const updatedAt = localStorage.getItem("pf_stats_updated_at") || undefined;
+
+    return { userId, email, name, cash, gems, profit, trades, updatedAt };
   } catch {}
   return {};
 }
 
+function persistServerUserStats(serverStats: any) {
+  if (!serverStats || typeof serverStats !== "object" || typeof window === "undefined" || !window.localStorage) return;
+  try {
+    const nowStr = String(Date.now());
+    localStorage.setItem("pf_stats_updated_at", nowStr);
+    const existingRaw = localStorage.getItem("cached_appwrite_stats");
+    const existing = existingRaw ? JSON.parse(existingRaw) : {};
+    const merged = {
+      ...existing,
+      ...(serverStats.cash !== undefined ? { cash: Number(serverStats.cash) } : {}),
+      ...(serverStats.gems !== undefined ? { gems: Number(serverStats.gems) } : {}),
+      ...(serverStats.totalProfit !== undefined ? { totalProfit: Number(serverStats.totalProfit) } : {}),
+      ...(serverStats.tradesCount !== undefined ? { tradesCount: Number(serverStats.tradesCount) } : {}),
+      ...(serverStats.prestigeLevel !== undefined ? { prestigeLevel: Number(serverStats.prestigeLevel) } : {}),
+      ...(serverStats.nameColor ? { nameColor: serverStats.nameColor } : {}),
+      ...(serverStats.title ? { title: serverStats.title } : {}),
+    };
+    localStorage.setItem("cached_appwrite_stats", JSON.stringify(merged));
+  } catch {}
+}
+
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-  const jwt = await getAuthJwt();
+  const [jwt, appwriteJwt] = await Promise.all([getAuthJwt(), getAppwriteSessionJwt()]);
   const identity = getCachedUserIdentity();
   const headers: Record<string, string> = {
     "Accept": "application/json",
@@ -136,6 +191,12 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     ...(identity.userId ? { "X-User-ID": identity.userId } : {}),
     ...(identity.email ? { "X-User-Email": identity.email } : {}),
     ...(identity.name ? { "X-User-Name": identity.name } : {}),
+    ...(identity.cash !== undefined ? { "X-User-Cash": identity.cash } : {}),
+    ...(identity.gems !== undefined ? { "X-User-Gems": identity.gems } : {}),
+    ...(identity.profit !== undefined ? { "X-User-Profit": identity.profit } : {}),
+    ...(identity.trades !== undefined ? { "X-User-Trades": identity.trades } : {}),
+    ...(identity.updatedAt ? { "X-User-Updated-At": identity.updatedAt } : {}),
+    ...(appwriteJwt ? { "X-Appwrite-JWT": appwriteJwt } : {}),
     ...(options.headers as Record<string, string> || {}),
   };
 
@@ -143,7 +204,6 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     headers["Authorization"] = `Bearer ${jwt}`;
   }
 
-  // Ensure body is valid JSON string for mutations if not provided
   let body = options.body;
   const method = (options.method || "GET").toUpperCase();
   if (["POST", "PUT", "PATCH"].includes(method) && body === undefined) {
@@ -170,7 +230,6 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     try {
       data = JSON.parse(rawText);
     } catch {
-      // Handle non-JSON responses (HTML error pages, proxy 502/503s, Vite SPA fallback)
       const cleanSnippet = rawText
         .replace(/<[^>]*>/g, " ")
         .replace(/\s+/g, " ")
@@ -196,6 +255,15 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 
   if (data && data.success === false && data.error) {
     throw new Error(formatErrorMessage(data.error, "Requested action was rejected by the server."));
+  }
+
+  // Automatically record authoritative server balance updates
+  if (data && typeof data === "object") {
+    if (data.userStats) {
+      persistServerUserStats(data.userStats);
+    } else if (data.stats && method !== "GET") {
+      persistServerUserStats(data.stats);
+    }
   }
 
   return (data ?? {}) as T;
@@ -314,11 +382,14 @@ export async function apiPrestige() {
 export async function apiPromocode(code: string) {
   return request<any>("/api/game/promocode", {
     method: "POST",
-    body: JSON.stringify({ code }),
   });
 }
 
-export const apiRedeemPromocode = apiPromocode;
+export const apiRedeemPromocode = (code: string) =>
+  request<any>("/api/game/promocode", {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
 
 export async function apiCreateCoin(params: any) {
   return request<any>("/api/game/create-coin", {
@@ -756,5 +827,3 @@ export async function apiGetNotifications(userId?: string) {
   const endpoint = `/api/game/notifications${queryString ? `?${queryString}` : ""}`;
   return request<{ notifications: any[] }>(endpoint);
 }
-
-

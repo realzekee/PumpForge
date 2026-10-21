@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { PredictionMarket } from "../types";
-import { Coins, CheckCircle, XCircle, Users, Activity, Plus, TrendingUp, Clock, Globe } from "lucide-react";
+import { CheckCircle, XCircle, Users, Activity, Plus, TrendingUp, Clock, Globe } from "lucide-react";
 import LiquidGlassDatePicker from "./LiquidGlassDatePicker";
 import {
   formatToDeviceTimezone,
@@ -21,10 +21,12 @@ export default function PolymarketTab({
   onCreateMarket,
 }: {
   markets: PredictionMarket[];
-  onPlaceBet: (id: string, side: "YES" | "NO", amount: number) => void;
-  onCreateMarket: (market: any) => void;
+  onPlaceBet: (id: string, side: "YES" | "NO", amount: number) => Promise<void> | void;
+  onCreateMarket: (market: any) => Promise<void> | void;
 }) {
   const [betAmounts, setBetAmounts] = useState<{ [marketId: string]: string }>({});
+  const [submittingMarketId, setSubmittingMarketId] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const deviceTz = useMemo(() => getDeviceTimezoneInfo(), []);
 
@@ -44,32 +46,44 @@ export default function PolymarketTab({
     return now - resolvedTime <= THREE_DAYS_MS;
   });
 
-  const handleCreate = (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    const finalDate = newMarket.endTime || getDefaultDateIso();
-    onCreateMarket({
-      id: "m" + Math.random().toString(36).substring(7),
-      question: newMarket.question,
-      description: newMarket.description,
-      yesPool: 0,
-      noPool: 0,
-      yesPercentage: 50,
-      resolved: false,
-      resolvedOutcome: null,
-      endTime: finalDate,
-      endDateIso: finalDate,
-      category: "general",
-    });
-    setShowCreateModal(false);
-    setNewMarket({ question: "", description: "", endTime: getDefaultDateIso() });
+    if (isCreating) return;
+    setIsCreating(true);
+    try {
+      const finalDate = newMarket.endTime || getDefaultDateIso();
+      await onCreateMarket({
+        id: "m_" + Date.now().toString(36) + Math.random().toString(36).substring(2, 6),
+        question: newMarket.question,
+        description: newMarket.description,
+        yesPool: 0,
+        noPool: 0,
+        yesPercentage: 50,
+        resolved: false,
+        resolvedOutcome: null,
+        endTime: finalDate,
+        endDateIso: finalDate,
+        category: "general",
+      });
+      setShowCreateModal(false);
+      setNewMarket({ question: "", description: "", endTime: getDefaultDateIso() });
+    } finally {
+      setIsCreating(false);
+    }
   };
 
-  const handleBet = (marketId: string, side: "YES" | "NO") => {
+  const handleBet = async (marketId: string, side: "YES" | "NO") => {
+    if (submittingMarketId) return;
     const raw = betAmounts[marketId];
     const amt = Number(raw);
     if (amt > 0) {
-      onPlaceBet(marketId, side, amt);
-      setBetAmounts((prev) => ({ ...prev, [marketId]: "" }));
+      setSubmittingMarketId(marketId);
+      try {
+        await onPlaceBet(marketId, side, amt);
+        setBetAmounts((prev) => ({ ...prev, [marketId]: "" }));
+      } finally {
+        setSubmittingMarketId(null);
+      }
     }
   };
 
@@ -79,8 +93,7 @@ export default function PolymarketTab({
 
   return (
     <div className="flex flex-col gap-6 w-full max-w-full overflow-hidden h-full animate-fade-in relative">
-      <div className="glass-panel border border-white/10 p-6 md:p-8 rounded-3xl relative overflow-hidden backdrop-blur-xl shadow-2xl">
-        <div className="absolute -right-12 -bottom-12 w-64 h-64 bg-rose-500/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="glass-panel border border-white/10 p-6 md:p-8 rounded-3xl relative overflow-hidden shadow-2xl">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-5 relative z-10">
           <div className="flex flex-col gap-2">
             <h2 className="text-2xl md:text-3xl font-black text-white tracking-tight flex items-center gap-3">
@@ -102,7 +115,7 @@ export default function PolymarketTab({
               setNewMarket({ question: "", description: "", endTime: getDefaultDateIso() });
               setShowCreateModal(true);
             }}
-            className="glass-button bg-rose-600/90 hover:bg-rose-500 text-white px-5 py-3 rounded-xl font-bold flex items-center gap-2 self-start md:self-auto border border-rose-400/30 transition shadow-lg shadow-rose-950/40 hover:scale-[1.02] active:scale-[0.98]"
+            className="glass-button bg-rose-600/90 hover:bg-rose-500 text-white px-5 py-3 rounded-xl font-bold flex items-center gap-2 self-start md:self-auto border border-rose-400/30 transition shadow-lg shadow-rose-950/40 hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
           >
             <Plus className="w-4 h-4" /> Propose Market
           </button>
@@ -125,16 +138,23 @@ export default function PolymarketTab({
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {activeMarkets.map((market) => {
-              const countdown = getRelativeTimeCountdown(market.endDateIso || market.endTime);
-              const formattedDate = formatToDeviceTimezone(market.endDateIso || market.endTime, {
+              const targetEnd = market.endDateIso || market.endTime || (market as any).endDate;
+              const countdown = getRelativeTimeCountdown(targetEnd);
+              const formattedDate = formatToDeviceTimezone(targetEnd, {
                 includeTime: true,
                 includeTz: true,
               });
+              const yesPool = Number(market.yesPool ?? (market as any).poolYes ?? 0);
+              const noPool = Number(market.noPool ?? (market as any).poolNo ?? 0);
+              const totalPool = yesPool + noPool;
+              const yesPct = totalPool > 0 ? Math.round((yesPool / totalPool) * 100) : (market.yesPercentage ?? 50);
+              const [cleanTitle, splitDesc] = String(market.question || "").split(" --- ");
+              const displayDesc = market.description || splitDesc || "";
 
               return (
                 <div
                   key={market.id}
-                  className="glass-card border border-white/10 rounded-3xl p-6 flex flex-col gap-4 shadow-xl hover:border-white/20 transition backdrop-blur-lg relative group"
+                  className="glass-card border border-white/10 rounded-3xl p-6 flex flex-col gap-4 shadow-xl hover:border-white/20 transition relative group"
                 >
                   <div>
                     <div className="flex items-start justify-between gap-2 mb-2">
@@ -160,11 +180,11 @@ export default function PolymarketTab({
                       </div>
                     </div>
                     <h4 className="text-white font-extrabold text-base leading-snug tracking-tight mb-2">
-                      {market.question}
+                      {cleanTitle || market.question}
                     </h4>
-                    {market.description && (
+                    {displayDesc && (
                       <p className="text-xs text-zinc-400 font-medium line-clamp-2 leading-relaxed">
-                        {market.description}
+                        {displayDesc}
                       </p>
                     )}
                   </div>
@@ -172,35 +192,35 @@ export default function PolymarketTab({
                   <div className="flex flex-col gap-2 mt-auto pt-2">
                     <div className="flex justify-between items-center text-[10px] font-bold text-zinc-400 uppercase tracking-widest font-mono">
                       <span className="flex items-center gap-1.5 text-emerald-400">
-                        <Users className="w-3.5 h-3.5" /> Pool YES: ${(market.yesPool || 0).toLocaleString()}
+                        <Users className="w-3.5 h-3.5" /> Pool YES: ${yesPool.toLocaleString()}
                       </span>
                       <span className="text-rose-400">
-                        Pool NO: ${(market.noPool || 0).toLocaleString()}
+                        Pool NO: ${noPool.toLocaleString()}
                       </span>
                     </div>
 
                     {/* Pool Progress Bar */}
                     <div className="w-full h-2 bg-rose-950/80 rounded-full overflow-hidden border border-white/5 flex">
                       <div
-                        className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-500 rounded-full"
-                        style={{ width: `${Math.max(4, Math.min(96, market.yesPercentage || 50))}%` }}
+                        className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-300 rounded-full"
+                        style={{ width: `${Math.max(4, Math.min(96, yesPct))}%` }}
                       />
                     </div>
 
                     <div className="flex items-center justify-between text-xs font-black font-mono">
-                      <span className="text-emerald-400">{market.yesPercentage}% YES</span>
-                      <span className="text-rose-400">{100 - (market.yesPercentage || 50)}% NO</span>
+                      <span className="text-emerald-400">{yesPct}% YES</span>
+                      <span className="text-rose-400">{100 - yesPct}% NO</span>
                     </div>
                   </div>
 
-                  {/* Bet Action or Existing Position */}
-                  <div className="border-t border-white/10 pt-4 mt-1">
-                    {market.userBetSide ? (
-                      <div className="text-center bg-white/[0.04] rounded-2xl p-3.5 border border-white/10 backdrop-blur-md">
-                        <div className="text-[10px] text-zinc-400 uppercase font-black tracking-widest mb-1 font-mono">
-                          Your Active Position
-                        </div>
-                        <div className="font-black text-white text-sm">
+                  {/* Active Position Badge + Bet Controls */}
+                  <div className="border-t border-white/10 pt-4 mt-1 flex flex-col gap-3">
+                    {market.userBetSide && (
+                      <div className="flex items-center justify-between bg-white/[0.04] rounded-xl px-3.5 py-2.5 border border-white/10 font-mono">
+                        <span className="text-[10px] text-zinc-400 uppercase font-black tracking-wider">
+                          Your Position:
+                        </span>
+                        <span className="font-black text-white text-xs">
                           <span
                             className={
                               market.userBetSide === "YES"
@@ -210,56 +230,56 @@ export default function PolymarketTab({
                           >
                             {market.userBetSide}
                           </span>{" "}
-                          &bull; ${market.userBetAmount.toLocaleString()}
-                        </div>
-                        <div className="text-[10px] text-zinc-500 mt-1">
-                          Locked &amp; synced with Appwrite
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col gap-2.5">
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="number"
-                            placeholder="Amount ($)..."
-                            className="glass-input bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-sm text-white w-full focus:border-rose-500 outline-none font-mono"
-                            value={betAmounts[market.id] || ""}
-                            onChange={(e) =>
-                              setBetAmounts({ ...betAmounts, [market.id]: e.target.value })
-                            }
-                          />
-                        </div>
-
-                        {/* Quick Chips */}
-                        <div className="flex gap-1.5">
-                          {[25, 100, 500, 1000].map((preset) => (
-                            <button
-                              key={preset}
-                              type="button"
-                              onClick={() => setPresetAmount(market.id, preset)}
-                              className="flex-1 py-1 text-[10px] font-mono font-bold rounded-lg bg-white/5 hover:bg-white/10 text-zinc-300 border border-white/5 transition"
-                            >
-                              +${preset}
-                            </button>
-                          ))}
-                        </div>
-
-                        <div className="flex gap-2 mt-1">
-                          <button
-                            onClick={() => handleBet(market.id, "YES")}
-                            className="flex-1 bg-emerald-600/90 hover:bg-emerald-500 text-white font-bold py-2.5 rounded-xl text-xs border border-emerald-400/30 transition shadow-md shadow-emerald-950/40 active:scale-95"
-                          >
-                            Buy YES
-                          </button>
-                          <button
-                            onClick={() => handleBet(market.id, "NO")}
-                            className="flex-1 bg-rose-600/90 hover:bg-rose-500 text-white font-bold py-2.5 rounded-xl text-xs border border-rose-400/30 transition shadow-md shadow-rose-950/40 active:scale-95"
-                          >
-                            Buy NO
-                          </button>
-                        </div>
+                          &bull; ${(market.userBetAmount || 0).toLocaleString()}
+                        </span>
                       </div>
                     )}
+
+                    <div className="flex flex-col gap-2.5">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min="1"
+                          placeholder={market.userBetSide ? "Add to position ($)..." : "Amount ($)..."}
+                          className="glass-input bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-sm text-white w-full focus:border-rose-500 outline-none font-mono"
+                          value={betAmounts[market.id] || ""}
+                          onChange={(e) =>
+                            setBetAmounts({ ...betAmounts, [market.id]: e.target.value })
+                          }
+                        />
+                      </div>
+
+                      {/* Quick Chips */}
+                      <div className="flex gap-1.5">
+                        {[25, 100, 500, 1000].map((preset) => (
+                          <button
+                            key={preset}
+                            type="button"
+                            onClick={() => setPresetAmount(market.id, preset)}
+                            className="flex-1 py-1 text-[10px] font-mono font-bold rounded-lg bg-white/5 hover:bg-white/10 text-zinc-300 border border-white/5 transition cursor-pointer"
+                          >
+                            +${preset}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="flex gap-2 mt-1">
+                        <button
+                          disabled={submittingMarketId === market.id}
+                          onClick={() => handleBet(market.id, "YES")}
+                          className="flex-1 bg-emerald-600/90 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold py-2.5 rounded-xl text-xs border border-emerald-400/30 transition shadow-md shadow-emerald-950/40 active:scale-95 cursor-pointer"
+                        >
+                          {submittingMarketId === market.id ? "Saving..." : "Buy YES"}
+                        </button>
+                        <button
+                          disabled={submittingMarketId === market.id}
+                          onClick={() => handleBet(market.id, "NO")}
+                          className="flex-1 bg-rose-600/90 hover:bg-rose-500 disabled:opacity-50 text-white font-bold py-2.5 rounded-xl text-xs border border-rose-400/30 transition shadow-md shadow-rose-950/40 active:scale-95 cursor-pointer"
+                        >
+                          {submittingMarketId === market.id ? "Saving..." : "Buy NO"}
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               );
@@ -275,35 +295,39 @@ export default function PolymarketTab({
             <CheckCircle className="w-5 h-5 text-zinc-400" /> Resolved Predictions ({resolvedMarkets.length})
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {resolvedMarkets.map((market) => (
-              <div
-                key={market.id}
-                className="glass-card border border-white/5 rounded-3xl p-6 flex flex-col gap-4 opacity-80 backdrop-blur-sm"
-              >
-                <div>
-                  <h4 className="text-white font-bold leading-tight line-clamp-2 mb-2">
-                    {market.question}
-                  </h4>
-                  {market.description && (
-                    <p className="text-xs text-zinc-400 line-clamp-2">{market.description}</p>
-                  )}
-                  <div className="text-[11px] text-zinc-500 font-mono mt-2">
-                    Resolved Target: {formatToDeviceTimezone(market.endDateIso || market.endTime, { includeTime: true, includeTz: true })}
-                  </div>
-                  <div className="flex items-center gap-2 mt-3 font-black">
-                    {market.resolvedOutcome === "YES" ? (
-                      <div className="px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-xl flex items-center gap-2 text-xs font-mono">
-                        <CheckCircle className="w-4 h-4" /> RESOLVED YES
-                      </div>
-                    ) : (
-                      <div className="px-3 py-1.5 bg-rose-500/10 border border-rose-500/30 text-rose-400 rounded-xl flex items-center gap-2 text-xs font-mono">
-                        <XCircle className="w-4 h-4" /> RESOLVED NO
-                      </div>
+            {resolvedMarkets.map((market) => {
+              const [cleanTitle, splitDesc] = String(market.question || "").split(" --- ");
+              const displayDesc = market.description || splitDesc || "";
+              return (
+                <div
+                  key={market.id}
+                  className="glass-card border border-white/5 rounded-3xl p-6 flex flex-col gap-4 opacity-80"
+                >
+                  <div>
+                    <h4 className="text-white font-bold leading-tight line-clamp-2 mb-2">
+                      {cleanTitle || market.question}
+                    </h4>
+                    {displayDesc && (
+                      <p className="text-xs text-zinc-400 line-clamp-2">{displayDesc}</p>
                     )}
+                    <div className="text-[11px] text-zinc-500 font-mono mt-2">
+                      Resolved Target: {formatToDeviceTimezone(market.endDateIso || market.endTime, { includeTime: true, includeTz: true })}
+                    </div>
+                    <div className="flex items-center gap-2 mt-3 font-black">
+                      {market.resolvedOutcome === "YES" ? (
+                        <div className="px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-xl flex items-center gap-2 text-xs font-mono">
+                          <CheckCircle className="w-4 h-4" /> RESOLVED YES
+                        </div>
+                      ) : (
+                        <div className="px-3 py-1.5 bg-rose-500/10 border border-rose-500/30 text-rose-400 rounded-xl flex items-center gap-2 text-xs font-mono">
+                          <XCircle className="w-4 h-4" /> RESOLVED NO
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -311,7 +335,7 @@ export default function PolymarketTab({
       {/* Propose Market Modal with Liquid Glass Calendar UI */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in overflow-y-auto">
-          <div className="glass-modal bg-zinc-950/95 border border-white/15 rounded-3xl w-full max-w-lg p-6 md:p-8 flex flex-col gap-5 shadow-2xl backdrop-blur-2xl my-8">
+          <div className="glass-modal bg-zinc-950/95 border border-white/15 rounded-3xl w-full max-w-lg p-6 md:p-8 flex flex-col gap-5 shadow-2xl my-8">
             <div className="border-b border-white/10 pb-3 flex items-center justify-between">
               <h3 className="text-xl font-black text-white flex items-center gap-2">
                 <Plus className="w-5 h-5 text-rose-400" /> Propose Prediction
@@ -353,14 +377,14 @@ export default function PolymarketTab({
                     <Globe className="w-3 h-3" /> Auto Device Clocks
                   </span>
                 </label>
-                
+
                 <LiquidGlassDatePicker
                   value={newMarket.endTime}
                   onChange={(isoString) => setNewMarket({ ...newMarket, endTime: isoString })}
                 />
 
                 <p className="text-[11px] text-zinc-400 font-mono leading-relaxed mt-1">
-                  Adjustable liquid glass calendar. All times adapt to the viewer’s local timezone automatically (US, Italy, Philippines, or any global region).
+                  Adjustable liquid glass calendar. All times adapt to the viewer’s local timezone automatically.
                 </p>
               </div>
 
@@ -368,15 +392,16 @@ export default function PolymarketTab({
                 <button
                   type="button"
                   onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2.5 text-sm text-zinc-400 hover:text-white transition font-medium"
+                  className="px-4 py-2.5 text-sm text-zinc-400 hover:text-white transition font-medium cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white text-sm font-bold rounded-xl border border-rose-400/30 transition shadow-lg shadow-rose-950/50"
+                  disabled={isCreating}
+                  className="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white text-sm font-bold rounded-xl border border-rose-400/30 transition shadow-lg shadow-rose-950/50 cursor-pointer"
                 >
-                  Publish Market
+                  {isCreating ? "Publishing..." : "Publish Market"}
                 </button>
               </div>
             </form>

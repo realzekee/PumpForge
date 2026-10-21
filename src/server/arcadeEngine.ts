@@ -7,25 +7,23 @@ import {
   Role as NodeRole,
 } from "./appwriteServer";
 import { AuthenticatedUser } from "./types";
-import { getAuthoritativeUser, saveAuthoritativeUser, globalAdminSettings, UserStateCache } from "./db";
+import { getAuthoritativeUser, saveAuthoritativeUser, globalAdminSettings, UserStateCache, recordWagerLog } from "./db";
 import { withUserLock } from "./locks";
 import { arcadeLimiter } from "./rateLimit";
 
-const APPWRITE_ENDPOINT = (process.env.VITE_APPWRITE_ENDPOINT || "https://sgp.cloud.appwrite.io/v1").trim();
-const APPWRITE_PROJECT = (process.env.VITE_APPWRITE_PROJECT || "6a1416eb001f50cdb902").trim();
-const APPWRITE_API_KEY = (process.env.APPWRITE_API_KEY || "").trim();
+export function getNodeAppwriteDatabases(jwt?: string) {
+  const endpoint = (process.env.VITE_APPWRITE_ENDPOINT || process.env.APPWRITE_ENDPOINT || "https://sgp.cloud.appwrite.io/v1").trim();
+  const project = (process.env.VITE_APPWRITE_PROJECT || process.env.APPWRITE_PROJECT_ID || "6a1416eb001f50cdb902").trim();
+  const apiKey = (process.env.APPWRITE_API_KEY || process.env.VITE_APPWRITE_API_KEY || "").trim();
 
-/**
- * Initializes a privileged server-side Appwrite Databases client using node-appwrite and APPWRITE_API_KEY.
- * Follows zero-trust principles by performing all balance and wager mutations exclusively on the backend.
- */
-export function getNodeAppwriteDatabases() {
   const client = new NodeClient()
-    .setEndpoint(APPWRITE_ENDPOINT)
-    .setProject(APPWRITE_PROJECT);
+    .setEndpoint(endpoint)
+    .setProject(project);
 
-  if (APPWRITE_API_KEY) {
-    client.setKey(APPWRITE_API_KEY);
+  if (apiKey) {
+    client.setKey(apiKey);
+  } else if (jwt && typeof jwt === "string" && jwt.split(".").length === 3) {
+    client.setJWT(jwt);
   }
 
   return new NodeDatabases(client);
@@ -57,55 +55,16 @@ export async function executeCoinflipCore(
   } else if (rigMode === "lose") {
     resultSide = normalizedSide === "heads" ? "tails" : "heads";
   } else {
-    // Cryptographically secure RNG (0 or 1)
     resultSide = crypto.randomInt(0, 2) === 0 ? "heads" : "tails";
   }
 
   const won = resultSide === normalizedSide;
-  const payout = won ? Math.floor(betAmount * 1.9) : 0;
-  const profit = won ? payout - betAmount : -betAmount;
-  const nextCash = Number((userCash + profit).toFixed(2));
+  const payout = won ? Number((betAmount * 1.9).toFixed(2)) : 0;
+  const profit = Number((won ? payout - betAmount : -betAmount).toFixed(2));
+  const nextCash = Number(Math.max(0, userCash + profit).toFixed(2));
   const nextTotalProfit = Number(((userState.totalProfit || 0) + profit).toFixed(2));
 
-  // 2. Initialize node-appwrite with process.env.APPWRITE_API_KEY for privileged balance update
-  const nodeDb = getNodeAppwriteDatabases();
-
-  try {
-    await nodeDb.updateDocument("pumpforge", "users", user.userId, {
-      cash: nextCash,
-      totalProfit: nextTotalProfit,
-    });
-  } catch (dbErr: any) {
-    console.warn(
-      "node-appwrite users balance update notice (cached state preserved):",
-      dbErr?.message || dbErr
-    );
-  }
-
-  // 3. Insert authoritative wager document into wagers collection with node-appwrite
-  try {
-    await nodeDb.createDocument(
-      "pumpforge",
-      "wagers",
-      NodeID.unique(),
-      {
-        userId: user.userId,
-        polymarketId: "arcade_coinflip",
-        amount: betAmount,
-        choice: normalizedSide.toUpperCase(),
-        timestamp: new Date().toISOString(),
-        isPaid: won,
-      },
-      [NodePermission.read(NodeRole.any())]
-    );
-  } catch (wagerErr: any) {
-    console.warn(
-      "node-appwrite wagers create notice:",
-      wagerErr?.message || wagerErr
-    );
-  }
-
-  // 4. Update authoritative in-memory cache and retrieve synchronized state
+  // 2. Commit authoritative user balance update (with dirty-cache and schema-adaptation protection)
   const updatedUser = await saveAuthoritativeUser(
     user.userId,
     {
@@ -114,6 +73,38 @@ export async function executeCoinflipCore(
     },
     user.jwt
   );
+
+  // 3. Insert authoritative wager document into wagers collection (non-blocking)
+  const wagerId = NodeID.unique();
+  const wagerEntry = {
+    id: wagerId,
+    $id: wagerId,
+    userId: user.userId,
+    polymarketId: "arcade_coinflip",
+    amount: betAmount,
+    choice: normalizedSide.toUpperCase(),
+    timestamp: new Date().toISOString(),
+    isPaid: won,
+  };
+  recordWagerLog(wagerEntry);
+
+  try {
+    const nodeDb = getNodeAppwriteDatabases(user.jwt);
+    await nodeDb.createDocument(
+      "pumpforge",
+      "wagers",
+      wagerId,
+      {
+        userId: user.userId,
+        polymarketId: "arcade_coinflip",
+        amount: betAmount,
+        choice: normalizedSide.toUpperCase(),
+        timestamp: wagerEntry.timestamp,
+        isPaid: won,
+      },
+      [NodePermission.read(NodeRole.any())]
+    );
+  } catch (_) {}
 
   return {
     success: true,
@@ -129,9 +120,6 @@ export async function executeCoinflipCore(
 
 /**
  * Executes a server-authoritative Coinflip wager.
- * - Parses and verifies betAmount as a positive number before comparison and dispatch.
- * - Enforces per-user mutex locking to prevent double-spending or race conditions.
- * - Utilizes node-appwrite initialized with process.env.APPWRITE_API_KEY to perform balance updates and wager inserts.
  */
 export async function processCoinflip(
   user: AuthenticatedUser,
@@ -143,9 +131,8 @@ export async function processCoinflip(
     throw new Error(`Arcade rate limit exceeded. Please wait ${Math.ceil(retryAfterMs / 1000)}s.`);
   }
 
-  // Verify numbers: Parse betAmount as Number before comparison or payload dispatch
   const betAmount = Number(rawBetAmount);
-  if (typeof betAmount !== "number" || isNaN(betAmount) || betAmount <= 0) {
+  if (typeof betAmount !== "number" || isNaN(betAmount) || !isFinite(betAmount) || betAmount <= 0) {
     throw new Error("Invalid bet amount. Must be a positive number.");
   }
 
@@ -155,7 +142,7 @@ export async function processCoinflip(
   }
 
   return withUserLock(user.userId, async () => {
-    const userState = await getAuthoritativeUser(user.userId, user.jwt);
+    const userState = await getAuthoritativeUser(user.userId, user.jwt, user.name);
     return executeCoinflipCore(
       user,
       betAmount,
