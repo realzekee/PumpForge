@@ -1,4 +1,4 @@
-import { getDatabases, coinStore, globalAdminSettings, getAuthoritativeUser, saveAuthoritativeUser, inMemoryBroadcasts, recordPolymarket, getPolymarketsList, inMemoryWagers } from "./db";
+import { getDatabases, coinStore, globalAdminSettings, getAuthoritativeUser, saveAuthoritativeUser, inMemoryBroadcasts, recordPolymarket, persistPolymarketToDatabase, getPolymarketsList, inMemoryWagers } from "./db";
 import { withMarketLock, withUserLock } from "./locks";
 import { adminLimiter } from "./rateLimit";
 import { AuthenticatedUser } from "./types";
@@ -57,7 +57,12 @@ export function getAuditLogs(): AuditLogEntry[] {
 export async function resolveMarketAndPayout(
   admin: AuthenticatedUser,
   marketId: string,
-  winningChoice: "YES" | "NO" | "CANCEL"
+  winningChoice: "YES" | "NO" | "CANCEL",
+  extraParams?: {
+    userBet?: { side: "YES" | "NO"; amount: number };
+    poolYes?: number;
+    poolNo?: number;
+  }
 ) {
   if (!admin.isAdmin) {
     throw new Error("Admin privileges required to resolve prediction markets.");
@@ -85,105 +90,129 @@ export async function resolveMarketAndPayout(
       };
     }
 
-    if (market.status === "closed" && market.resolved) {
-      throw new Error("Prediction market has already been resolved and payouts finalized.");
-    }
-
-    const poolYes = Number(market.poolYes || 0);
-    const poolNo = Number(market.poolNo || 0);
+    const poolYes = Math.max(Number(market.poolYes ?? market.yesPool ?? 0), Number(extraParams?.poolYes || 0));
+    const poolNo = Math.max(Number(market.poolNo ?? market.noPool ?? 0), Number(extraParams?.poolNo || 0));
     const totalPool = poolYes + poolNo;
     const resolvedAtIso = new Date().toISOString();
 
-    // Mark market as closed and resolved first
-    try {
-      await databases.updateDocument("pumpforge", "polymarkets", marketId, {
-        status: "closed",
-        resolved: true,
-        winningOutcome: winningChoice,
-        resolvedAt: resolvedAtIso,
-      });
-    } catch {
-      // Market may be in-memory only
-    }
-
-    recordPolymarket({
+    const resolvedMarketObj = {
       ...market,
       $id: marketId,
       id: marketId,
+      poolYes,
+      poolNo,
+      yesPool: poolYes,
+      noPool: poolNo,
       status: "closed",
       resolved: true,
       winningOutcome: winningChoice,
+      resolvedOutcome: winningChoice === "CANCEL" ? null : winningChoice,
       resolvedAt: resolvedAtIso,
-    });
+    };
 
-    // Query all wagers for this market
-    let wagersDocs: any[] = [];
+    await persistPolymarketToDatabase(resolvedMarketObj, admin.jwt);
+
+    // Query all wagers for this market from Appwrite + inMemoryWagers
+    const wagersMap = new Map<string, any>();
+    for (const memW of inMemoryWagers) {
+      if (memW.polymarketId === marketId) {
+        wagersMap.set(memW.$id || memW.id || `${memW.userId}_${memW.amount}`, memW);
+      }
+    }
+
     try {
       const wagersRes = await databases.listDocuments("pumpforge", "wagers", [
         Query.equal("polymarketId", marketId),
         Query.limit(500),
       ]);
-      wagersDocs = wagersRes.documents || [];
-    } catch {
-      wagersDocs = inMemoryWagers.filter((w: any) => w.polymarketId === marketId);
+      for (const doc of wagersRes.documents || []) {
+        wagersMap.set(doc.$id || doc.id, doc);
+      }
+    } catch {}
+
+    // Also include client-provided userBet if not already present in wagersMap for this user
+    if (extraParams?.userBet && Number(extraParams.userBet.amount) > 0) {
+      const hasCallerWager = Array.from(wagersMap.values()).some(
+        (w: any) => w.userId === admin.userId && !w.isPaid
+      );
+      if (!hasCallerWager) {
+        const syntheticId = `w_${marketId}_${admin.userId}`;
+        wagersMap.set(syntheticId, {
+          id: syntheticId,
+          $id: syntheticId,
+          userId: admin.userId,
+          polymarketId: marketId,
+          amount: Number(extraParams.userBet.amount),
+          choice: extraParams.userBet.side,
+          isPaid: false,
+        });
+      }
     }
-    const wagersRes = { documents: wagersDocs };
 
     let totalPaidOut = 0;
     let winnersCount = 0;
+    let callerPayout = 0;
+    let callerUpdatedStats: any = null;
 
-    for (const wager of wagersRes.documents) {
-      // Idempotency: skip if already paid
+    for (const wager of wagersMap.values()) {
       if (wager.isPaid === true) {
         continue;
       }
 
       const wagerUserId = wager.userId;
       const wagerAmount = Number(wager.amount || 0);
-      const choice = wager.choice;
+      const choice = String(wager.choice || "").toUpperCase();
 
       let payoutAmount = 0;
 
       if (winningChoice === "CANCEL") {
-        // Full refund
         payoutAmount = wagerAmount;
       } else if (choice === winningChoice) {
-        // Pro-rata distribution from losing pool
         const winningPool = winningChoice === "YES" ? poolYes : poolNo;
         if (winningPool > 0 && totalPool > 0) {
           const shareRatio = wagerAmount / winningPool;
-          payoutAmount = Math.floor(shareRatio * totalPool);
+          const poolShare = Math.floor(shareRatio * totalPool);
+          payoutAmount = Math.max(wagerAmount * 2, poolShare);
         } else {
-          payoutAmount = wagerAmount;
+          payoutAmount = wagerAmount * 2;
         }
       }
 
-      // Mark wager as paid FIRST to prevent double-payouts
+      wager.isPaid = true;
       try {
-        await databases.updateDocument("pumpforge", "wagers", wager.$id || wager.id, {
-          isPaid: true,
-        });
-      } catch {
-        wager.isPaid = true;
-      }
+        if (wager.$id && !String(wager.$id).startsWith("w_")) {
+          await databases.updateDocument("pumpforge", "wagers", wager.$id, {
+            isPaid: true,
+          });
+        }
+      } catch {}
 
       if (payoutAmount > 0) {
         await withUserLock(wagerUserId, async () => {
           const uState = await getAuthoritativeUser(wagerUserId, admin.jwt);
-          const nextCash = uState.cash + payoutAmount;
-          await saveAuthoritativeUser(
+          const nextCash = Number((uState.cash + payoutAmount).toFixed(2));
+          const profitDelta = winningChoice === "CANCEL" ? 0 : payoutAmount - wagerAmount;
+          const updated = await saveAuthoritativeUser(
             wagerUserId,
             {
               cash: nextCash,
-              totalProfit: (uState.totalProfit || 0) + (payoutAmount - wagerAmount),
+              totalProfit: Number(((uState.totalProfit || 0) + profitDelta).toFixed(2)),
             },
             admin.jwt
           );
+          if (wagerUserId === admin.userId) {
+            callerPayout += payoutAmount;
+            callerUpdatedStats = updated;
+          }
         });
 
         totalPaidOut += payoutAmount;
         winnersCount++;
       }
+    }
+
+    if (!callerUpdatedStats) {
+      callerUpdatedStats = await getAuthoritativeUser(admin.userId, admin.jwt);
     }
 
     await recordAuditLog(admin, "MARKET_RESOLVE", {
@@ -199,6 +228,9 @@ export async function resolveMarketAndPayout(
       winningChoice,
       winnersCount,
       totalPaidOut,
+      callerPayout,
+      market: resolvedMarketObj,
+      userStats: callerUpdatedStats,
     };
   });
 }
@@ -211,10 +243,8 @@ export async function adminUpdateCoin(admin: AuthenticatedUser, coinId: string, 
     throw new Error("Admin privileges required to configure coins.");
   }
 
-  // 1. Update in-memory authoritative store immediately
   const updated = coinStore.updateCoin(coinId, updates);
 
-  // 2. Sync permanently with Appwrite
   try {
     const databases = getDatabases(admin.jwt);
     const payload: any = {};
@@ -230,7 +260,6 @@ export async function adminUpdateCoin(admin: AuthenticatedUser, coinId: string, 
     try {
       await databases.updateDocument("pumpforge", "coins", coinId, payload);
     } catch (updateErr) {
-      // If doc does not exist, create it so it persists forever
       const existing = coinStore.getCoin(coinId);
       if (existing) {
         await databases.createDocument(
@@ -327,18 +356,30 @@ export async function adminGrantBalance(
 ) {
   if (!admin.isAdmin) throw new Error("Admin privileges required.");
 
-  return withUserLock(targetUserId, async () => {
-    const uState = await getAuthoritativeUser(targetUserId, admin.jwt);
+  const isTargetingSelf =
+    !targetUserId ||
+    targetUserId === admin.userId ||
+    targetUserId === "admin_realzekeee" ||
+    targetUserId.toLowerCase() === "@zeke";
+
+  const canonicalId = isTargetingSelf ? admin.userId : targetUserId;
+
+  return withUserLock(canonicalId, async () => {
+    const uState = await getAuthoritativeUser(canonicalId, admin.jwt, admin.name);
     let nextVal = currency === "cash" ? uState.cash : uState.gems;
 
     if (mode === "add") nextVal += amount;
     else if (mode === "deduct") nextVal = Math.max(0, nextVal - amount);
     else if (mode === "set") nextVal = Math.max(0, amount);
 
-    const updates = currency === "cash" ? { cash: nextVal } : { gems: Math.floor(nextVal) };
-    const updated = await saveAuthoritativeUser(targetUserId, updates, admin.jwt);
+    const updates = currency === "cash" ? { cash: Number(nextVal.toFixed(2)) } : { gems: Math.floor(nextVal) };
+    const updated = await saveAuthoritativeUser(canonicalId, updates, admin.jwt);
 
-    await recordAuditLog(admin, "BALANCE_GRANT", { targetUserId, mode, currency, amount });
+    if (isTargetingSelf && targetUserId && targetUserId !== canonicalId) {
+      await saveAuthoritativeUser(targetUserId, updates, admin.jwt).catch(() => {});
+    }
+
+    await recordAuditLog(admin, "BALANCE_GRANT", { targetUserId: canonicalId, mode, currency, amount });
     return { success: true, userStats: updated };
   });
 }
@@ -410,7 +451,6 @@ export async function adminUpdateSettings(admin: AuthenticatedUser, settings: an
     (globalAdminSettings as any).customAdminBadge = String(settings.customAdminBadge);
   }
 
-  // Update in Appwrite admin_settings collection
   try {
     const databases = getDatabases(admin.jwt);
     const res = await databases.listDocuments("pumpforge", "admin_settings", [Query.limit(1)]);
@@ -522,7 +562,6 @@ export async function adminCreateBroadcast(
     await recordAuditLog(admin, "BROADCAST_CREATE", broadcastDoc);
     return { success: true, broadcast: created };
   } catch (err: any) {
-    console.warn("Could not write broadcast to Appwrite directly, saving in-memory:", err?.message || err);
     inMemoryBroadcasts.unshift(broadcastDoc);
     await recordAuditLog(admin, "BROADCAST_CREATE", broadcastDoc);
     return { success: true, broadcast: broadcastDoc };
@@ -540,9 +579,7 @@ export async function adminDeleteBroadcast(admin: AuthenticatedUser, broadcastId
   try {
     const databases = getDatabases(admin.jwt);
     await databases.deleteDocument("pumpforge", "broadcasts", broadcastId);
-  } catch (err: any) {
-    console.warn("Could not delete broadcast from Appwrite:", err?.message || err);
-  }
+  } catch (err: any) {}
 
   await recordAuditLog(admin, "BROADCAST_DELETE", { broadcastId });
   return { success: true, broadcastId };
@@ -586,7 +623,6 @@ export async function adminCreatePromoCode(
     await recordAuditLog(admin, "PROMOCODE_CREATE", { code: cleanCode, rewardAmount: promoData.rewardAmount });
     return { success: true, promocode: created };
   } catch (err: any) {
-    console.error("Failed to create promocode in Appwrite:", err);
     throw new Error(err.message || "Failed to create promocode.");
   }
 }

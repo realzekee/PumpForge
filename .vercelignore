@@ -1,7 +1,7 @@
 api/index.ts
-/api/index.ts
 api/*.ts
-/api/*.ts
+node_modules/
+.git/
 debug_network.js
 run_browser_audit.js
 test_warnings.js

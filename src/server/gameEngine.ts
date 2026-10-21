@@ -655,42 +655,62 @@ export async function processArcadeWager(
       );
     }
 
-    // --- SLOTS ---
+    // --- SLOTS (3-LINE 3x3 GRID) ---
     if (game === "slots") {
       const bet = Number(params.bet);
       if (typeof bet !== "number" || isNaN(bet) || !isFinite(bet) || bet <= 0 || bet > userState.cash) {
         throw new Error("Invalid bet amount or insufficient cash.");
       }
 
-      let reels: string[];
+      let grid: string[][];
       if (rigMode === "win") {
-        reels = ["7️⃣", "7️⃣", "7️⃣"];
-      } else if (rigMode === "lose") {
-        reels = ["🍒", "🍋", "🔔"];
-      } else {
-        reels = [
-          slotEmojis[secureRandomInt(0, slotEmojis.length - 1)],
-          slotEmojis[secureRandomInt(0, slotEmojis.length - 1)],
-          slotEmojis[secureRandomInt(0, slotEmojis.length - 1)],
+        grid = [
+          ["🍒", "🍋", "🔔"],
+          ["7️⃣", "7️⃣", "7️⃣"],
+          ["💎", "🍒", "🍋"],
         ];
+      } else if (rigMode === "lose") {
+        grid = [
+          ["🍒", "🍋", "🔔"],
+          ["🍋", "💎", "🍒"],
+          ["🔔", "🍒", "💎"],
+        ];
+      } else {
+        grid = [0, 1, 2].map(() => [
+          slotEmojis[secureRandomInt(0, slotEmojis.length - 1)],
+          slotEmojis[secureRandomInt(0, slotEmojis.length - 1)],
+          slotEmojis[secureRandomInt(0, slotEmojis.length - 1)],
+        ]);
       }
 
-      const matchCount = new Set(reels).size;
+      const winningLines: number[] = [];
       let payout = 0;
-      let nextCash = Number((userState.cash - bet).toFixed(2));
 
-      if (matchCount === 1) {
-        // Triple match
-        let multiplier = 3;
-        if (reels[0] === "7️⃣") multiplier = 6;
-        else if (reels[0] === "💎") multiplier = 4;
-        payout = Number((bet * multiplier).toFixed(2));
-      } else if (matchCount === 2) {
-        // Double match
-        payout = Math.floor(bet * 0.95);
+      // Check all 3 horizontal paylines for 3-of-a-kind
+      for (let r = 0; r < 3; r++) {
+        const row = grid[r];
+        if (new Set(row).size === 1) {
+          winningLines.push(r);
+          let lineMult = 3;
+          if (row[0] === "7️⃣") lineMult = 6;
+          else if (row[0] === "💎") lineMult = 4;
+          payout += Number((bet * lineMult).toFixed(2));
+        }
       }
 
-      nextCash = Number(Math.max(0, nextCash + payout).toFixed(2));
+      // If no triple match, check center payline (line 1) for a 2-of-a-kind
+      let matchCount = 3;
+      if (winningLines.length > 0) {
+        matchCount = 1;
+      } else if (new Set(grid[1]).size === 2) {
+        matchCount = 2;
+        winningLines.push(1);
+        payout = Math.floor(bet * 1.5);
+      }
+
+      const reels = grid[winningLines[0] ?? 1] || grid[1];
+      let nextCash = Number((userState.cash - bet + payout).toFixed(2));
+      nextCash = Math.max(0, nextCash);
 
       const updatedUser = await saveAuthoritativeUser(
         user.userId,
@@ -703,7 +723,9 @@ export async function processArcadeWager(
 
       return {
         game: "slots",
+        grid,
         reels,
+        winningLines,
         matchCount,
         payout,
         profit: payout - bet,

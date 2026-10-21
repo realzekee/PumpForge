@@ -65,7 +65,6 @@ class AuthoritativeCoinStore {
           continue;
         }
 
-        // Match against existing coin by id, coinId, or symbol
         let canonicalId = docId;
         const matchedInit = INITIAL_COINS.find(
           (ic) =>
@@ -107,7 +106,6 @@ class AuthoritativeCoinStore {
         this.coins.set(canonicalId, merged);
       }
 
-      // Seed any missing default coins into Appwrite so they persist across serverless instances
       for (const initCoin of INITIAL_COINS) {
         if (!foundIds.has(initCoin.id) && !this.deletedCoinIds.has(initCoin.id)) {
           const current = this.coins.get(initCoin.id) || initCoin;
@@ -276,14 +274,27 @@ const userHintsMap = new Map<string, ClientUserHint>();
 export function hydrateUserHintsFromHeaders(userId: string, hint: ClientUserHint) {
   if (!userId) return;
   const existing = userHintsMap.get(userId) || {};
-  userHintsMap.set(userId, {
+  const nextHint: ClientUserHint = {
     cash: typeof hint.cash === "number" && !isNaN(hint.cash) && hint.cash >= 0 ? hint.cash : existing.cash,
     gems: typeof hint.gems === "number" && !isNaN(hint.gems) && hint.gems >= 0 ? hint.gems : existing.gems,
     totalProfit: typeof hint.totalProfit === "number" && !isNaN(hint.totalProfit) ? hint.totalProfit : existing.totalProfit,
     tradesCount: typeof hint.tradesCount === "number" && !isNaN(hint.tradesCount) && hint.tradesCount >= 0 ? hint.tradesCount : existing.tradesCount,
     updatedAt: typeof hint.updatedAt === "number" && !isNaN(hint.updatedAt) ? hint.updatedAt : existing.updatedAt,
     username: hint.username || existing.username,
-  });
+  };
+  userHintsMap.set(userId, nextHint);
+
+  // If the client provides a timestamped balance hint that is newer than or equal to this serverless instance's cache,
+  // synchronize the in-memory cache immediately so different Vercel instances never return stale/random balances on refresh.
+  const cached = userCache.get(userId);
+  if (cached && nextHint.updatedAt && nextHint.updatedAt >= cached.updatedAt - 2000) {
+    if (typeof nextHint.cash === "number") cached.cash = nextHint.cash;
+    if (typeof nextHint.gems === "number") cached.gems = nextHint.gems;
+    if (typeof nextHint.totalProfit === "number") cached.totalProfit = nextHint.totalProfit;
+    if (typeof nextHint.tradesCount === "number") cached.tradesCount = nextHint.tradesCount;
+    cached.updatedAt = Math.max(cached.updatedAt, nextHint.updatedAt);
+    userCache.set(userId, cached);
+  }
 }
 
 let nextPlayerId = 1;
@@ -321,17 +332,22 @@ export function computeUserBadges(user: UserStateCache): string[] {
   return badges;
 }
 
+const DEFAULT_STARTING_CASH = 5000.0;
+const DEFAULT_STARTING_GEMS = 50;
+
 /**
  * Fetches authoritative user state from Appwrite or cache.
- * Never overwrites a newer dirty in-memory state or newer client-verified balance with a stale Appwrite read.
+ * Never overwrites a newer client-verified balance or in-memory state with a stale Appwrite read.
  */
 export async function getAuthoritativeUser(userId: string, jwt?: string, defaultName?: string): Promise<UserStateCache> {
   const cached = userCache.get(userId);
   const hint = userHintsMap.get(userId);
 
-  // If cached state has unsynced mutations on this instance or was updated within the last 5 seconds, trust it immediately
-  if (cached && (cached.dirty || Date.now() - cached.updatedAt < 5000)) {
-    return cached;
+  // If cached state was recently updated on this instance and is at least as fresh as client hints, return immediately
+  if (cached && Date.now() - cached.updatedAt < 5000) {
+    if (!hint?.updatedAt || cached.updatedAt >= hint.updatedAt) {
+      return cached;
+    }
   }
 
   const isOwnerAccount = userId === "admin_realzekeee";
@@ -375,46 +391,49 @@ export async function getAuthoritativeUser(userId: string, jwt?: string, default
       } catch (_) {}
     }
 
-    // Determine whether our cached state or client hint is newer than the Appwrite document
-    // (e.g., if a previous serverless instance updated the balance or if Appwrite writes were restricted)
-    const useCachedBalance = Boolean(cached && (cached.dirty || (docUpdatedAt > 0 && cached.updatedAt > docUpdatedAt + 2000)));
-    const useHintBalance = Boolean(
-      !useCachedBalance &&
-        hint &&
+    // Prefer whichever state has the newest timestamp so serverless cold starts or failed Appwrite writes never randomize balances
+    const hasFreshHint = Boolean(
+      hint &&
         typeof hint.cash === "number" &&
         hint.updatedAt &&
-        (!docUpdatedAt || hint.updatedAt > docUpdatedAt + 2000)
+        (!docUpdatedAt || hint.updatedAt >= docUpdatedAt - 2000) &&
+        (!cached || hint.updatedAt >= cached.updatedAt - 2000)
+    );
+    const hasFreshCache = Boolean(
+      !hasFreshHint &&
+        cached &&
+        (cached.dirty || (docUpdatedAt > 0 && cached.updatedAt > docUpdatedAt + 2000))
     );
 
-    const resolvedCash = useCachedBalance
-      ? cached!.cash
-      : useHintBalance
+    const resolvedCash = hasFreshHint
       ? Number(hint!.cash)
-      : Number(doc.cash ?? cached?.cash ?? hint?.cash ?? (isOwnerAccount ? 100000.0 : 5000.0));
+      : hasFreshCache
+      ? cached!.cash
+      : Number(doc.cash ?? cached?.cash ?? hint?.cash ?? DEFAULT_STARTING_CASH);
 
-    const resolvedGems = useCachedBalance
-      ? cached!.gems
-      : useHintBalance && typeof hint!.gems === "number"
+    const resolvedGems = hasFreshHint && typeof hint!.gems === "number"
       ? Number(hint!.gems)
-      : Number(doc.gems ?? cached?.gems ?? hint?.gems ?? (isOwnerAccount ? 5000 : 90));
+      : hasFreshCache
+      ? cached!.gems
+      : Number(doc.gems ?? cached?.gems ?? hint?.gems ?? DEFAULT_STARTING_GEMS);
 
-    const resolvedProfit = useCachedBalance
-      ? cached!.totalProfit
-      : useHintBalance && typeof hint!.totalProfit === "number"
+    const resolvedProfit = hasFreshHint && typeof hint!.totalProfit === "number"
       ? Number(hint!.totalProfit)
+      : hasFreshCache
+      ? cached!.totalProfit
       : Number(doc.totalProfit ?? cached?.totalProfit ?? hint?.totalProfit ?? 0);
 
-    const resolvedTrades = useCachedBalance
-      ? cached!.tradesCount
-      : useHintBalance && typeof hint!.tradesCount === "number"
+    const resolvedTrades = hasFreshHint && typeof hint!.tradesCount === "number"
       ? Number(hint!.tradesCount)
+      : hasFreshCache
+      ? cached!.tradesCount
       : Number(doc.tradesCount ?? doc.allTimeTrades ?? cached?.tradesCount ?? hint?.tradesCount ?? 0);
 
     const state: UserStateCache = {
       userId,
       docId,
       playerId: assignedPlayerId,
-      username: doc.username || doc.name || cached?.username || defaultName || hint?.username || (isOwnerAccount ? "Zeke (Owner)" : `Player_${assignedPlayerId}`),
+      username: doc.username || doc.name || cached?.username || defaultName || hint?.username || (isOwnerAccount ? "Zeke" : `Player_${assignedPlayerId}`),
       handle: doc.handle || cached?.handle || (isOwnerAccount ? "@zeke" : `@user${assignedPlayerId}`),
       title: doc.title || cached?.title || (isOwnerAccount ? "Founder & Owner" : "Member"),
       isPremium: doc.isPremium !== undefined ? !!doc.isPremium : (cached?.isPremium ?? isOwnerAccount),
@@ -424,7 +443,7 @@ export async function getAuthoritativeUser(userId: string, jwt?: string, default
       tradesCount: resolvedTrades,
       coinsCreatedCount: Number(doc.coinsCreatedCount ?? cached?.coinsCreatedCount ?? 0),
       totalProfit: resolvedProfit,
-      nameColor: doc.nameColor || doc.equippedColor || cached?.nameColor || (isOwnerAccount ? "text-rose-500 font-extrabold text-glow tracking-wider" : "text-zinc-400 font-extrabold"),
+      nameColor: doc.nameColor || doc.equippedColor || cached?.nameColor || (isOwnerAccount ? "text-emerald-400 font-bold" : "text-zinc-300 font-bold"),
       dailyStreak: Number(doc.dailyStreak ?? cached?.dailyStreak ?? 1),
       lastDailyRewardClaim: doc.lastDailyRewardClaim || cached?.lastDailyRewardClaim || "",
       predictionWins: Number(doc.predictionWins ?? cached?.predictionWins ?? 0),
@@ -434,23 +453,35 @@ export async function getAuthoritativeUser(userId: string, jwt?: string, default
       suspendedUntil: doc.suspendedUntil || null,
       createdAt: doc.$createdAt || cached?.createdAt || new Date().toISOString(),
       updatedAt: Math.max(Date.now(), cached?.updatedAt || 0, hint?.updatedAt || 0),
-      dirty: useCachedBalance || useHintBalance,
+      dirty: hasFreshHint || hasFreshCache,
     };
 
     userCache.set(userId, state);
+
+    // If client hint had newer balance than DB, asynchronously sync DB to match
+    if (hasFreshHint) {
+      databases.updateDocument("pumpforge", "users", docId, {
+        cash: Number(Number(resolvedCash).toFixed(2)),
+        gems: Math.floor(Number(resolvedGems)),
+      }).catch(() => {});
+    }
+
     return state;
   } catch (err) {
-    // If we already have an in-memory state on this instance, preserve it
     if (cached) {
+      if (hint && typeof hint.cash === "number" && (!hint.updatedAt || hint.updatedAt >= cached.updatedAt - 2000)) {
+        cached.cash = hint.cash;
+        if (typeof hint.gems === "number") cached.gems = hint.gems;
+      }
       cached.updatedAt = Date.now();
       return cached;
     }
 
     const assignedPlayerId = isOwnerAccount ? 1 : nextPlayerId++;
-    const fallbackUsername = defaultName || hint?.username || (isOwnerAccount ? "Zeke (Owner)" : `Player_${assignedPlayerId}`);
+    const fallbackUsername = defaultName || hint?.username || (isOwnerAccount ? "Zeke" : `Player_${assignedPlayerId}`);
     const fallbackHandle = isOwnerAccount ? "@zeke" : (`@${fallbackUsername.toLowerCase().replace(/[^a-z0-9]/g, "")}` || `@user${assignedPlayerId}`);
-    const initialCash = typeof hint?.cash === "number" && !isNaN(hint.cash) ? hint.cash : (isOwnerAccount ? 100000.0 : 5000.0);
-    const initialGems = typeof hint?.gems === "number" && !isNaN(hint.gems) ? hint.gems : (isOwnerAccount ? 5000 : 90);
+    const initialCash = typeof hint?.cash === "number" && !isNaN(hint.cash) ? hint.cash : DEFAULT_STARTING_CASH;
+    const initialGems = typeof hint?.gems === "number" && !isNaN(hint.gems) ? hint.gems : DEFAULT_STARTING_GEMS;
 
     const initial: UserStateCache = {
       userId,
@@ -466,7 +497,7 @@ export async function getAuthoritativeUser(userId: string, jwt?: string, default
       tradesCount: typeof hint?.tradesCount === "number" ? hint.tradesCount : 0,
       coinsCreatedCount: 0,
       totalProfit: typeof hint?.totalProfit === "number" ? hint.totalProfit : 0,
-      nameColor: isOwnerAccount ? "text-rose-500 font-extrabold text-glow tracking-wider" : "text-zinc-400 font-bold",
+      nameColor: isOwnerAccount ? "text-emerald-400 font-bold" : "text-zinc-300 font-bold",
       dailyStreak: 1,
       lastDailyRewardClaim: "",
       predictionWins: 0,
@@ -477,7 +508,6 @@ export async function getAuthoritativeUser(userId: string, jwt?: string, default
     };
     userCache.set(userId, initial);
 
-    // Bootstrap in Appwrite via server key
     try {
       const serverDatabases = getDatabases(jwt);
       await serverDatabases.createDocument(
@@ -504,7 +534,7 @@ export async function getAuthoritativeUser(userId: string, jwt?: string, default
       );
       initial.dirty = false;
     } catch (createErr) {
-      console.warn("Could not create initial user in Appwrite DB (in-memory cached):", createErr);
+      // Cached in memory
     }
 
     return initial;
@@ -574,32 +604,31 @@ export async function saveAuthoritativeUser(
               playerId: updated.playerId || 1,
               username: String(updated.username || "Player").slice(0, 64),
               handle: String(updated.handle || "@player").slice(0, 64),
-              cash: Number(Number(updated.cash ?? 5000).toFixed(2)),
-              gems: Math.floor(Number(updated.gems ?? 90)),
+              cash: Number(Number(updated.cash ?? DEFAULT_STARTING_CASH).toFixed(2)),
+              gems: Math.floor(Number(updated.gems ?? DEFAULT_STARTING_GEMS)),
               prestigeLevel: Math.floor(Number(updated.prestigeLevel ?? 0)),
               totalProfit: Number(Number(updated.totalProfit ?? 0).toFixed(2)),
               tradesCount: Math.floor(Number(updated.tradesCount ?? 0)),
               coinsCreatedCount: Math.floor(Number(updated.coinsCreatedCount ?? 0)),
               dailyStreak: Math.max(1, Math.floor(Number(updated.dailyStreak ?? 1))),
               lastDailyRewardClaim: String(updated.lastDailyRewardClaim || "").slice(0, 64),
-              nameColor: String(updated.nameColor || "text-zinc-400 font-bold").slice(0, 64),
+              nameColor: String(updated.nameColor || "text-zinc-300 font-bold").slice(0, 64),
               title: String(updated.title || "Member").slice(0, 64),
             },
             [Permission.read(Role.any())]
           );
           updated.dirty = false;
         } else {
-          // Failsafe: guarantee core cash & gems balance persistence even if an optional field failed
           await databases.updateDocument("pumpforge", "users", targetDocId, {
-            cash: Number(Number(updated.cash ?? 5000).toFixed(2)),
-            gems: Math.floor(Number(updated.gems ?? 90)),
+            cash: Number(Number(updated.cash ?? DEFAULT_STARTING_CASH).toFixed(2)),
+            gems: Math.floor(Number(updated.gems ?? DEFAULT_STARTING_GEMS)),
           });
           updated.dirty = false;
         }
       }
     }
   } catch (err: any) {
-    console.warn("Could not sync user to Appwrite directly (cached state preserved):", err?.message || err);
+    // Cached state preserved
   }
 
   userCache.set(userId, updated);
@@ -645,13 +674,13 @@ export async function getPublicUserProfile(identifier: string) {
           playerId: doc.playerId ? Number(doc.playerId) : 1,
           username: doc.username || doc.name || `Player_${doc.playerId || 1}`,
           handle: doc.handle || `@user${doc.playerId || 1}`,
-          cash: Number(doc.cash ?? 5000),
-          gems: Number(doc.gems ?? 100),
+          cash: Number(doc.cash ?? DEFAULT_STARTING_CASH),
+          gems: Number(doc.gems ?? DEFAULT_STARTING_GEMS),
           prestigeLevel: Number(doc.prestigeLevel ?? 0),
           tradesCount: Number(doc.tradesCount ?? doc.allTimeTrades ?? 0),
           coinsCreatedCount: Number(doc.coinsCreatedCount ?? 0),
           totalProfit: Number(doc.totalProfit ?? 0),
-          nameColor: doc.nameColor || doc.equippedColor || "text-zinc-400 font-extrabold",
+          nameColor: doc.nameColor || doc.equippedColor || "text-zinc-300 font-bold",
           dailyStreak: Number(doc.dailyStreak ?? 1),
           predictionWins: Number(doc.predictionWins ?? 0),
           rugPullsCount: Number(doc.rugPullsCount ?? 0),
@@ -666,13 +695,13 @@ export async function getPublicUserProfile(identifier: string) {
             playerId: doc.playerId ? Number(doc.playerId) : 1,
             username: doc.username || doc.name || `Player_${doc.playerId || 1}`,
             handle: doc.handle || `@user${doc.playerId || 1}`,
-            cash: Number(doc.cash ?? 5000),
-            gems: Number(doc.gems ?? 100),
+            cash: Number(doc.cash ?? DEFAULT_STARTING_CASH),
+            gems: Number(doc.gems ?? DEFAULT_STARTING_GEMS),
             prestigeLevel: Number(doc.prestigeLevel ?? 0),
             tradesCount: Number(doc.tradesCount ?? doc.allTimeTrades ?? 0),
             coinsCreatedCount: Number(doc.coinsCreatedCount ?? 0),
             totalProfit: Number(doc.totalProfit ?? 0),
-            nameColor: doc.nameColor || doc.equippedColor || "text-zinc-400 font-extrabold",
+            nameColor: doc.nameColor || doc.equippedColor || "text-zinc-300 font-bold",
             dailyStreak: Number(doc.dailyStreak ?? 1),
             predictionWins: Number(doc.predictionWins ?? 0),
             rugPullsCount: Number(doc.rugPullsCount ?? 0),
@@ -803,13 +832,13 @@ export async function getAllUsersList(jwt?: string): Promise<UserStateCache[]> {
         handle: doc.handle || `@user${doc.playerId || ""}`,
         title: doc.title || "Member",
         isPremium: !!doc.isPremium,
-        cash: Number(doc.cash ?? 5000),
-        gems: Number(doc.gems ?? 90),
+        cash: Number(doc.cash ?? DEFAULT_STARTING_CASH),
+        gems: Number(doc.gems ?? DEFAULT_STARTING_GEMS),
         prestigeLevel: Number(doc.prestigeLevel ?? 0),
         tradesCount: Number(doc.tradesCount ?? doc.allTimeTrades ?? 0),
         coinsCreatedCount: Number(doc.coinsCreatedCount ?? 0),
         totalProfit: Number(doc.totalProfit ?? 0),
-        nameColor: doc.nameColor || doc.equippedColor || "text-zinc-400 font-bold",
+        nameColor: doc.nameColor || doc.equippedColor || "text-zinc-300 font-bold",
         dailyStreak: Number(doc.dailyStreak ?? 1),
         lastDailyRewardClaim: doc.lastDailyRewardClaim || "",
         predictionWins: Number(doc.predictionWins ?? 0),
@@ -846,7 +875,6 @@ export async function getBroadcastsList(jwt?: string): Promise<any[]> {
   return list;
 }
 
-// Default Seed Polymarkets so m1, m2, m3 exist authoritatively
 const DEFAULT_SEED_POLYMARKETS = [
   {
     $id: "m1",
@@ -931,7 +959,6 @@ export function normalizePolymarketDoc(doc: any): any {
   };
 }
 
-// In-Memory Authoritative Polymarkets Store
 export const inMemoryPolymarkets: any[] = DEFAULT_SEED_POLYMARKETS.map(normalizePolymarketDoc);
 let polymarketsSeeded = false;
 
@@ -982,7 +1009,7 @@ export async function persistPolymarketToDatabase(market: any, jwt?: string) {
       }
     }
   } catch (e) {
-    // Non-fatal: inMemoryPolymarkets retains authoritative state
+    // Non-fatal
   }
 }
 
@@ -1004,7 +1031,6 @@ export async function getPolymarketsList(jwt?: string): Promise<any[]> {
       const norm = normalizePolymarketDoc(doc);
       foundIds.add(norm.id);
       const local = map.get(norm.id);
-      // If local in-memory state has a higher total pool (e.g. from a recent bet on this instance), keep higher pool
       if (local && (local.poolYes + local.poolNo > norm.poolYes + norm.poolNo || (local.resolved && !norm.resolved))) {
         map.set(norm.id, local);
       } else {
@@ -1028,7 +1054,6 @@ export async function getPolymarketsList(jwt?: string): Promise<any[]> {
   return Array.from(map.values());
 }
 
-// In-Memory Authoritative Trades Store
 export const inMemoryTrades: any[] = [];
 
 export function normalizeTradeDoc(doc: any): any {
@@ -1050,7 +1075,7 @@ export function normalizeTradeDoc(doc: any): any {
   const userName =
     doc.userName ||
     cachedUser?.username ||
-    (isOwner ? "Zeke (Owner)" : doc.userHandle || (doc.userId ? `Trader_${String(doc.userId).slice(0, 6)}` : "Trader"));
+    (isOwner ? "Zeke" : doc.userHandle || (doc.userId ? `Trader_${String(doc.userId).slice(0, 6)}` : "Trader"));
   const userHandle =
     doc.userHandle ||
     cachedUser?.handle ||
@@ -1122,7 +1147,7 @@ export async function getTradesList(options: { coinId?: string; limit?: number; 
       map.set(norm.id, norm);
     }
   } catch (e) {
-    // Non-fatal, use cached trades
+    // Non-fatal
   }
 
   let list = Array.from(map.values());
@@ -1141,7 +1166,6 @@ export async function getTradesList(options: { coinId?: string; limit?: number; 
   return list.slice(0, limit);
 }
 
-// In-Memory Authoritative Wagers Store
 export const inMemoryWagers: any[] = [];
 
 export function recordWagerLog(wager: any) {
@@ -1156,7 +1180,6 @@ export function recordWagerLog(wager: any) {
   }
 }
 
-// In-Memory Authoritative Holdings Store
 export const inMemoryHoldings: any[] = [];
 
 export function recordHoldingLog(holding: any) {
@@ -1217,7 +1240,7 @@ export async function getHoldingsList(options: { userId?: string; coinId?: strin
       }
     }
   } catch (e) {
-    // Non-fatal, use cached holdings
+    // Non-fatal
   }
 
   let filtered = Array.from(mergedMap.values()).filter((h) => Number(h.amount ?? h.tokenAmount ?? 0) > 0.00001);
@@ -1235,7 +1258,6 @@ export async function getHoldingsList(options: { userId?: string; coinId?: strin
   return filtered;
 }
 
-// In-Memory Authoritative Notifications Store
 export const inMemoryNotifications: any[] = [];
 
 export function recordNotification(notif: any) {

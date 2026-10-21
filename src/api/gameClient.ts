@@ -464,10 +464,14 @@ export async function apiGetPublicUserProfile(identifier: string) {
 // Server-Authoritative Admin Endpoints
 // ----------------------------------------------------
 
-export async function apiAdminResolveMarket(marketId: string, winningChoice: "YES" | "NO" | "CANCEL") {
+export async function apiAdminResolveMarket(
+  marketId: string,
+  winningChoice: "YES" | "NO" | "CANCEL",
+  extra?: { userBet?: { side: "YES" | "NO"; amount: number }; poolYes?: number; poolNo?: number }
+) {
   return request<any>("/api/admin/polymarket/resolve", {
     method: "POST",
-    body: JSON.stringify({ marketId, winningChoice }),
+    body: JSON.stringify({ marketId, winningChoice, ...(extra || {}) }),
   });
 }
 
@@ -628,8 +632,8 @@ export async function apiEmailLogin(payload: { email: string; password?: string;
     username: displayName,
     handle: "@" + displayName.toLowerCase().replace(/[^a-z0-9]/g, ""),
     title: isOwner ? "Founder & Owner" : "Member",
-    cash: isOwner ? 100000 : 5000,
-    gems: isOwner ? 5000 : 90,
+    cash: 5000,
+    gems: 50,
     prestigeLevel: isOwner ? 10 : 0,
     isAdmin: isOwner,
     isPremium: isOwner,
@@ -699,8 +703,8 @@ export async function apiQuickLogin(payload: { username: string; email?: string 
     username: cleanUsername,
     handle: "@" + cleanUsername.toLowerCase().replace(/[^a-z0-9]/g, ""),
     title: isOwner ? "Founder & Owner" : "Member",
-    cash: isOwner ? 100000 : 5000,
-    gems: isOwner ? 5000 : 90,
+    cash: 5000,
+    gems: 50,
     prestigeLevel: isOwner ? 10 : 0,
     isAdmin: isOwner,
     isPremium: isOwner,
@@ -755,8 +759,8 @@ export async function apiOAuthCallback(payload: { userId: string; secret?: strin
     username: cleanName,
     handle: "@" + cleanName.toLowerCase().replace(/[^a-z0-9]/g, ""),
     title: isOwner ? "Founder & Owner" : "Member",
-    cash: isOwner ? 100000 : 5000,
-    gems: isOwner ? 5000 : 90,
+    cash: 5000,
+    gems: 50,
     prestigeLevel: isOwner ? 10 : 0,
     isAdmin: isOwner,
     isPremium: isOwner,

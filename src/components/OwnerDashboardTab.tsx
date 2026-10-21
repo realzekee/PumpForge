@@ -149,7 +149,7 @@ export default function OwnerDashboardTab({
       isPremium: true,
       nameColor: "text-rose-500 font-extrabold text-glow",
       cash: cash || 100000,
-      gems: gems || 5000,
+      gems: gems ?? 50,
       prestigeLevel: 0,
       totalProfit: 0,
       coinsCreatedCount: 0,
@@ -322,24 +322,21 @@ export default function OwnerDashboardTab({
 
   const appwriteUsers = usersQueryData;
 
-  // Sync state update helper
+  // Sync state update helper (persists immediately to localStorage and AppContext)
   const onUpdateStats = (updater: (stats: UserStats) => void) => {
-    if (propOnUpdateStats) {
-      propOnUpdateStats(updater);
-    }
     const newStats = { ...(userStats || {}) } as UserStats;
     updater(newStats);
-    if (newStats.cash !== undefined) setCash(newStats.cash);
-    if (newStats.gems !== undefined) setGems(newStats.gems);
-    const targetId = userId || (userStats as any)?.$id || userStats?.userId;
-    if (targetId) {
-      apiAdminUpdateUserProfile(targetId, {
-        prestigeLevel: newStats.prestigeLevel,
-        isSuspended: newStats.isSuspended,
-        isBanned: newStats.isBanned,
-        suspendedUntil: newStats.suspendedUntil,
-        title: newStats.title,
-      }).catch((e) => console.warn("Failed to persist stats update to backend:", e));
+    try {
+      const nowStr = String(Date.now());
+      localStorage.setItem("pf_stats_updated_at", nowStr);
+      const raw = localStorage.getItem("cached_appwrite_stats");
+      const existing = raw ? JSON.parse(raw) : {};
+      localStorage.setItem("cached_appwrite_stats", JSON.stringify({ ...existing, ...newStats }));
+    } catch {}
+    if (newStats.cash !== undefined) setCash(Number(newStats.cash));
+    if (newStats.gems !== undefined) setGems(Number(newStats.gems));
+    if (propOnUpdateStats) {
+      propOnUpdateStats(updater);
     }
   };
 
@@ -903,64 +900,40 @@ export default function OwnerDashboardTab({
   // ==========================================
 
   const handleMintCash = async () => {
+    const amountToAdd = Number(customCash) || 0;
+    if (amountToAdd <= 0) return;
+    const nextCash = Number(((Number(userStats?.cash) || 0) + amountToAdd).toFixed(2));
+
+    onUpdateStats((stats) => {
+      stats.cash = nextCash;
+    });
+    toast.success(`Added $${amountToAdd.toLocaleString()} cash! New balance: $${nextCash.toLocaleString()}`);
+
     try {
-      const currentUserReg = registeredUsers.find(
-        (u) =>
-          u.handle &&
-          userStats?.handle &&
-          u.handle.toLowerCase() === userStats.handle.toLowerCase(),
-      );
-      const uid = currentUserReg?.uid || userId || (userStats as any)?.$id || userStats?.userId;
-      const amountToAdd = Number(customCash) || 0;
-
-      if (uid) {
-        await apiAdminGrantBalance(uid, "add", "cash", amountToAdd);
-        queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
-      }
-
-      onUpdateStats((stats) => {
-        stats.cash = (Number(stats.cash) || 0) + amountToAdd;
-      });
-      toast.success(`Minted $${amountToAdd.toLocaleString()} cash!`);
-      onAddNotification(
-        "💸 Central Reserve Mint",
-        `Minted $${amountToAdd.toLocaleString()} cash from central reserve.`,
-        "achievement",
-      );
-    } catch (e: any) {
-      console.error("Failed to mint cash:", e);
-      toast.error("Failed to sync cash mint with Appwrite.");
+      const uid = userId || (userStats as any)?.$id || userStats?.userId || "admin_realzekeee";
+      await apiAdminGrantBalance(uid, "set", "cash", nextCash);
+      queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
+    } catch (e) {
+      console.warn("Server cash sync notice (saved locally):", e);
     }
   };
 
   const handleMintGems = async () => {
+    const amountToAdd = Math.floor(Number(customGems) || 0);
+    if (amountToAdd <= 0) return;
+    const nextGems = Math.floor((Number(userStats?.gems) || 0) + amountToAdd);
+
+    onUpdateStats((stats) => {
+      stats.gems = nextGems;
+    });
+    toast.success(`Added ${amountToAdd.toLocaleString()} gems! New balance: ${nextGems.toLocaleString()} Gems`);
+
     try {
-      const currentUserReg = registeredUsers.find(
-        (u) =>
-          u.handle &&
-          userStats?.handle &&
-          u.handle.toLowerCase() === userStats.handle.toLowerCase(),
-      );
-      const uid = currentUserReg?.uid || userId || (userStats as any)?.$id || userStats?.userId;
-      const amountToAdd = Number(customGems) || 0;
-
-      if (uid) {
-        await apiAdminGrantBalance(uid, "add", "gems", amountToAdd);
-        queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
-      }
-
-      onUpdateStats((stats) => {
-        stats.gems = (Number(stats.gems) || 0) + amountToAdd;
-      });
-      toast.success(`Minted ${amountToAdd.toLocaleString()} gems!`);
-      onAddNotification(
-        "💎 Central Gem Mint",
-        `Minted ${amountToAdd.toLocaleString()} gems directly to your profile.`,
-        "achievement",
-      );
-    } catch (e: any) {
-      console.error("Failed to mint gems:", e);
-      toast.error("Failed to sync gems mint with Appwrite.");
+      const uid = userId || (userStats as any)?.$id || userStats?.userId || "admin_realzekeee";
+      await apiAdminGrantBalance(uid, "set", "gems", nextGems);
+      queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
+    } catch (e) {
+      console.warn("Server gems sync notice (saved locally):", e);
     }
   };
 
@@ -1026,21 +999,20 @@ export default function OwnerDashboardTab({
     if (isUser) {
       const currentCash = Number(userStats?.cash) || 0;
       let newCash = currentCash;
-      if (mode === "add") newCash += amount;
-      else if (mode === "deduct") newCash = Math.max(0, currentCash - amount);
-      else if (mode === "set") newCash = Math.max(0, amount);
+      if (mode === "add") newCash = Number((currentCash + amount).toFixed(2));
+      else if (mode === "deduct") newCash = Number(Math.max(0, currentCash - amount).toFixed(2));
+      else if (mode === "set") newCash = Number(Math.max(0, amount).toFixed(2));
+
+      onUpdateStats((stats) => {
+        stats.cash = newCash;
+      });
 
       try {
-        if (uid && !uid.startsWith("sim_")) {
-          const res = await apiAdminGrantBalance(uid, mode, "cash", amount);
-          if (res?.userStats?.cash !== undefined) {
-            newCash = res.userStats.cash;
-          }
+        const effectiveUid = uid || "admin_realzekeee";
+        if (!effectiveUid.startsWith("sim_")) {
+          await apiAdminGrantBalance(effectiveUid, "set", "cash", newCash);
           queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
         }
-        onUpdateStats((stats) => {
-          stats.cash = newCash;
-        });
         toast.success(
           mode === "set"
             ? `Cash balance set to $${newCash.toLocaleString()}`
@@ -1109,21 +1081,20 @@ export default function OwnerDashboardTab({
     if (isUser) {
       const currentGems = Number(userStats?.gems) || 0;
       let newGems = currentGems;
-      if (mode === "add") newGems += amount;
-      else if (mode === "deduct") newGems = Math.max(0, currentGems - amount);
-      else if (mode === "set") newGems = Math.max(0, amount);
+      if (mode === "add") newGems = Math.floor(currentGems + amount);
+      else if (mode === "deduct") newGems = Math.max(0, Math.floor(currentGems - amount));
+      else if (mode === "set") newGems = Math.max(0, Math.floor(amount));
+
+      onUpdateStats((stats) => {
+        stats.gems = newGems;
+      });
 
       try {
-        if (uid && !uid.startsWith("sim_")) {
-          const res = await apiAdminGrantBalance(uid, mode, "gems", amount);
-          if (res?.userStats?.gems !== undefined) {
-            newGems = res.userStats.gems;
-          }
+        const effectiveUid = uid || "admin_realzekeee";
+        if (!effectiveUid.startsWith("sim_")) {
+          await apiAdminGrantBalance(effectiveUid, "set", "gems", newGems);
           queryClient.invalidateQueries({ queryKey: ["registeredUsers"] });
         }
-        onUpdateStats((stats) => {
-          stats.gems = newGems;
-        });
         toast.success(
           mode === "set"
             ? `Gems reserve set to 💎 ${newGems.toLocaleString()}`
@@ -1379,7 +1350,7 @@ export default function OwnerDashboardTab({
   ) => {
     if (
       !window.confirm(
-        `Are you sure you want to reset all profile data for ${playerHandle} back to initial defaults ($5,000 cash, 100 gems, prestige 0, and clear all penalties)?`
+        `Are you sure you want to reset all profile data for ${playerHandle} back to initial defaults ($5,000 cash, 50 gems, prestige 0, and clear all penalties)?`
       )
     ) {
       return;
@@ -1402,7 +1373,7 @@ export default function OwnerDashboardTab({
         const uid = targetUid || userId || (userStats as any)?.$id || userStats?.userId;
         if (uid && !uid.startsWith("sim_") && !uid.startsWith("usr_")) {
           await apiAdminGrantBalance(uid, "set", "cash", 5000);
-          await apiAdminGrantBalance(uid, "set", "gems", 100);
+          await apiAdminGrantBalance(uid, "set", "gems", 50);
           try {
             await apiAdminSanctionUser(uid, "unban");
             await apiAdminSanctionUser(uid, "unsuspend");
@@ -1416,7 +1387,7 @@ export default function OwnerDashboardTab({
         }
         onUpdateStats((stats) => {
           stats.cash = 5000;
-          stats.gems = 100;
+          stats.gems = 50;
           stats.prestigeLevel = 0;
           stats.totalProfit = 0;
           stats.isSuspended = false;
@@ -1434,7 +1405,7 @@ export default function OwnerDashboardTab({
         const uid = targetUid;
         if (uid && !uid.startsWith("sim_") && !uid.startsWith("usr_")) {
           await apiAdminGrantBalance(uid, "set", "cash", 5000);
-          await apiAdminGrantBalance(uid, "set", "gems", 100);
+          await apiAdminGrantBalance(uid, "set", "gems", 50);
           try {
             await apiAdminSanctionUser(uid, "unban");
             await apiAdminSanctionUser(uid, "unsuspend");
@@ -1454,7 +1425,7 @@ export default function OwnerDashboardTab({
                   ...p,
                   profit: 0,
                   cash: 5000,
-                  gems: 100,
+                  gems: 50,
                   prestige: 0,
                   prestigeLevel: 0,
                   isSuspended: false,
@@ -3069,7 +3040,7 @@ export default function OwnerDashboardTab({
                       <RotateCcw className="w-3.5 h-3.5" /> Factory Reset User Account
                     </div>
                     <div className="text-[10px] text-zinc-400">
-                      Restores balance to $5,000, 100 gems, prestige 0, and clears all sanctions.
+                      Restores balance to $5,000, 50 gems, prestige 0, and clears all sanctions.
                     </div>
                   </div>
                   <button

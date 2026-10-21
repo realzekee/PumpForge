@@ -31,6 +31,7 @@ export function getNodeAppwriteDatabases(jwt?: string) {
 
 /**
  * Core internal coinflip logic executed inside an acquired lock.
+ * Strictly pays 2.00x (betAmount * 2) on win!
  */
 export async function executeCoinflipCore(
   user: AuthenticatedUser,
@@ -59,12 +60,13 @@ export async function executeCoinflipCore(
   }
 
   const won = resultSide === normalizedSide;
-  const payout = won ? Number((betAmount * 1.9).toFixed(2)) : 0;
-  const profit = Number((won ? payout - betAmount : -betAmount).toFixed(2));
-  const nextCash = Number(Math.max(0, userCash + profit).toFixed(2));
+  // Exact 2x payout on win: deduct betAmount, add betAmount * 2 on win => net +betAmount
+  const payout = won ? Number((betAmount * 2).toFixed(2)) : 0;
+  const profit = Number((won ? betAmount : -betAmount).toFixed(2));
+  const nextCash = Number(Math.max(0, userCash - betAmount + payout).toFixed(2));
   const nextTotalProfit = Number(((userState.totalProfit || 0) + profit).toFixed(2));
 
-  // 2. Commit authoritative user balance update (with dirty-cache and schema-adaptation protection)
+  // 2. Commit authoritative user balance update
   const updatedUser = await saveAuthoritativeUser(
     user.userId,
     {

@@ -43,6 +43,7 @@ import {
 import { INITIAL_COINS } from "./data/memeCoins";
 import { getDeletedCoins, getStoredCoinOverrides, saveStoredCoinOverride } from "./utils/userMetaStorage";
 import { formatErrorMessage } from "./utils/formatError";
+import { playSound } from "./utils/sound";
 import {
   Gift,
   Sparkles,
@@ -410,7 +411,7 @@ export default function App() {
       isPremium: false,
       nameColor: "text-zinc-400 font-extrabold",
       cash: 5000.0,
-      gems: 90,
+      gems: 50,
       prestigeLevel: 0,
       totalProfit: 0,
       coinsCreatedCount: 0,
@@ -921,13 +922,28 @@ export default function App() {
               safeStorage.setItem("cached_appwrite_user", JSON.stringify(u));
               localStorage.setItem("pf_session_valid", "true");
               localStorage.setItem("pf_fallback_userId", uid);
-              if (meRes.stats) {
-                safeStorage.setItem("cached_appwrite_stats", JSON.stringify(meRes.stats));
+              let mergedStats = meRes.stats;
+              try {
+                const existingStatsRaw = safeStorage.getItem("cached_appwrite_stats");
+                if (existingStatsRaw) {
+                  const existingStats = JSON.parse(existingStatsRaw);
+                  if (existingStats && typeof existingStats.cash === "number") {
+                    mergedStats = {
+                      ...(meRes.stats || {}),
+                      ...existingStats,
+                      cash: Number(existingStats.cash),
+                      gems: typeof existingStats.gems === "number" ? Number(existingStats.gems) : Number(meRes.stats?.gems ?? 50),
+                    };
+                  }
+                }
+              } catch {}
+              if (mergedStats) {
+                safeStorage.setItem("cached_appwrite_stats", JSON.stringify(mergedStats));
               }
               if (active) {
                 setCurrentUser(u);
-                if (meRes.stats) {
-                  setUserStats(meRes.stats);
+                if (mergedStats) {
+                  setUserStats(mergedStats);
                   setIsStatsLoaded(true);
                 }
                 setIsLoading(false);
@@ -1030,8 +1046,8 @@ export default function App() {
               }
               if (!profileDoc) {
                 profileDoc = {
-                  cash: isOwnerEmail ? 100000.0 : 5000.0,
-                  gems: isOwnerEmail ? 5000 : 90,
+                  cash: 5000.0,
+                  gems: 50,
                   prestigeLevel: 0,
                   totalProfit: 0.0,
                   tradesCount: 0,
@@ -1048,17 +1064,22 @@ export default function App() {
             displayName: finalUsername,
           };
 
+          let localCachedStats: any = null;
+          try {
+            const rawLocal = safeStorage.getItem("cached_appwrite_stats");
+            if (rawLocal) localCachedStats = JSON.parse(rawLocal);
+          } catch {}
           const finalUserStats = {
-            username: finalUsername,
-            handle: finalHandle,
-            title: isOwnerEmail ? "Owner" : "Member",
+            username: localCachedStats?.username || finalUsername,
+            handle: localCachedStats?.handle || finalHandle,
+            title: localCachedStats?.title || (isOwnerEmail ? "Owner" : "Member"),
             email: user.email || "",
             isPremium: isOwnerEmail,
-            nameColor: isOwnerEmail
-              ? "text-rose-500 font-extrabold text-glow tracking-wider"
-              : "text-zinc-400 font-bold",
-            cash: Number(profileDoc.cash ?? 5000.0),
-            gems: parseInt(String(profileDoc.gems ?? 90), 10),
+            nameColor: localCachedStats?.nameColor || (isOwnerEmail
+              ? "text-emerald-400 font-bold"
+              : "text-zinc-300 font-bold"),
+            cash: typeof localCachedStats?.cash === "number" ? Number(localCachedStats.cash) : Number(profileDoc.cash ?? 5000.0),
+            gems: typeof localCachedStats?.gems === "number" ? Number(localCachedStats.gems) : parseInt(String(profileDoc.gems ?? 50), 10),
             prestigeLevel: parseInt(String(profileDoc.prestigeLevel ?? 0), 10),
             totalProfit: profileDoc.totalProfit || profileDoc.total_value || 0.0,
             coinsCreatedCount: profileDoc.coins ?? 0.0,
@@ -1172,7 +1193,7 @@ export default function App() {
             isPremium: false,
             nameColor: "text-zinc-400 font-extrabold",
             cash: 5000.0,
-            gems: 90,
+            gems: 50,
             prestigeLevel: 0,
             totalProfit: 0,
             coinsCreatedCount: 0,
@@ -1252,7 +1273,7 @@ export default function App() {
       isPremium: false,
       nameColor: "text-zinc-400 font-extrabold",
       cash: 5000.0,
-      gems: 90,
+      gems: 50,
       prestigeLevel: 0,
       totalProfit: 0,
       coinsCreatedCount: 0,
@@ -2157,8 +2178,16 @@ export default function App() {
       }
     }
 
+    const preTradeCash = Number(userStats.cash) || 0;
+    const reqPromise = apiTrade(coin.id, type, effectiveAmountCoins);
+    if (type === "BUY") {
+      const immediateBuyCash = Number(Math.max(0, preTradeCash - totalUsdVal).toFixed(2));
+      setContextCash(immediateBuyCash);
+      setUserStats((prev) => ({ ...prev, cash: immediateBuyCash }));
+    }
+    playSound("trade");
     try {
-      const res: any = await apiTrade(coin.id, type, effectiveAmountCoins);
+      const res: any = await reqPromise;
       const executedCoins = Number(res.amountCoins ?? effectiveAmountCoins);
       const executedCost = Number(res.totalCost ?? executedCoins * coin.price * 1.005);
       const executedPayout = Number(res.netPayout ?? executedCoins * coin.price * 0.995);
@@ -2474,17 +2503,32 @@ export default function App() {
       return;
     }
 
+    const preBetCash = Number(userStats.cash) || 0;
+    const reqPromise = apiPolymarketBet(marketId, side, amount);
+    const immediateCash = Number(Math.max(0, preBetCash - amount).toFixed(2));
+    playSound("bet");
+    setContextCash(immediateCash);
+    setUserStats((prev) => {
+      const next = { ...prev, cash: immediateCash };
+      localStorage.setItem("pf_stats_updated_at", String(Date.now()));
+      safeStorage.setItem("cached_appwrite_stats", JSON.stringify(next));
+      return next;
+    });
+
     try {
-      const res = await apiPolymarketBet(marketId, side, amount);
-      if (res.userStats && res.userStats.cash !== undefined) {
-        const nextCash = Number(res.userStats.cash);
-        setContextCash(nextCash);
-        setUserStats((prev) => {
-          const next = { ...prev, cash: nextCash };
-          safeStorage.setItem("cached_appwrite_stats", JSON.stringify(next));
-          return next;
-        });
-      }
+      const res = await reqPromise;
+      const resolvedCash =
+        res.userStats && res.userStats.cash !== undefined
+          ? Number(res.userStats.cash)
+          : immediateCash;
+      setContextCash(resolvedCash);
+      setUserStats((prev) => {
+        const next = { ...prev, cash: resolvedCash };
+        localStorage.setItem("pf_stats_updated_at", String(Date.now()));
+        safeStorage.setItem("cached_appwrite_stats", JSON.stringify(next));
+        return next;
+      });
+      playSound("trade");
 
       setMarkets((prev) => {
         const nextMarkets = prev.map((m) => {
@@ -2784,7 +2828,7 @@ export default function App() {
   }
 
   const handleHardResetGame = async () => {
-    setUserStats(prev => ({ ...prev, cash: 5000, gems: 0, coinsCreatedCount: 0, totalProfit: 0, tradesCount: 0, prestigeLevel: 0 }));
+    setUserStats(prev => ({ ...prev, cash: 5000, gems: 50, coinsCreatedCount: 0, totalProfit: 0, tradesCount: 0, prestigeLevel: 0 }));
     setHoldings([]);
     setUserBets({});
     toast.success("Game reset to defaults.");
@@ -2895,14 +2939,7 @@ export default function App() {
   };
 
   return (
-    <div className="flex min-h-screen bg-[#09090d] text-zinc-100 flex-col md:flex-row relative selection:bg-rose-500/30 selection:text-white overflow-hidden">
-      {/* Dynamic ambient luminous backdrop for genuine glass refraction */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0" aria-hidden="true">
-        <div className="absolute -top-[20%] -left-[10%] w-[55vw] h-[55vw] max-w-[700px] max-h-[700px] rounded-full bg-gradient-to-br from-rose-600/12 via-pink-600/5 to-transparent blur-3xl" />
-        <div className="absolute top-[35%] -right-[10%] w-[50vw] h-[50vw] max-w-[650px] max-h-[650px] rounded-full bg-gradient-to-bl from-indigo-600/10 via-purple-600/5 to-transparent blur-3xl" />
-        <div className="absolute -bottom-[20%] left-[25%] w-[45vw] h-[45vw] max-w-[600px] max-h-[600px] rounded-full bg-gradient-to-t from-emerald-600/8 via-teal-600/4 to-transparent blur-3xl" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(120,119,198,0.08),rgba(255,255,255,0))]" />
-      </div>
+    <div className="flex min-h-screen bg-[#0d0d10] text-zinc-100 flex-col md:flex-row relative selection:bg-emerald-500/30 selection:text-white overflow-x-hidden">
 
       <Sidebar
         userStats={userStats}
@@ -2923,7 +2960,7 @@ export default function App() {
         onUpdateStats={handleUpdateStats}
       />
 
-      <main className="flex-1 min-w-0 p-5 md:p-8 max-w-7xl mx-auto flex flex-col gap-6 overflow-x-hidden relative z-10">
+      <main className="flex-1 min-w-0 w-full p-3.5 sm:p-5 md:p-7 max-w-6xl mx-auto flex flex-col gap-5 overflow-x-hidden relative z-10">
         {/* Real-time Synced Broadcast Banners */}
         {broadcasts
           .filter(
@@ -3321,7 +3358,7 @@ export default function App() {
                 );
               }
 
-              return <PolymarketAdminTab markets={markets} setMarkets={setMarkets} />;
+              return <PolymarketAdminTab markets={markets} setMarkets={setMarkets} onUpdateStats={handleUpdateStats} />;
             })()}
           />
 

@@ -13,6 +13,7 @@ import {
 import { UserStats } from "../types";
 import { useAppContext } from "../context/AppContext";
 import { apiShopBuy } from "../api/gameClient";
+import { playSound } from "../utils/sound";
 
 interface ShopProps {
   userStats: UserStats;
@@ -266,7 +267,9 @@ export default function ShopTab({
     }
 
     try {
+      playSound("bet");
       const res = await apiShopBuy("color", { colorClass, costGems: cost, cost });
+      playSound("win");
       if (res.userStats) {
         if (setGems && res.userStats.gems !== undefined) {
           setGems(Number(res.userStats.gems));
@@ -300,6 +303,16 @@ export default function ShopTab({
     }
 
     setUnboxingCrate(crate.id);
+    playSound("bet");
+    const preGems = Number(userStats.gems) || 0;
+    const deductedGems = Math.max(0, preGems - crate.costGems);
+    if (setGems) setGems(deductedGems);
+    onUpdateStats((stats) => {
+      stats.gems = deductedGems;
+    });
+    [150, 320, 500, 720, 960, 1250, 1600].forEach((ms) => {
+      setTimeout(() => playSound("spin"), ms);
+    });
 
     // Open modal immediately with placeholder rolling cards while awaiting authoritative server roll
     const previewItems = buildLootReel(
@@ -362,6 +375,7 @@ export default function ShopTab({
           });
         }
 
+        playSound("win");
         setUnboxModalState((prev) =>
           prev ? { ...prev, phase: "revealed" } : null,
         );

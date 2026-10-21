@@ -923,14 +923,24 @@ var userHintsMap = /* @__PURE__ */ new Map();
 function hydrateUserHintsFromHeaders(userId, hint) {
   if (!userId) return;
   const existing = userHintsMap.get(userId) || {};
-  userHintsMap.set(userId, {
+  const nextHint = {
     cash: typeof hint.cash === "number" && !isNaN(hint.cash) && hint.cash >= 0 ? hint.cash : existing.cash,
     gems: typeof hint.gems === "number" && !isNaN(hint.gems) && hint.gems >= 0 ? hint.gems : existing.gems,
     totalProfit: typeof hint.totalProfit === "number" && !isNaN(hint.totalProfit) ? hint.totalProfit : existing.totalProfit,
     tradesCount: typeof hint.tradesCount === "number" && !isNaN(hint.tradesCount) && hint.tradesCount >= 0 ? hint.tradesCount : existing.tradesCount,
     updatedAt: typeof hint.updatedAt === "number" && !isNaN(hint.updatedAt) ? hint.updatedAt : existing.updatedAt,
     username: hint.username || existing.username
-  });
+  };
+  userHintsMap.set(userId, nextHint);
+  const cached = userCache.get(userId);
+  if (cached && nextHint.updatedAt && nextHint.updatedAt >= cached.updatedAt - 2e3) {
+    if (typeof nextHint.cash === "number") cached.cash = nextHint.cash;
+    if (typeof nextHint.gems === "number") cached.gems = nextHint.gems;
+    if (typeof nextHint.totalProfit === "number") cached.totalProfit = nextHint.totalProfit;
+    if (typeof nextHint.tradesCount === "number") cached.tradesCount = nextHint.tradesCount;
+    cached.updatedAt = Math.max(cached.updatedAt, nextHint.updatedAt);
+    userCache.set(userId, cached);
+  }
 }
 var nextPlayerId = 1;
 var isPlayerCounterInitialized = false;
@@ -967,8 +977,10 @@ function computeUserBadges(user) {
 async function getAuthoritativeUser(userId, jwt, defaultName) {
   const cached = userCache.get(userId);
   const hint = userHintsMap.get(userId);
-  if (cached && (cached.dirty || Date.now() - cached.updatedAt < 5e3)) {
-    return cached;
+  if (cached && Date.now() - cached.updatedAt < 5e3) {
+    if (!hint?.updatedAt || cached.updatedAt >= hint.updatedAt) {
+      return cached;
+    }
   }
   const isOwnerAccount = userId === "admin_realzekeee";
   const databases = getDatabases(jwt);
@@ -1007,19 +1019,21 @@ async function getAuthoritativeUser(userId, jwt, defaultName) {
         });
       } catch (_) {}
     }
-    const useCachedBalance = Boolean(cached && (cached.dirty || docUpdatedAt > 0 && cached.updatedAt > docUpdatedAt + 2e3));
-    const useHintBalance = Boolean(
-      !useCachedBalance && hint && typeof hint.cash === "number" && hint.updatedAt && (!docUpdatedAt || hint.updatedAt > docUpdatedAt + 2e3)
+    const hasFreshHint = Boolean(
+      hint && typeof hint.cash === "number" && hint.updatedAt && (!docUpdatedAt || hint.updatedAt >= docUpdatedAt - 2e3) && (!cached || hint.updatedAt >= cached.updatedAt - 2e3)
     );
-    const resolvedCash = useCachedBalance ? cached.cash : useHintBalance ? Number(hint.cash) : Number(doc.cash ?? cached?.cash ?? hint?.cash ?? (isOwnerAccount ? 1e5 : 5e3));
-    const resolvedGems = useCachedBalance ? cached.gems : useHintBalance && typeof hint.gems === "number" ? Number(hint.gems) : Number(doc.gems ?? cached?.gems ?? hint?.gems ?? (isOwnerAccount ? 5e3 : 90));
-    const resolvedProfit = useCachedBalance ? cached.totalProfit : useHintBalance && typeof hint.totalProfit === "number" ? Number(hint.totalProfit) : Number(doc.totalProfit ?? cached?.totalProfit ?? hint?.totalProfit ?? 0);
-    const resolvedTrades = useCachedBalance ? cached.tradesCount : useHintBalance && typeof hint.tradesCount === "number" ? Number(hint.tradesCount) : Number(doc.tradesCount ?? doc.allTimeTrades ?? cached?.tradesCount ?? hint?.tradesCount ?? 0);
+    const hasFreshCache = Boolean(
+      !hasFreshHint && cached && (cached.dirty || docUpdatedAt > 0 && cached.updatedAt > docUpdatedAt + 2e3)
+    );
+    const resolvedCash = hasFreshHint ? Number(hint.cash) : hasFreshCache ? cached.cash : Number(doc.cash ?? cached?.cash ?? hint?.cash ?? 5e3);
+    const resolvedGems = hasFreshHint && typeof hint.gems === "number" ? Number(hint.gems) : hasFreshCache ? cached.gems : Number(doc.gems ?? cached?.gems ?? hint?.gems ?? 50);
+    const resolvedProfit = hasFreshHint && typeof hint.totalProfit === "number" ? Number(hint.totalProfit) : hasFreshCache ? cached.totalProfit : Number(doc.totalProfit ?? cached?.totalProfit ?? hint?.totalProfit ?? 0);
+    const resolvedTrades = hasFreshHint && typeof hint.tradesCount === "number" ? Number(hint.tradesCount) : hasFreshCache ? cached.tradesCount : Number(doc.tradesCount ?? doc.allTimeTrades ?? cached?.tradesCount ?? hint?.tradesCount ?? 0);
     const state = {
       userId,
       docId,
       playerId: assignedPlayerId,
-      username: doc.username || doc.name || cached?.username || defaultName || hint?.username || (isOwnerAccount ? "Zeke (Owner)" : `Player_${assignedPlayerId}`),
+      username: doc.username || doc.name || cached?.username || defaultName || hint?.username || (isOwnerAccount ? "Zeke" : `Player_${assignedPlayerId}`),
       handle: doc.handle || cached?.handle || (isOwnerAccount ? "@zeke" : `@user${assignedPlayerId}`),
       title: doc.title || cached?.title || (isOwnerAccount ? "Founder & Owner" : "Member"),
       isPremium: doc.isPremium !== void 0 ? !!doc.isPremium : cached?.isPremium ?? isOwnerAccount,
@@ -1029,7 +1043,7 @@ async function getAuthoritativeUser(userId, jwt, defaultName) {
       tradesCount: resolvedTrades,
       coinsCreatedCount: Number(doc.coinsCreatedCount ?? cached?.coinsCreatedCount ?? 0),
       totalProfit: resolvedProfit,
-      nameColor: doc.nameColor || doc.equippedColor || cached?.nameColor || (isOwnerAccount ? "text-rose-500 font-extrabold text-glow tracking-wider" : "text-zinc-400 font-extrabold"),
+      nameColor: doc.nameColor || doc.equippedColor || cached?.nameColor || (isOwnerAccount ? "text-emerald-400 font-bold" : "text-zinc-300 font-bold"),
       dailyStreak: Number(doc.dailyStreak ?? cached?.dailyStreak ?? 1),
       lastDailyRewardClaim: doc.lastDailyRewardClaim || cached?.lastDailyRewardClaim || "",
       predictionWins: Number(doc.predictionWins ?? cached?.predictionWins ?? 0),
@@ -1039,20 +1053,30 @@ async function getAuthoritativeUser(userId, jwt, defaultName) {
       suspendedUntil: doc.suspendedUntil || null,
       createdAt: doc.$createdAt || cached?.createdAt || (/* @__PURE__ */ new Date()).toISOString(),
       updatedAt: Math.max(Date.now(), cached?.updatedAt || 0, hint?.updatedAt || 0),
-      dirty: useCachedBalance || useHintBalance
+      dirty: hasFreshHint || hasFreshCache
     };
     userCache.set(userId, state);
+    if (hasFreshHint) {
+      databases.updateDocument("pumpforge", "users", docId, {
+        cash: Number(Number(resolvedCash).toFixed(2)),
+        gems: Math.floor(Number(resolvedGems))
+      }).catch(() => {});
+    }
     return state;
   } catch (err) {
     if (cached) {
+      if (hint && typeof hint.cash === "number" && (!hint.updatedAt || hint.updatedAt >= cached.updatedAt - 2e3)) {
+        cached.cash = hint.cash;
+        if (typeof hint.gems === "number") cached.gems = hint.gems;
+      }
       cached.updatedAt = Date.now();
       return cached;
     }
     const assignedPlayerId = isOwnerAccount ? 1 : nextPlayerId++;
-    const fallbackUsername = defaultName || hint?.username || (isOwnerAccount ? "Zeke (Owner)" : `Player_${assignedPlayerId}`);
+    const fallbackUsername = defaultName || hint?.username || (isOwnerAccount ? "Zeke" : `Player_${assignedPlayerId}`);
     const fallbackHandle = isOwnerAccount ? "@zeke" : `@${fallbackUsername.toLowerCase().replace(/[^a-z0-9]/g, "")}` || `@user${assignedPlayerId}`;
-    const initialCash = typeof hint?.cash === "number" && !isNaN(hint.cash) ? hint.cash : isOwnerAccount ? 1e5 : 5e3;
-    const initialGems = typeof hint?.gems === "number" && !isNaN(hint.gems) ? hint.gems : isOwnerAccount ? 5e3 : 90;
+    const initialCash = typeof hint?.cash === "number" && !isNaN(hint.cash) ? hint.cash : 5e3;
+    const initialGems = typeof hint?.gems === "number" && !isNaN(hint.gems) ? hint.gems : 50;
     const initial = {
       userId,
       docId: userId,
@@ -1162,7 +1186,7 @@ async function saveAuthoritativeUser(userId, updates, jwt) {
               username: String(updated.username || "Player").slice(0, 64),
               handle: String(updated.handle || "@player").slice(0, 64),
               cash: Number(Number(updated.cash ?? 5e3).toFixed(2)),
-              gems: Math.floor(Number(updated.gems ?? 90)),
+              gems: Math.floor(Number(updated.gems ?? 50)),
               prestigeLevel: Math.floor(Number(updated.prestigeLevel ?? 0)),
               totalProfit: Number(Number(updated.totalProfit ?? 0).toFixed(2)),
               tradesCount: Math.floor(Number(updated.tradesCount ?? 0)),
@@ -1178,7 +1202,7 @@ async function saveAuthoritativeUser(userId, updates, jwt) {
         } else {
           await databases.updateDocument("pumpforge", "users", targetDocId, {
             cash: Number(Number(updated.cash ?? 5e3).toFixed(2)),
-            gems: Math.floor(Number(updated.gems ?? 90))
+            gems: Math.floor(Number(updated.gems ?? 50))
           });
           updated.dirty = false;
         }
@@ -1219,7 +1243,7 @@ async function getPublicUserProfile(identifier) {
           username: doc.username || doc.name || `Player_${doc.playerId || 1}`,
           handle: doc.handle || `@user${doc.playerId || 1}`,
           cash: Number(doc.cash ?? 5e3),
-          gems: Number(doc.gems ?? 100),
+          gems: Number(doc.gems ?? 50),
           prestigeLevel: Number(doc.prestigeLevel ?? 0),
           tradesCount: Number(doc.tradesCount ?? doc.allTimeTrades ?? 0),
           coinsCreatedCount: Number(doc.coinsCreatedCount ?? 0),
@@ -1240,7 +1264,7 @@ async function getPublicUserProfile(identifier) {
             username: doc.username || doc.name || `Player_${doc.playerId || 1}`,
             handle: doc.handle || `@user${doc.playerId || 1}`,
             cash: Number(doc.cash ?? 5e3),
-            gems: Number(doc.gems ?? 100),
+            gems: Number(doc.gems ?? 50),
             prestigeLevel: Number(doc.prestigeLevel ?? 0),
             tradesCount: Number(doc.tradesCount ?? doc.allTimeTrades ?? 0),
             coinsCreatedCount: Number(doc.coinsCreatedCount ?? 0),
@@ -1357,7 +1381,7 @@ async function getAllUsersList(jwt) {
         title: doc.title || "Member",
         isPremium: !!doc.isPremium,
         cash: Number(doc.cash ?? 5e3),
-        gems: Number(doc.gems ?? 90),
+        gems: Number(doc.gems ?? 50),
         prestigeLevel: Number(doc.prestigeLevel ?? 0),
         tradesCount: Number(doc.tradesCount ?? doc.allTimeTrades ?? 0),
         coinsCreatedCount: Number(doc.coinsCreatedCount ?? 0),
@@ -1856,9 +1880,9 @@ async function executeCoinflipCore(user, betAmount, normalizedSide, userState) {
     resultSide = crypto2.randomInt(0, 2) === 0 ? "heads" : "tails";
   }
   const won = resultSide === normalizedSide;
-  const payout = won ? Number((betAmount * 1.9).toFixed(2)) : 0;
-  const profit = Number((won ? payout - betAmount : -betAmount).toFixed(2));
-  const nextCash = Number(Math.max(0, userCash + profit).toFixed(2));
+  const payout = won ? Number((betAmount * 2).toFixed(2)) : 0;
+  const profit = Number((won ? betAmount : -betAmount).toFixed(2));
+  const nextCash = Number(Math.max(0, userCash - betAmount + payout).toFixed(2));
   const nextTotalProfit = Number(((userState.totalProfit || 0) + profit).toFixed(2));
   const updatedUser = await saveAuthoritativeUser(
     user.userId,
@@ -2414,30 +2438,48 @@ async function processArcadeWager(user, game, action, params) {
       if (typeof bet !== "number" || isNaN(bet) || !isFinite(bet) || bet <= 0 || bet > userState.cash) {
         throw new Error("Invalid bet amount or insufficient cash.");
       }
-      let reels;
+      let grid;
       if (rigMode === "win") {
-        reels = ["7\uFE0F\u20E3", "7\uFE0F\u20E3", "7\uFE0F\u20E3"];
+        grid = [
+          ["\u{1F352}", "\u{1F34B}", "\u{1F514}"],
+          ["7\uFE0F\u20E3", "7\uFE0F\u20E3", "7\uFE0F\u20E3"],
+          ["\u{1F48E}", "\u{1F352}", "\u{1F34B}"]
+        ];
       } else if (rigMode === "lose") {
-        reels = ["\u{1F352}", "\u{1F34B}", "\u{1F514}"];
+        grid = [
+          ["\u{1F352}", "\u{1F34B}", "\u{1F514}"],
+          ["\u{1F34B}", "\u{1F48E}", "\u{1F352}"],
+          ["\u{1F514}", "\u{1F352}", "\u{1F48E}"]
+        ];
       } else {
-        reels = [
+        grid = [0, 1, 2].map(() => [
           slotEmojis[secureRandomInt(0, slotEmojis.length - 1)],
           slotEmojis[secureRandomInt(0, slotEmojis.length - 1)],
           slotEmojis[secureRandomInt(0, slotEmojis.length - 1)]
-        ];
+        ]);
       }
-      const matchCount = new Set(reels).size;
+      const winningLines = [];
       let payout = 0;
-      let nextCash = Number((userState.cash - bet).toFixed(2));
-      if (matchCount === 1) {
-        let multiplier = 3;
-        if (reels[0] === "7\uFE0F\u20E3") multiplier = 6;
-        else if (reels[0] === "\u{1F48E}") multiplier = 4;
-        payout = Number((bet * multiplier).toFixed(2));
-      } else if (matchCount === 2) {
-        payout = Math.floor(bet * 0.95);
+      for (let r = 0; r < 3; r++) {
+        const row = grid[r];
+        if (new Set(row).size === 1) {
+          winningLines.push(r);
+          let lineMult = 3;
+          if (row[0] === "7\uFE0F\u20E3") lineMult = 6;
+          else if (row[0] === "\u{1F48E}") lineMult = 4;
+          payout += Number((bet * lineMult).toFixed(2));
+        }
       }
-      nextCash = Number(Math.max(0, nextCash + payout).toFixed(2));
+      let matchCount = 3;
+      if (winningLines.length > 0) {
+        matchCount = 1;
+      } else if (new Set(grid[1]).size === 2) {
+        matchCount = 2;
+        winningLines.push(1);
+        payout = Math.floor(bet * 1.5);
+      }
+      const reels = grid[winningLines[0] ?? 1] || grid[1];
+      let nextCash = Number(Math.max(0, userState.cash - bet + payout).toFixed(2));
       const updatedUser = await saveAuthoritativeUser(
         user.userId,
         {
@@ -2448,7 +2490,9 @@ async function processArcadeWager(user, game, action, params) {
       );
       return {
         game: "slots",
+        grid,
         reels,
+        winningLines,
         matchCount,
         payout,
         profit: payout - bet,
@@ -3744,7 +3788,7 @@ async function recordAuditLog(admin, action, details) {
 function getAuditLogs() {
   return auditLogsStore;
 }
-async function resolveMarketAndPayout(admin, marketId, winningChoice) {
+async function resolveMarketAndPayout(admin, marketId, winningChoice, extraParams) {
   if (!admin.isAdmin) {
     throw new Error("Admin privileges required to resolve prediction markets.");
   }
@@ -3768,51 +3812,68 @@ async function resolveMarketAndPayout(admin, marketId, winningChoice) {
         poolNo: marketId === "m1" ? 3200 : marketId === "m2" ? 6400 : 0
       };
     }
-    if (market.status === "closed" && market.resolved) {
-      throw new Error("Prediction market has already been resolved and payouts finalized.");
-    }
-    const poolYes = Number(market.poolYes || 0);
-    const poolNo = Number(market.poolNo || 0);
+    const poolYes = Math.max(Number(market.poolYes ?? market.yesPool ?? 0), Number(extraParams?.poolYes || 0));
+    const poolNo = Math.max(Number(market.poolNo ?? market.noPool ?? 0), Number(extraParams?.poolNo || 0));
     const totalPool = poolYes + poolNo;
     const resolvedAtIso = (/* @__PURE__ */ new Date()).toISOString();
-    try {
-      await databases.updateDocument("pumpforge", "polymarkets", marketId, {
-        status: "closed",
-        resolved: true,
-        winningOutcome: winningChoice,
-        resolvedAt: resolvedAtIso
-      });
-    } catch {
-    }
-    recordPolymarket({
+    const resolvedMarketObj = {
       ...market,
       $id: marketId,
       id: marketId,
+      poolYes,
+      poolNo,
+      yesPool: poolYes,
+      noPool: poolNo,
       status: "closed",
       resolved: true,
       winningOutcome: winningChoice,
+      resolvedOutcome: winningChoice === "CANCEL" ? null : winningChoice,
       resolvedAt: resolvedAtIso
-    });
-    let wagersDocs = [];
+    };
+    await persistPolymarketToDatabase(resolvedMarketObj, admin.jwt);
+    const wagersMap = /* @__PURE__ */ new Map();
+    for (const memW of inMemoryWagers) {
+      if (memW.polymarketId === marketId) {
+        wagersMap.set(memW.$id || memW.id || `${memW.userId}_${memW.amount}`, memW);
+      }
+    }
     try {
       const wagersRes2 = await databases.listDocuments("pumpforge", "wagers", [
         Query3.equal("polymarketId", marketId),
         Query3.limit(500)
       ]);
-      wagersDocs = wagersRes2.documents || [];
-    } catch {
-      wagersDocs = inMemoryWagers.filter((w) => w.polymarketId === marketId);
+      for (const doc of wagersRes2.documents || []) {
+        wagersMap.set(doc.$id || doc.id, doc);
+      }
+    } catch {}
+    if (extraParams?.userBet && Number(extraParams.userBet.amount) > 0) {
+      const hasCallerWager = Array.from(wagersMap.values()).some(
+        (w) => w.userId === admin.userId && !w.isPaid
+      );
+      if (!hasCallerWager) {
+        const syntheticId = `w_${marketId}_${admin.userId}`;
+        wagersMap.set(syntheticId, {
+          id: syntheticId,
+          $id: syntheticId,
+          userId: admin.userId,
+          polymarketId: marketId,
+          amount: Number(extraParams.userBet.amount),
+          choice: extraParams.userBet.side,
+          isPaid: false
+        });
+      }
     }
-    const wagersRes = { documents: wagersDocs };
     let totalPaidOut = 0;
     let winnersCount = 0;
-    for (const wager of wagersRes.documents) {
+    let callerPayout = 0;
+    let callerUpdatedStats = null;
+    for (const wager of wagersMap.values()) {
       if (wager.isPaid === true) {
         continue;
       }
       const wagerUserId = wager.userId;
       const wagerAmount = Number(wager.amount || 0);
-      const choice = wager.choice;
+      const choice = String(wager.choice || "").toUpperCase();
       let payoutAmount = 0;
       if (winningChoice === "CANCEL") {
         payoutAmount = wagerAmount;
@@ -3820,34 +3881,44 @@ async function resolveMarketAndPayout(admin, marketId, winningChoice) {
         const winningPool = winningChoice === "YES" ? poolYes : poolNo;
         if (winningPool > 0 && totalPool > 0) {
           const shareRatio = wagerAmount / winningPool;
-          payoutAmount = Math.floor(shareRatio * totalPool);
+          const poolShare = Math.floor(shareRatio * totalPool);
+          payoutAmount = Math.max(wagerAmount * 2, poolShare);
         } else {
-          payoutAmount = wagerAmount;
+          payoutAmount = wagerAmount * 2;
         }
       }
+      wager.isPaid = true;
       try {
-        await databases.updateDocument("pumpforge", "wagers", wager.$id || wager.id, {
-          isPaid: true
-        });
-      } catch {
-        wager.isPaid = true;
-      }
+        if (wager.$id && !String(wager.$id).startsWith("w_")) {
+          await databases.updateDocument("pumpforge", "wagers", wager.$id, {
+            isPaid: true
+          });
+        }
+      } catch {}
       if (payoutAmount > 0) {
         await withUserLock(wagerUserId, async () => {
           const uState = await getAuthoritativeUser(wagerUserId, admin.jwt);
-          const nextCash = uState.cash + payoutAmount;
-          await saveAuthoritativeUser(
+          const nextCash = Number((uState.cash + payoutAmount).toFixed(2));
+          const profitDelta = winningChoice === "CANCEL" ? 0 : payoutAmount - wagerAmount;
+          const updated = await saveAuthoritativeUser(
             wagerUserId,
             {
               cash: nextCash,
-              totalProfit: (uState.totalProfit || 0) + (payoutAmount - wagerAmount)
+              totalProfit: Number(((uState.totalProfit || 0) + profitDelta).toFixed(2))
             },
             admin.jwt
           );
+          if (wagerUserId === admin.userId) {
+            callerPayout += payoutAmount;
+            callerUpdatedStats = updated;
+          }
         });
         totalPaidOut += payoutAmount;
         winnersCount++;
       }
+    }
+    if (!callerUpdatedStats) {
+      callerUpdatedStats = await getAuthoritativeUser(admin.userId, admin.jwt);
     }
     await recordAuditLog(admin, "MARKET_RESOLVE", {
       marketId,
@@ -3860,7 +3931,10 @@ async function resolveMarketAndPayout(admin, marketId, winningChoice) {
       marketId,
       winningChoice,
       winnersCount,
-      totalPaidOut
+      totalPaidOut,
+      callerPayout,
+      market: resolvedMarketObj,
+      userStats: callerUpdatedStats
     };
   });
 }
@@ -3958,15 +4032,20 @@ async function adminDeleteCoin(admin, coinId) {
 }
 async function adminGrantBalance(admin, targetUserId, mode, currency, amount) {
   if (!admin.isAdmin) throw new Error("Admin privileges required.");
-  return withUserLock(targetUserId, async () => {
-    const uState = await getAuthoritativeUser(targetUserId, admin.jwt);
+  const isTargetingSelf = !targetUserId || targetUserId === admin.userId || targetUserId === "admin_realzekeee" || String(targetUserId).toLowerCase() === "@zeke";
+  const canonicalId = isTargetingSelf ? admin.userId : targetUserId;
+  return withUserLock(canonicalId, async () => {
+    const uState = await getAuthoritativeUser(canonicalId, admin.jwt, admin.name);
     let nextVal = currency === "cash" ? uState.cash : uState.gems;
     if (mode === "add") nextVal += amount;
     else if (mode === "deduct") nextVal = Math.max(0, nextVal - amount);
     else if (mode === "set") nextVal = Math.max(0, amount);
-    const updates = currency === "cash" ? { cash: nextVal } : { gems: Math.floor(nextVal) };
-    const updated = await saveAuthoritativeUser(targetUserId, updates, admin.jwt);
-    await recordAuditLog(admin, "BALANCE_GRANT", { targetUserId, mode, currency, amount });
+    const updates = currency === "cash" ? { cash: Number(nextVal.toFixed(2)) } : { gems: Math.floor(nextVal) };
+    const updated = await saveAuthoritativeUser(canonicalId, updates, admin.jwt);
+    if (isTargetingSelf && targetUserId && targetUserId !== canonicalId) {
+      await saveAuthoritativeUser(targetUserId, updates, admin.jwt).catch(() => {});
+    }
+    await recordAuditLog(admin, "BALANCE_GRANT", { targetUserId: canonicalId, mode, currency, amount });
     return { success: true, userStats: updated };
   });
 }
@@ -4605,16 +4684,8 @@ app.post("/api/auth/email-login", async (req, res) => {
     };
     const stats = await getAuthoritativeUser(user.userId, void 0, displayName);
     if (isOwner) {
-      const isUntouchedGuestDefault = stats.cash === 5e3 && stats.gems === 90 && (stats.tradesCount || 0) === 0;
-      const nextCash = isUntouchedGuestDefault ? 1e5 : stats.cash;
-      const nextGems = isUntouchedGuestDefault ? 5e3 : stats.gems;
-      stats.cash = nextCash;
-      stats.gems = nextGems;
       stats.title = stats.title && stats.title !== "Member" ? stats.title : "Founder & Owner";
       stats.isPremium = true;
-      if (isUntouchedGuestDefault || stats.title === "Member") {
-        await saveAuthoritativeUser(user.userId, { cash: nextCash, gems: nextGems, title: stats.title });
-      }
     }
     res.json({
       success: true,
@@ -4649,16 +4720,8 @@ app.post("/api/auth/quick-login", async (req, res) => {
     };
     const stats = await getAuthoritativeUser(user.userId, void 0, cleanUsername);
     if (isOwner) {
-      const isUntouchedGuestDefault = stats.cash === 5e3 && stats.gems === 90 && (stats.tradesCount || 0) === 0;
-      const nextCash = isUntouchedGuestDefault ? 1e5 : stats.cash;
-      const nextGems = isUntouchedGuestDefault ? 5e3 : stats.gems;
-      stats.cash = nextCash;
-      stats.gems = nextGems;
       stats.title = stats.title && stats.title !== "Member" ? stats.title : "Founder & Owner";
       stats.isPremium = true;
-      if (isUntouchedGuestDefault || stats.title === "Member") {
-        await saveAuthoritativeUser(user.userId, { cash: nextCash, gems: nextGems, title: stats.title });
-      }
     }
     res.json({
       success: true,
@@ -4697,16 +4760,8 @@ app.post("/api/auth/oauth-callback", async (req, res) => {
     };
     const stats = await getAuthoritativeUser(user.userId, void 0, displayName);
     if (isOwner) {
-      const isUntouchedGuestDefault = stats.cash === 5e3 && stats.gems === 90 && (stats.tradesCount || 0) === 0;
-      const nextCash = isUntouchedGuestDefault ? 1e5 : stats.cash;
-      const nextGems = isUntouchedGuestDefault ? 5e3 : stats.gems;
-      stats.cash = nextCash;
-      stats.gems = nextGems;
       stats.title = stats.title && stats.title !== "Member" ? stats.title : "Founder & Owner";
       stats.isPremium = true;
-      if (isUntouchedGuestDefault || stats.title === "Member") {
-        await saveAuthoritativeUser(user.userId, { cash: nextCash, gems: nextGems, title: stats.title });
-      }
     }
     res.json({
       success: true,
@@ -4759,16 +4814,8 @@ app.post("/api/auth/google-verify", async (req, res) => {
     };
     const stats = await getAuthoritativeUser(user.userId, void 0, displayName);
     if (isOwner) {
-      const isUntouchedGuestDefault = stats.cash === 5e3 && stats.gems === 90 && (stats.tradesCount || 0) === 0;
-      const nextCash = isUntouchedGuestDefault ? 1e5 : stats.cash;
-      const nextGems = isUntouchedGuestDefault ? 5e3 : stats.gems;
-      stats.cash = nextCash;
-      stats.gems = nextGems;
       stats.title = stats.title && stats.title !== "Member" ? stats.title : "Founder & Owner";
       stats.isPremium = true;
-      if (isUntouchedGuestDefault || stats.title === "Member") {
-        await saveAuthoritativeUser(user.userId, { cash: nextCash, gems: nextGems, title: stats.title });
-      }
     }
     res.json({
       success: true,
@@ -5053,8 +5100,8 @@ app.get("/api/user/:identifier", async (req, res) => {
 app.post("/api/admin/polymarket/resolve", requireAdmin, async (req, res) => {
   try {
     const admin = req.user;
-    const { marketId, winningChoice } = req.body;
-    const result = await resolveMarketAndPayout(admin, marketId, winningChoice);
+    const { marketId, winningChoice, userBet, poolYes, poolNo } = req.body;
+    const result = await resolveMarketAndPayout(admin, marketId, winningChoice, { userBet, poolYes, poolNo });
     res.json(result);
   } catch (err) {
     sendError(res, 400, err, "Market resolution failed.");

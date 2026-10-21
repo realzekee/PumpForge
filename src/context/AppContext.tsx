@@ -32,9 +32,9 @@ const DEFAULT_GUEST_STATS = {
   handle: "@guest_degen",
   title: "Member",
   isPremium: false,
-  nameColor: "text-zinc-400 font-extrabold",
+  nameColor: "text-zinc-300 font-bold",
   cash: 5000.0,
-  gems: 90,
+  gems: 50,
   prestigeLevel: 0,
   totalProfit: 0,
   coinsCreatedCount: 0,
@@ -70,7 +70,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   });
 
   const [cash, setCash] = useState<number>(() => Number(userStats?.cash ?? 5000));
-  const [gems, setGems] = useState<number>(() => Number(userStats?.gems ?? 90));
+  const [gems, setGems] = useState<number>(() => Number(userStats?.gems ?? 50));
   const [prestigeLevel, setPrestigeLevel] = useState<number>(() => Number(userStats?.prestigeLevel ?? 0));
   const [userId, setUserId] = useState<string | null>(() => {
     return currentUser?.$id || currentUser?.uid || currentUser?.userId || null;

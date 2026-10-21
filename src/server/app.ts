@@ -288,16 +288,8 @@ function sendError(res: express.Response, status: number, err: any, fallback = "
 
       const stats = await getAuthoritativeUser(user.userId, undefined, displayName);
       if (isOwner) {
-        const isUntouchedGuestDefault = stats.cash === 5000 && stats.gems === 90 && (stats.tradesCount || 0) === 0;
-        const nextCash = isUntouchedGuestDefault ? 100000 : stats.cash;
-        const nextGems = isUntouchedGuestDefault ? 5000 : stats.gems;
-        stats.cash = nextCash;
-        stats.gems = nextGems;
         stats.title = stats.title && stats.title !== "Member" ? stats.title : "Founder & Owner";
         stats.isPremium = true;
-        if (isUntouchedGuestDefault || stats.title === "Member") {
-          await saveAuthoritativeUser(user.userId, { cash: nextCash, gems: nextGems, title: stats.title });
-        }
       }
 
       res.json({
@@ -337,16 +329,8 @@ function sendError(res: express.Response, status: number, err: any, fallback = "
 
       const stats = await getAuthoritativeUser(user.userId, undefined, cleanUsername);
       if (isOwner) {
-        const isUntouchedGuestDefault = stats.cash === 5000 && stats.gems === 90 && (stats.tradesCount || 0) === 0;
-        const nextCash = isUntouchedGuestDefault ? 100000 : stats.cash;
-        const nextGems = isUntouchedGuestDefault ? 5000 : stats.gems;
-        stats.cash = nextCash;
-        stats.gems = nextGems;
         stats.title = stats.title && stats.title !== "Member" ? stats.title : "Founder & Owner";
         stats.isPremium = true;
-        if (isUntouchedGuestDefault || stats.title === "Member") {
-          await saveAuthoritativeUser(user.userId, { cash: nextCash, gems: nextGems, title: stats.title });
-        }
       }
 
       res.json({
@@ -391,16 +375,8 @@ function sendError(res: express.Response, status: number, err: any, fallback = "
 
       const stats = await getAuthoritativeUser(user.userId, undefined, displayName);
       if (isOwner) {
-        const isUntouchedGuestDefault = stats.cash === 5000 && stats.gems === 90 && (stats.tradesCount || 0) === 0;
-        const nextCash = isUntouchedGuestDefault ? 100000 : stats.cash;
-        const nextGems = isUntouchedGuestDefault ? 5000 : stats.gems;
-        stats.cash = nextCash;
-        stats.gems = nextGems;
         stats.title = stats.title && stats.title !== "Member" ? stats.title : "Founder & Owner";
         stats.isPremium = true;
-        if (isUntouchedGuestDefault || stats.title === "Member") {
-          await saveAuthoritativeUser(user.userId, { cash: nextCash, gems: nextGems, title: stats.title });
-        }
       }
 
       res.json({
@@ -460,16 +436,8 @@ function sendError(res: express.Response, status: number, err: any, fallback = "
 
       const stats = await getAuthoritativeUser(user.userId, undefined, displayName);
       if (isOwner) {
-        const isUntouchedGuestDefault = stats.cash === 5000 && stats.gems === 90 && (stats.tradesCount || 0) === 0;
-        const nextCash = isUntouchedGuestDefault ? 100000 : stats.cash;
-        const nextGems = isUntouchedGuestDefault ? 5000 : stats.gems;
-        stats.cash = nextCash;
-        stats.gems = nextGems;
         stats.title = stats.title && stats.title !== "Member" ? stats.title : "Founder & Owner";
         stats.isPremium = true;
-        if (isUntouchedGuestDefault || stats.title === "Member") {
-          await saveAuthoritativeUser(user.userId, { cash: nextCash, gems: nextGems, title: stats.title });
-        }
       }
 
       res.json({
@@ -804,8 +772,12 @@ function sendError(res: express.Response, status: number, err: any, fallback = "
   app.post("/api/admin/polymarket/resolve", requireAdmin, async (req, res) => {
     try {
       const admin = (req as any).user;
-      const { marketId, winningChoice } = req.body;
-      const result = await resolveMarketAndPayout(admin, marketId, winningChoice);
+      const { marketId, winningChoice, userBet, poolYes, poolNo } = req.body;
+      const result = await resolveMarketAndPayout(admin, marketId, winningChoice, {
+        userBet,
+        poolYes,
+        poolNo,
+      });
       res.json(result);
     } catch (err: any) {
       sendError(res, 400, err, "Market resolution failed.");
