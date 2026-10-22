@@ -61,10 +61,10 @@ export default function HomeTab({
       {manualNotices.map((notice, index) => (
         <div
           key={notice.id ? `${notice.id}-${index}` : `notice-${index}`}
-          className="rounded-2xl border border-indigo-500/30 bg-[#141417] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+          className="rounded-2xl border border-orange-500/30 bg-[#141417] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
         >
           <div className="flex items-start gap-3">
-            <ShieldAlert className="w-5 h-5 text-indigo-400 shrink-0 mt-0.5" />
+            <ShieldAlert className="w-5 h-5 text-orange-400 shrink-0 mt-0.5" />
             <div className="flex flex-col gap-0.5">
               <span className="font-bold text-xs text-white">Admin Notice</span>
               <p className="text-xs text-zinc-300 leading-relaxed">
@@ -77,7 +77,7 @@ export default function HomeTab({
             onClick={() => handleDismissNotice(notice.id)}
             className="px-3.5 py-1.5 bg-white/[0.08] hover:bg-white/[0.12] text-white text-xs font-semibold rounded-xl transition cursor-pointer flex items-center gap-1.5 self-end sm:self-center"
           >
-            <Check className="w-3.5 h-3.5 text-emerald-400" />
+            <Check className="w-3.5 h-3.5 text-orange-400" />
             <span>Dismiss</span>
           </button>
         </div>
@@ -90,7 +90,7 @@ export default function HomeTab({
             Overview
           </h1>
           <p className="text-xs text-zinc-400">
-            Trade community tokens, play fast arcade games, and track your portfolio.
+            Trade community tokens, predict live market events, and play instant arcade games.
           </p>
         </div>
 
@@ -100,7 +100,7 @@ export default function HomeTab({
               playSound("click");
               navigate("/market");
             }}
-            className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-xs font-bold text-zinc-950 transition flex items-center gap-1.5 cursor-pointer"
+            className="px-4 py-2 rounded-xl bg-gradient-to-r from-orange-500 via-amber-500 to-orange-600 hover:from-orange-400 hover:to-amber-400 text-xs font-bold text-zinc-950 transition flex items-center gap-1.5 cursor-pointer shadow-md shadow-orange-950/30"
           >
             <Store className="w-3.5 h-3.5" />
             <span>Market</span>
@@ -112,7 +112,7 @@ export default function HomeTab({
             }}
             className="px-4 py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] text-xs font-semibold text-zinc-200 border border-white/[0.07] transition flex items-center gap-1.5 cursor-pointer"
           >
-            <Gamepad2 className="w-3.5 h-3.5 text-emerald-400" />
+            <Gamepad2 className="w-3.5 h-3.5 text-orange-400" />
             <span>Arcade</span>
           </button>
           <button
@@ -122,7 +122,7 @@ export default function HomeTab({
             }}
             className="px-4 py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] text-xs font-semibold text-zinc-200 border border-white/[0.07] transition flex items-center gap-1.5 cursor-pointer"
           >
-            <PlusCircle className="w-3.5 h-3.5 text-zinc-400" />
+            <PlusCircle className="w-3.5 h-3.5 text-amber-400" />
             <span>Create Coin</span>
           </button>
         </div>
@@ -142,13 +142,13 @@ export default function HomeTab({
         </div>
         <div className="bg-[#141417] border border-white/[0.07] p-4 rounded-2xl flex flex-col gap-1">
           <span className="text-xs text-zinc-400">Gems</span>
-          <span className="text-base sm:text-lg font-bold text-cyan-400 font-mono">
+          <span className="text-base sm:text-lg font-bold text-amber-400 font-mono">
             💎 {userStats.gems.toLocaleString()}
           </span>
         </div>
         <div className="bg-[#141417] border border-white/[0.07] p-4 rounded-2xl flex flex-col gap-1">
           <span className="text-xs text-zinc-400">Prestige</span>
-          <span className="text-base sm:text-lg font-bold text-white font-mono">
+          <span className="text-base sm:text-lg font-bold text-orange-400 font-mono">
             Level {userStats.prestigeLevel || 0}
           </span>
         </div>
@@ -166,7 +166,7 @@ export default function HomeTab({
           <h2 className="text-sm font-semibold text-zinc-300">Top Gainers</h2>
           <button
             onClick={() => navigate("/market")}
-            className="text-xs text-zinc-400 hover:text-white flex items-center gap-1 transition-colors cursor-pointer"
+            className="text-xs text-orange-400 hover:text-orange-300 flex items-center gap-1 transition-colors cursor-pointer"
           >
             <span>View Market</span>
             <ArrowRight className="w-3.5 h-3.5" />
@@ -180,7 +180,7 @@ export default function HomeTab({
             return (
               <div
                 key={coin.id ? `${coin.id}-${index}` : `hot-coin-${index}`}
-                className="bg-[#141417] hover:bg-[#19191e] border border-white/[0.07] p-4 rounded-2xl flex flex-col justify-between select-none cursor-pointer transition-colors"
+                className="bg-[#141417] hover:bg-[#19191e] border border-white/[0.07] hover:border-orange-500/30 p-4 rounded-2xl flex flex-col justify-between select-none cursor-pointer transition-colors"
                 onClick={() => {
                   playSound("click");
                   onTradeCoin(coin.id);
@@ -237,7 +237,7 @@ export default function HomeTab({
           </span>
           <button
             onClick={() => navigate("/market")}
-            className="text-xs text-zinc-400 hover:text-white cursor-pointer"
+            className="text-xs text-orange-400 hover:text-orange-300 cursor-pointer"
           >
             All Coins ({coins.length})
           </button>

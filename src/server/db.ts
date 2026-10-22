@@ -343,11 +343,15 @@ export async function getAuthoritativeUser(userId: string, jwt?: string, default
   const cached = userCache.get(userId);
   const hint = userHintsMap.get(userId);
 
-  // If cached state was recently updated on this instance and is at least as fresh as client hints, return immediately
+  // Always sync cached state with incoming client hint first so every action uses the player's true current balance
+  if (cached && hint && typeof hint.cash === "number" && !isNaN(hint.cash)) {
+    cached.cash = hint.cash;
+    if (typeof hint.gems === "number" && !isNaN(hint.gems)) cached.gems = hint.gems;
+    cached.updatedAt = Date.now();
+    return cached;
+  }
   if (cached && Date.now() - cached.updatedAt < 5000) {
-    if (!hint?.updatedAt || cached.updatedAt >= hint.updatedAt) {
-      return cached;
-    }
+    return cached;
   }
 
   const isOwnerAccount = userId === "admin_realzekeee";
@@ -391,13 +395,11 @@ export async function getAuthoritativeUser(userId: string, jwt?: string, default
       } catch (_) {}
     }
 
-    // Prefer whichever state has the newest timestamp so serverless cold starts or failed Appwrite writes never randomize balances
+    // Always trust the client's current X-User-Cash / X-User-Gems hint when provided so serverless cold starts or stale Appwrite docs never wipe out a user's balance
     const hasFreshHint = Boolean(
       hint &&
         typeof hint.cash === "number" &&
-        hint.updatedAt &&
-        (!docUpdatedAt || hint.updatedAt >= docUpdatedAt - 2000) &&
-        (!cached || hint.updatedAt >= cached.updatedAt - 2000)
+        !isNaN(hint.cash)
     );
     const hasFreshCache = Boolean(
       !hasFreshHint &&

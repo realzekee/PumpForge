@@ -1020,7 +1020,7 @@ async function getAuthoritativeUser(userId, jwt, defaultName) {
       } catch (_) {}
     }
     const hasFreshHint = Boolean(
-      hint && typeof hint.cash === "number" && hint.updatedAt && (!docUpdatedAt || hint.updatedAt >= docUpdatedAt - 2e3) && (!cached || hint.updatedAt >= cached.updatedAt - 2e3)
+      hint && typeof hint.cash === "number" && !isNaN(hint.cash)
     );
     const hasFreshCache = Boolean(
       !hasFreshHint && cached && (cached.dirty || docUpdatedAt > 0 && cached.updatedAt > docUpdatedAt + 2e3)

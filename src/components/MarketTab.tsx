@@ -27,6 +27,7 @@ interface MarketTabProps {
     coinId: string,
     amountCoins: number,
     type: "BUY" | "SELL",
+    referencePrice?: number,
   ) => void;
   onDeleteOwnCoin: (coinId: string) => void;
   initialCoinId?: string | null;
@@ -147,7 +148,7 @@ export default function MarketTab({
     const numericAmount = Number(tradeAmount);
     if (!selectedCoin || isNaN(numericAmount) || numericAmount <= 0) return;
 
-    onTradeAction(selectedCoin.id, numericAmount, tradeType);
+    onTradeAction(selectedCoin.id, numericAmount, tradeType, selectedCoin.price);
 
     // Reset fields & modal
     setTradeAmount("");
@@ -203,7 +204,7 @@ export default function MarketTab({
             placeholder="Search coin name or symbol (e.g. ATI)..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 glass-input rounded-xl text-xs text-white focus:outline-none focus:border-rose-500/80 transition-all font-mono"
+            className="w-full pl-10 pr-4 py-2.5 glass-input rounded-xl text-xs text-white focus:outline-none focus:border-orange-500/70 transition-all font-mono"
           />
         </div>
         <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase font-bold text-zinc-400 overflow-x-auto max-w-full py-1 custom-scrollbar">
@@ -221,7 +222,7 @@ export default function MarketTab({
               onClick={() => handleSort(tab.id as any)}
               className={`px-2.5 py-1 rounded-xl border flex items-center gap-1 transition-all cursor-pointer whitespace-nowrap ${
                 sortBy === tab.id
-                  ? "bg-rose-500/20 text-rose-300 border-rose-500/50 font-extrabold shadow-sm"
+                  ? "bg-gradient-to-r from-orange-500/20 to-amber-500/20 text-orange-300 border-orange-500/45 font-bold shadow-sm"
                   : "glass-pill text-zinc-400 hover:text-white hover:bg-white/[0.08] border-white/10"
               }`}
             >

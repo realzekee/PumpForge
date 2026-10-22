@@ -1,25 +1,14 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { motion, AnimatePresence } from "motion/react";
 import {
   ArrowLeft,
-  TrendingUp,
-  TrendingDown,
-  DollarSign,
   Users,
   Activity,
   Layers,
-  ArrowUpRight,
-  Sparkles,
-  Percent,
-  Compass,
   Zap,
-  CheckCircle,
-  Clock,
   MessageSquare,
   Send,
   Trash2,
   Flag,
-  ShieldCheck,
   RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -33,6 +22,7 @@ import {
 } from "../api/gameClient";
 import { formatErrorMessage } from "../utils/formatError";
 import { UserHoverCard } from "./UserHoverCard";
+import { playSound } from "../utils/sound";
 
 interface CoinDetailsTabProps {
   coin: MemeCoin | null;
@@ -43,26 +33,25 @@ interface CoinDetailsTabProps {
     coinId: string,
     amountCoins: number,
     type: "BUY" | "SELL",
+    referencePrice?: number,
   ) => Promise<any> | void;
   onBackToList?: () => void;
 }
 
-// Default / Reference mock data when no dynamic token is selected
 const DEFAULT_PRESET_COIN: MemeCoin = {
   id: "roadman_revival_default",
   name: "RoadmanRevival",
   symbol: "ROADREV",
   creator: "@system",
-  description:
-    "The definitive meme asset backing the system.",
+  description: "Community meme asset.",
   avatarEmoji: "🏟️",
-  avatarBg: "bg-indigo-950/85 text-indigo-400 border-indigo-500/20",
+  avatarBg: "bg-orange-950/60 text-orange-400 border-orange-500/30",
   price: 5.73,
-  marketCap: 5730,
-  supply: 1000,
+  marketCap: 573000,
+  supply: 100000,
   volume24h: 31250,
-  change24h: 0.03,
-  history: [5.68, 5.7, 5.69, 5.71, 5.7, 5.72, 5.73],
+  change24h: 4.2,
+  history: [5.42, 5.48, 5.51, 5.49, 5.55, 5.62, 5.68, 5.7, 5.69, 5.71, 5.73],
 };
 
 export default function CoinDetailsTab({
@@ -73,18 +62,24 @@ export default function CoinDetailsTab({
   onTradeAction,
   onBackToList,
 }: CoinDetailsTabProps) {
-  // Use selected coin or fallback to reference preview
   const activeCoin = coin || DEFAULT_PRESET_COIN;
+  const currentPrice = Math.max(0.000001, Number(activeCoin?.price) || 0.01);
+  const totalSupply = Math.max(1000, Number(activeCoin?.supply) || 1000000);
+  const computedMarketCap =
+    Number(activeCoin?.marketCap) > 0
+      ? Number(activeCoin.marketCap)
+      : Math.floor(totalSupply * currentPrice);
+  const computedLiquidity =
+    Number(activeCoin?.totalLiquidity) > 0
+      ? Number(activeCoin.totalLiquidity)
+      : Math.max(1000, Math.floor(computedMarketCap * 0.35));
 
-  // Interactivity and chart duration presets
   const [timeframe, setTimeframe] = useState("1m");
   const [hoveredCandle, setHoveredCandle] = useState<number | null>(null);
 
-  // Slide trade input execution panel
-  const [activeTradeMode, setActiveTradeMode] = useState<
-    "NONE" | "BUY" | "SELL"
-  >("NONE");
-  const [tradeAmountCoins, setTradeAmountCoins] = useState("");
+  const [activeTradeMode, setActiveTradeMode] = useState<"BUY" | "SELL">("BUY");
+  const [buyInputMode, setBuyInputMode] = useState<"USD" | "TOKENS">("USD");
+  const [tradeInput, setTradeInput] = useState("");
   const [tradePercentage, setTradePercentage] = useState<number | null>(null);
   const [executingState, setExecutingState] = useState(false);
   const [feedback, setFeedback] = useState<{
@@ -92,107 +87,43 @@ export default function CoinDetailsTab({
     msg: string;
   } | null>(null);
 
-  // Fair Launch 60s window indicator
   const [launchTimer, setLaunchTimer] = useState<number>(0);
   const isCreator = useMemo(() => {
     if (!activeCoin) return false;
-    const uid = currentUser?.$id || currentUser?.uid || currentUser?.userId || (userStats as any)?.uid;
-    if (uid && activeCoin.creatorId && String(uid) === String(activeCoin.creatorId)) return true;
-    const cleanCreator = String(activeCoin.creator || "").toLowerCase().replace(/^@/, "").trim();
-    const cleanCreatorName = String((activeCoin as any).creatorName || "").toLowerCase().replace(/^@/, "").trim();
-    const cleanHandle = String(userStats?.handle || "").toLowerCase().replace(/^@/, "").trim();
-    const cleanUser = String(userStats?.username || currentUser?.name || "").toLowerCase().replace(/^@/, "").trim();
-    if (cleanCreator && (cleanCreator === cleanHandle || cleanCreator === cleanUser)) return true;
-    if (cleanCreatorName && (cleanCreatorName === cleanHandle || cleanCreatorName === cleanUser)) return true;
-    try {
-      const rawOwned = localStorage.getItem("pf_my_created_coins");
-      if (rawOwned) {
-        const list: string[] = JSON.parse(rawOwned);
-        if (list.includes(activeCoin.id) || (activeCoin.symbol && list.includes(activeCoin.symbol))) {
-          return true;
-        }
-      }
-    } catch {}
+    const uid =
+      currentUser?.$id ||
+      currentUser?.uid ||
+      currentUser?.userId ||
+      (userStats as any)?.uid;
+    if (uid && activeCoin.creatorId && String(uid) === String(activeCoin.creatorId))
+      return true;
+    const cleanCreator = String(activeCoin.creator || "")
+      .toLowerCase()
+      .replace(/^@/, "")
+      .trim();
+    const cleanCreatorName = String((activeCoin as any).creatorName || "")
+      .toLowerCase()
+      .replace(/^@/, "")
+      .trim();
+    const cleanHandle = String(userStats?.handle || "")
+      .toLowerCase()
+      .replace(/^@/, "")
+      .trim();
+    const cleanUser = String(userStats?.username || currentUser?.name || "")
+      .toLowerCase()
+      .replace(/^@/, "")
+      .trim();
+    if (cleanCreator && (cleanCreator === cleanHandle || cleanCreator === cleanUser))
+      return true;
+    if (
+      cleanCreatorName &&
+      (cleanCreatorName === cleanHandle || cleanCreatorName === cleanUser)
+    )
+      return true;
     return false;
   }, [activeCoin, currentUser, userStats]);
-  const [topHolders, setTopHolders] = useState<any[]>([]);
 
-  useEffect(() => {
-    let active = true;
-    const fetchTopHolders = async () => {
-      try {
-        if (!activeCoin?.id) return;
-        let docs: any[] = [];
-        try {
-          const { apiGetHoldings } = await import("../api/gameClient");
-          const apiRes = await apiGetHoldings({ coinId: activeCoin.id });
-          if (apiRes && Array.isArray(apiRes.holdings)) {
-            docs = apiRes.holdings;
-          }
-        } catch (_apiErr) {}
-
-        if (docs.length === 0) {
-          try {
-            const { Query } = await import("appwrite");
-            const { databases } = await import("../appwrite");
-            const res = await databases.listDocuments("pumpforge", "holdings", [
-              Query.equal("coinId", activeCoin.id),
-              Query.orderDesc("amount"),
-              Query.limit(5)
-            ]);
-            docs = res.documents || [];
-          } catch (_dbErr) {}
-        }
-
-        if (active && docs.length > 0) {
-          const list = await Promise.all(docs.slice(0, 5).map(async (d, index) => {
-             const tokenCount = Number(d.tokenAmount || d.amount) || 0;
-             const totalSupply = Number(activeCoin.supply) || 1;
-             
-             let handleStr = "@" + (d.userId || "").substring(0, 8);
-             let nameStr = "User " + (d.userId || "").substring(0, 4);
-             try {
-                const { databases } = await import("../appwrite");
-                const userDoc = await databases.getDocument("pumpforge", "users", d.userId);
-                if (userDoc.handle) handleStr = userDoc.handle;
-                if (userDoc.username) nameStr = userDoc.username;
-             } catch(e) {}
-             
-             return {
-              rank: index + 1,
-              name: nameStr,
-              handle: handleStr, 
-              weight: ((tokenCount / totalSupply) * 100).toFixed(1) + "%",
-              balance: "$" + (tokenCount * (activeCoin.price || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-              emoji: ["🏛️", "⚡", "💪", "🕶️", "👑"][index % 5],
-              bg: ["bg-amber-950 text-amber-400", "bg-orange-950 text-orange-400", "bg-emerald-950 text-emerald-400", "bg-rose-950 text-rose-400", "bg-indigo-950 text-indigo-400"][index % 5]
-           };
-          }));
-          if (active) setTopHolders(list);
-        }
-      } catch (_err) {
-      }
-    };
-    fetchTopHolders();
-    return () => { active = false; };
-  }, [activeCoin?.id, activeCoin?.price, activeCoin?.supply]);
-
-  useEffect(() => {
-    if (!activeCoin?.createdAt) return;
-    const interval = setInterval(() => {
-      const createdTime = new Date(activeCoin.createdAt!).getTime();
-      const now = Date.now();
-      const elapsed = Math.floor((now - createdTime) / 1000);
-      const remaining = 60 - elapsed;
-      if (remaining > 0) {
-        setLaunchTimer(remaining);
-      } else {
-        setLaunchTimer(0);
-        clearInterval(interval);
-      }
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [activeCoin?.createdAt]);
+  const [remoteHolders, setRemoteHolders] = useState<any[]>([]);
 
   // User holdings query (matches across id, $id, coinId, symbol, and slug)
   const userAssetHolding = useMemo(() => {
@@ -206,41 +137,180 @@ export default function CoinDetailsTab({
         (activeCoin as any).slug,
       ]
         .filter(Boolean)
-        .map((s) => String(s).toLowerCase())
+        .map((s) => String(s).toLowerCase()),
     );
     const matching = (holdings || []).filter(
       (h) =>
         targetIds.has(String(h.coinId || "").toLowerCase()) ||
-        Boolean((h as any).coinSymbol && targetIds.has(String((h as any).coinSymbol).toLowerCase()))
+        Boolean(
+          (h as any).coinSymbol &&
+            targetIds.has(String((h as any).coinSymbol).toLowerCase()),
+        ),
     );
     return matching.reduce((sum, h) => sum + (Number(h.amount) || 0), 0);
   }, [holdings, activeCoin]);
 
-  // Handle transaction execute
+  useEffect(() => {
+    let active = true;
+    const fetchTopHolders = async () => {
+      try {
+        if (!activeCoin?.id) return;
+        const { apiGetHoldings } = await import("../api/gameClient");
+        const apiRes = await apiGetHoldings({ coinId: activeCoin.id });
+        if (active && apiRes && Array.isArray(apiRes.holdings)) {
+          setRemoteHolders(apiRes.holdings);
+        }
+      } catch {}
+    };
+    fetchTopHolders();
+    return () => {
+      active = false;
+    };
+  }, [activeCoin?.id, userAssetHolding]);
+
+  // Combine live user holding + remote holders so Top Holders is always accurate immediately after buying
+  const topHolders = useMemo(() => {
+    const map = new Map<
+      string,
+      { name: string; handle: string; tokens: number }
+    >();
+
+    const myHandle = userStats?.handle || "@zeke";
+    const myName = userStats?.username || "Zeke";
+    if (userAssetHolding > 0.0001) {
+      map.set(myHandle.toLowerCase(), {
+        name: myName,
+        handle: myHandle,
+        tokens: userAssetHolding,
+      });
+    }
+
+    for (const d of remoteHolders) {
+      const amt = Number(d.tokenAmount ?? d.amount ?? 0);
+      if (amt <= 0.0001) continue;
+      const isMe =
+        d.userId === "admin_realzekeee" ||
+        d.userId === currentUser?.$id ||
+        d.userId === currentUser?.uid;
+      const hStr = isMe
+        ? myHandle
+        : d.userHandle || `@${String(d.userId || "holder").slice(0, 8)}`;
+      const nStr = isMe
+        ? myName
+        : d.userName || `Trader ${String(d.userId || "").slice(0, 4)}`;
+      const key = hStr.toLowerCase();
+      if (!map.has(key) || map.get(key)!.tokens < amt) {
+        map.set(key, { name: nStr, handle: hStr, tokens: amt });
+      }
+    }
+
+    return Array.from(map.values())
+      .sort((a, b) => b.tokens - a.tokens)
+      .slice(0, 5)
+      .map((item, idx) => {
+        const pct = Math.min(100, (item.tokens / totalSupply) * 100);
+        return {
+          rank: idx + 1,
+          name: item.name,
+          handle: item.handle,
+          tokensFormatted: item.tokens.toLocaleString("en-US", {
+            maximumFractionDigits: 2,
+          }),
+          weight: `${pct < 0.1 && pct > 0 ? "<0.1" : pct.toFixed(1)}%`,
+          balance:
+            "$" +
+            (item.tokens * currentPrice).toLocaleString("en-US", {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            }),
+        };
+      });
+  }, [userAssetHolding, remoteHolders, userStats, currentUser, totalSupply, currentPrice]);
+
+  useEffect(() => {
+    if (!activeCoin?.createdAt) return;
+    const interval = setInterval(() => {
+      const createdTime = new Date(activeCoin.createdAt!).getTime();
+      const now = Date.now();
+      const elapsed = Math.floor((now - createdTime) / 1000);
+      const remaining = 300 - elapsed;
+      if (remaining > 0) {
+        setLaunchTimer(remaining);
+      } else {
+        setLaunchTimer(0);
+        clearInterval(interval);
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [activeCoin?.createdAt]);
+
+  // Compute effective token amount and USD value from current input
+  const parsedInput = Math.max(0, parseFloat(tradeInput) || 0);
+  const effectiveTokens =
+    activeTradeMode === "BUY" && buyInputMode === "USD"
+      ? parsedInput / currentPrice
+      : parsedInput;
+  const effectiveUsd =
+    activeTradeMode === "BUY" && buyInputMode === "USD"
+      ? parsedInput
+      : parsedInput * currentPrice;
+
+  const setPercentOfMax = (percent: number) => {
+    playSound("click");
+    setTradePercentage(percent);
+    setFeedback(null);
+
+    if (activeTradeMode === "BUY") {
+      // Account for 0.5% fee so 100% never exceeds cash balance
+      const cashBudget = (Number(userStats.cash || 0) * (percent / 100)) / 1.0055;
+      if (buyInputMode === "USD") {
+        const cleanUsd = Math.floor(cashBudget * 100) / 100;
+        setTradeInput(cleanUsd > 0 ? String(cleanUsd) : "0");
+      } else {
+        const rawCoins = cashBudget / currentPrice;
+        const floored = Math.floor(rawCoins * 100) / 100;
+        setTradeInput(floored > 0 ? floored.toFixed(2) : rawCoins.toFixed(4));
+      }
+    } else {
+      if (percent === 100) {
+        const flooredAll = Math.floor(userAssetHolding * 10000) / 10000;
+        setTradeInput(flooredAll > 0 ? String(flooredAll) : "0");
+      } else {
+        const balanceToSell =
+          Math.floor(userAssetHolding * (percent / 100) * 10000) / 10000;
+        setTradeInput(balanceToSell > 0 ? String(balanceToSell) : "0");
+      }
+    }
+  };
+
   const handleExecuteTrade = async (e: React.FormEvent) => {
     e.preventDefault();
     setFeedback(null);
-    let numericAmt = parseFloat(tradeAmountCoins);
-    if (isNaN(numericAmt) || numericAmt <= 0) {
+
+    let tokensToTrade = effectiveTokens;
+    if (isNaN(tokensToTrade) || tokensToTrade <= 0) {
       setFeedback({
         type: "error",
-        msg: "Please provide a valid token amount count.",
+        msg: "Enter a valid amount above 0.",
       });
       return;
     }
 
-    // Fair Launch allows creator and early participants to buy without lockouts
-
     if (activeTradeMode === "BUY") {
-      const totalCost = numericAmt * activeCoin.price;
-      if (userStats.cash * 1.006 < totalCost) {
+      const totalCost = tokensToTrade * currentPrice;
+      const availableCash = Number(userStats.cash) || 0;
+      if (totalCost > availableCash * 1.006) {
         setFeedback({
           type: "error",
-          msg: `Insufficient cash reserve! You need $${totalCost.toLocaleString(undefined, { minimumFractionDigits: 2 })} but only have $${userStats.cash.toLocaleString(undefined, { minimumFractionDigits: 2 })}.`,
+          msg: `Insufficient cash balance! Required: $${totalCost.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}, Available: $${availableCash.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
         });
         return;
       }
-    } else if (activeTradeMode === "SELL") {
+      // Clamp slightly if within 0.6% fee tolerance
+      if (totalCost > availableCash) {
+        tokensToTrade = (availableCash / 1.0055) / currentPrice;
+      }
+    } else {
       if (userAssetHolding <= 0) {
         setFeedback({
           type: "error",
@@ -248,12 +318,15 @@ export default function CoinDetailsTab({
         });
         return;
       }
-      if (numericAmt > userAssetHolding && numericAmt <= userAssetHolding * 1.01 + 0.05) {
-        numericAmt = userAssetHolding;
-      } else if (userAssetHolding + 0.0001 < numericAmt) {
+      if (
+        tokensToTrade > userAssetHolding &&
+        tokensToTrade <= userAssetHolding * 1.01 + 0.05
+      ) {
+        tokensToTrade = userAssetHolding;
+      } else if (userAssetHolding + 0.0001 < tokensToTrade) {
         setFeedback({
           type: "error",
-          msg: `Insufficient token balance! You own ${userAssetHolding.toLocaleString(undefined, { maximumFractionDigits: 4 })} *${activeCoin.symbol} but attempted to sell ${numericAmt.toLocaleString(undefined, { maximumFractionDigits: 4 })}.`,
+          msg: `Insufficient tokens! You own ${userAssetHolding.toLocaleString(undefined, { maximumFractionDigits: 4 })} *${activeCoin.symbol}.`,
         });
         return;
       }
@@ -263,20 +336,18 @@ export default function CoinDetailsTab({
     try {
       await onTradeAction(
         activeCoin.id,
-        numericAmt,
-        activeTradeMode as "BUY" | "SELL",
+        tokensToTrade,
+        activeTradeMode,
+        currentPrice,
       );
       setFeedback({
         type: "success",
-        msg: `Successfully ${activeTradeMode === "BUY" ? "purchased" : "sold"} ${numericAmt.toLocaleString(undefined, { maximumFractionDigits: 4 })} *${activeCoin.symbol} tokens!`,
+        msg: `${activeTradeMode === "BUY" ? "Bought" : "Sold"} ${tokensToTrade.toLocaleString(undefined, { maximumFractionDigits: 2 })} *${activeCoin.symbol} ($${(tokensToTrade * currentPrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`,
       });
-      setTradeAmountCoins("");
+      setTradeInput("");
       setTradePercentage(null);
-      setTimeout(() => {
-        setFeedback(null);
-      }, 2500);
+      setTimeout(() => setFeedback(null), 2500);
     } catch (err: any) {
-      console.error("Trade execution failed:", err);
       setFeedback({
         type: "error",
         msg: formatErrorMessage(err, "Transaction could not be completed."),
@@ -286,126 +357,62 @@ export default function CoinDetailsTab({
     }
   };
 
-  const setPercentOfMax = (percent: number) => {
-    setTradePercentage(percent);
-    if (activeTradeMode === "BUY") {
-      // Account for 0.5% protocol fee so 100% buy never exceeds userStats.cash
-      const cashBudget = (userStats.cash * (percent / 100)) / 1.0055;
-      const rawCoins = cashBudget / (activeCoin.price || 0.000001);
-      const floored = Math.floor(rawCoins * 100) / 100;
-      setTradeAmountCoins(floored > 0 ? floored.toFixed(2) : rawCoins.toFixed(4));
-    } else {
-      if (percent === 100) {
-        const flooredAll = Math.floor(userAssetHolding * 10000) / 10000;
-        setTradeAmountCoins(flooredAll > 0 ? String(flooredAll) : "0");
-      } else {
-        const balanceToSell = Math.floor(userAssetHolding * (percent / 100) * 10000) / 10000;
-        setTradeAmountCoins(balanceToSell > 0 ? String(balanceToSell) : "0");
-      }
-    }
-  };
-
-  // State for server-authoritative OHLCV candles, coin trades, and comments
-  const currentPrice = activeCoin?.price || 0.000001;
   const [serverCandles, setServerCandles] = useState<any[]>([]);
-  const [candlesLoading, setCandlesLoading] = useState(false);
   const [coinTrades, setCoinTrades] = useState<any[]>([]);
   const [tradesLoading, setTradesLoading] = useState(false);
   const [comments, setComments] = useState<any[]>([]);
   const [commentText, setCommentText] = useState("");
   const [submittingComment, setSubmittingComment] = useState(false);
 
-  // Fetch server-authoritative OHLCV candles
   const fetchCandles = async () => {
     if (!activeCoin?.id) return;
     try {
-      setCandlesLoading(true);
-      const interval = timeframe === "5m" ? 5 : timeframe === "15m" ? 15 : timeframe === "1h" ? 60 : 1;
+      const interval =
+        timeframe === "5m" ? 5 : timeframe === "15m" ? 15 : timeframe === "1h" ? 60 : 1;
       const res = await apiGetCoinCandles(activeCoin.id, interval);
       if (res.candles && res.candles.length > 0) {
         setServerCandles(res.candles);
       }
-    } catch {
-      // ignore
-    } finally {
-      setCandlesLoading(false);
-    }
+    } catch {}
   };
 
-  // Fetch recent trades for this coin
   const fetchCoinTrades = async () => {
     if (!activeCoin?.id) return;
     try {
       setTradesLoading(true);
-      let list: any[] = [];
-      let fetched = false;
-      try {
-        const { apiGetTrades } = await import("../api/gameClient");
-        const apiRes = await apiGetTrades({ coinId: activeCoin.id, limit: 20 });
-        if (apiRes && Array.isArray(apiRes.trades)) {
-          list = apiRes.trades;
-          fetched = true;
-        }
-      } catch (_apiErr) {}
-
-      if (!fetched) {
-        try {
-          const { Query } = await import("appwrite");
-          const { databases } = await import("../appwrite");
-          const res = await databases.listDocuments("pumpforge", "trades", [
-            Query.equal("coinId", activeCoin.id),
-            Query.orderDesc("timestamp"),
-            Query.limit(20),
-          ]);
-          list = res.documents || [];
-        } catch (_dbErr) {}
+      const { apiGetTrades } = await import("../api/gameClient");
+      const apiRes = await apiGetTrades({ coinId: activeCoin.id, limit: 20 });
+      if (apiRes && Array.isArray(apiRes.trades)) {
+        setCoinTrades(apiRes.trades);
       }
-
-      setCoinTrades(list);
     } catch {
-      // ignore
     } finally {
       setTradesLoading(false);
     }
   };
 
-  // Fetch comments for this coin
   const fetchComments = async () => {
     if (!activeCoin?.id) return;
     try {
       const res = await apiGetComments(activeCoin.id);
       setComments(res.comments || []);
-    } catch {
-      // ignore
-    }
+    } catch {}
   };
 
   useEffect(() => {
     fetchCandles();
     fetchCoinTrades();
     fetchComments();
-    let debounceTimer: any = null;
     const onTradesUpdated = () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        fetchCoinTrades();
-        fetchCandles();
-      }, 250);
+      fetchCoinTrades();
+      fetchCandles();
     };
     window.addEventListener("pf_trades_updated", onTradesUpdated);
-    const interval = setInterval(() => {
-      if (typeof document !== "undefined" && document.hidden) return;
-      fetchCandles();
-      fetchCoinTrades();
-    }, 20000);
     return () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
       window.removeEventListener("pf_trades_updated", onTradesUpdated);
-      clearInterval(interval);
     };
   }, [activeCoin?.id, timeframe]);
 
-  // Handle comment submit
   const handlePostComment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) {
@@ -442,39 +449,45 @@ export default function CoinDetailsTab({
   const handleReportComment = async (commentId: string) => {
     try {
       await apiReportComment(commentId);
-      toast.success("Comment reported to moderators.");
+      toast.success("Comment reported.");
     } catch (err: any) {
       toast.error(formatErrorMessage(err, "Could not report comment."));
     }
   };
 
-  // Server-authoritative or fallback candles dataset
+  // Always build at least 18 well-proportioned OHLCV candles so the chart never renders a single flat 100%-wide cross
   const candlesData = useMemo(() => {
-    if (serverCandles.length > 0) return serverCandles;
-    const historyArr = activeCoin?.history || [];
-    const ticks =
-      historyArr.length >= 3
-        ? historyArr
-        : [
-            currentPrice * 0.98,
-            currentPrice * 0.99,
-            currentPrice * 0.985,
-            currentPrice,
-          ];
+    const rawHist =
+      Array.isArray(activeCoin?.history) && activeCoin.history.length > 0
+        ? activeCoin.history.map((n) => Number(n) || currentPrice)
+        : [currentPrice];
 
-    return ticks.map((tick, index) => {
-      const prev = ticks[index - 1] || tick;
+    // Seed deterministic 18-step price walk ending at currentPrice if fewer than 12 points exist
+    const ticks: number[] = [...rawHist];
+    const seedFactors = [
+      0.94, 0.955, 0.948, 0.962, 0.958, 0.971, 0.965, 0.978, 0.984, 0.979,
+      0.988, 0.992, 0.987, 0.995, 0.991, 0.997, 0.999, 1.0,
+    ];
+    while (ticks.length < 18) {
+      const idx = 18 - ticks.length - 1;
+      const factor = seedFactors[Math.max(0, idx)] || 0.98;
+      ticks.unshift(Number((ticks[0] * factor).toFixed(6)));
+    }
+    ticks[ticks.length - 1] = currentPrice;
+
+    return ticks.slice(-18).map((tick, index, arr) => {
+      const prev = index > 0 ? arr[index - 1] : tick * 0.994;
       const open = prev;
       const close = tick;
       const isUp = close >= open;
-      const wiggle = currentPrice * 0.005;
-      const high = Math.max(open, close) + (isUp ? wiggle : wiggle * 0.3);
-      const low = Math.max(0.000001, Math.min(open, close) - (!isUp ? wiggle : wiggle * 0.3));
-      const volume = Math.round(15000 + ((tick * 2000 * (index + 1)) % 40000));
+      const spread = Math.max(Math.abs(close - open), currentPrice * 0.004);
+      const high = Math.max(open, close) + spread * 0.65;
+      const low = Math.max(0.000001, Math.min(open, close) - spread * 0.55);
+      const volume = Math.round(12000 + (((index + 3) * 7919) % 38000));
 
       return {
         id: index,
-        time: `${index + 1}m ago`,
+        time: `${18 - index}m ago`,
         open,
         high,
         low,
@@ -483,16 +496,16 @@ export default function CoinDetailsTab({
         isUp,
       };
     });
-  }, [serverCandles, activeCoin, currentPrice]);
+  }, [activeCoin?.history, currentPrice, serverCandles]);
 
   const { chartMax, chartMin, chartRange } = useMemo(() => {
     const allPrices = candlesData.flatMap((c) => [c.open, c.close, c.high, c.low]);
     const max = Math.max(...allPrices);
     const min = Math.min(...allPrices);
-    const padding = (max - min) * 0.1 || max * 0.05 || 0.001;
-    const chartMax = max + padding;
-    const chartMin = Math.max(0, min - padding);
-    const chartRange = chartMax - chartMin || 0.001;
+    const pad = (max - min) * 0.12 || max * 0.04 || 0.001;
+    const chartMax = max + pad;
+    const chartMin = Math.max(0, min - pad);
+    const chartRange = Math.max(0.000001, chartMax - chartMin);
     return { chartMax, chartMin, chartRange };
   }, [candlesData]);
 
@@ -505,248 +518,200 @@ export default function CoinDetailsTab({
 
   return (
     <div
-      className="w-full text-zinc-300 font-mono flex flex-col gap-6"
+      className="w-full text-zinc-200 flex flex-col gap-5 animate-fade-in"
       id="coin-details-view-container"
     >
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-5">
+      {/* Top Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#141417] border border-white/[0.07] p-4 rounded-2xl">
         <div className="flex items-center gap-3">
           {onBackToList && (
             <button
-              onClick={onBackToList}
-              className="p-2.5 glass-pill hover:bg-white/[0.12] border border-white/15 rounded-2xl text-zinc-300 hover:text-white transition-all cursor-pointer"
-              title="Return to marketplace list"
+              onClick={() => {
+                playSound("click");
+                onBackToList();
+              }}
+              className="p-2 bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] rounded-xl text-zinc-300 hover:text-white transition-colors cursor-pointer"
+              title="Back to Market"
             >
               <ArrowLeft className="w-4 h-4" />
             </button>
           )}
+          <div
+            className={`w-11 h-11 rounded-xl border border-white/15 flex items-center justify-center text-2xl shrink-0 ${activeCoin.avatarBg}`}
+          >
+            {activeCoin.avatarEmoji || "🪙"}
+          </div>
           <div className="flex flex-col">
-            <h2 className="text-xs font-extrabold text-zinc-400 uppercase tracking-widest leading-none mb-1">
-              PRO TRADING DESK
-            </h2>
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] text-zinc-400">
-                Viewing asset profiles in real-time realm.
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="font-bold text-white text-base sm:text-lg leading-tight">
+                {activeCoin.name}
+              </h1>
+              <span className="text-xs bg-orange-500/15 text-orange-400 font-mono font-bold border border-orange-500/30 px-2 py-0.5 rounded-lg">
+                *{activeCoin.symbol}
               </span>
             </div>
+            <span className="text-xs text-zinc-400 mt-0.5">
+              Created by{" "}
+              <UserHoverCard userIdOrHandle={activeCoin.creatorId || activeCoin.creator}>
+                <strong className="text-zinc-200 hover:text-orange-400 cursor-pointer">
+                  {activeCoin.creatorName || activeCoin.creator}
+                </strong>
+              </UserHoverCard>
+            </span>
           </div>
         </div>
 
-        {/* Live account stats indicator */}
-        <div className="flex items-center gap-2 glass-card border border-white/10 rounded-2xl p-3 px-4 shadow-xl">
-          <div className="flex flex-col text-right">
-            <span className="text-[9px] text-zinc-400 uppercase">
-              Cash Reserve Balance
-            </span>
-            <span className="text-sm font-black text-emerald-400 font-mono tracking-tight">
+        {/* Live Cash & Owned Token Summary */}
+        <div className="flex items-center justify-between sm:justify-end gap-4 bg-[#0e0e11] border border-white/[0.06] rounded-xl px-4 py-2.5 font-mono text-xs">
+          <div className="flex flex-col">
+            <span className="text-[10px] text-zinc-500 uppercase">Cash Available</span>
+            <span className="text-sm font-bold text-emerald-400">
               $
-              {userStats.cash.toLocaleString("en-US", {
+              {Number(userStats.cash || 0).toLocaleString("en-US", {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2,
               })}
             </span>
           </div>
-          <div className="w-1.5 h-8 bg-white/10 rounded-full mx-1"></div>
+          <div className="w-px h-7 bg-white/[0.08]" />
           <div className="flex flex-col text-right">
-            <span className="text-[9px] text-zinc-400 uppercase">
+            <span className="text-[10px] text-zinc-500 uppercase">
               Owned *{activeCoin.symbol}
             </span>
-            <span className="text-sm font-black text-white font-mono">
+            <span className="text-sm font-bold text-orange-400">
               {userAssetHolding.toLocaleString("en-US", {
                 maximumFractionDigits: 2,
-              })}
+              })}{" "}
+              <span className="text-[11px] text-zinc-400">
+                ($
+                {(userAssetHolding * currentPrice).toLocaleString("en-US", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+                )
+              </span>
             </span>
           </div>
         </div>
       </div>
 
-      {/* Main Grid: Left Side (Header Details, Chart Core) & Right Side (Execution Dashboard, Pool Stats) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left Side: 7 Column Grid containing Aesthetics + Candlestick Module */}
-        <div className="lg:col-span-12 xl:col-span-8 flex flex-col gap-6">
-          <div
-            className="glass-panel border border-white/10 p-6 rounded-3xl relative overflow-hidden shadow-2xl"
-            id="token-head-metadata-card"
-          >
-            {/* Pulsing Grid Glow BG */}
-            <div className="absolute inset-0 bg-radial-gradient from-rose-500/10 via-transparent to-transparent pointer-events-none" />
-
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-5 relative z-10">
-              {/* Asset Identity Avatar Flag */}
-              <div className="flex items-center gap-4">
-                <div
-                  className={`w-14 h-14 rounded-2xl border-2 flex items-center justify-center text-3xl shadow-lg border-white/20 bg-white/[0.05] backdrop-blur-md`}
+      {/* Main Grid: Chart on Left (8 cols), Trade Execution & Pool Info on Right (4 cols) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        <div className="lg:col-span-7 xl:col-span-8 flex flex-col gap-5">
+          {/* Price + Candlestick Chart Card */}
+          <div className="bg-[#141417] border border-white/[0.07] p-4 sm:p-5 rounded-2xl flex flex-col gap-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.06] pb-3.5">
+              <div className="flex items-baseline gap-3">
+                <span className="text-2xl sm:text-3xl font-bold text-white font-mono">
+                  $
+                  {currentPrice >= 1000
+                    ? `${(currentPrice / 1000).toFixed(2)}K`
+                    : currentPrice >= 1
+                    ? currentPrice.toFixed(2)
+                    : currentPrice.toFixed(4)}
+                </span>
+                <span
+                  className={`px-2 py-0.5 rounded-lg text-xs font-mono font-semibold border ${
+                    (activeCoin?.change24h || 0) >= 0
+                      ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+                      : "bg-rose-500/10 border-rose-500/30 text-rose-400"
+                  }`}
                 >
-                  {activeCoin.avatarEmoji || "🌟"}
-                </div>
-                <div className="flex flex-col">
-                  {/* Row showing live Badge & Ticker */}
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-extrabold text-white text-lg tracking-tight leading-none">
-                      {activeCoin.name}
-                    </span>
-                    <span className="text-xs bg-white/[0.08] text-zinc-300 font-bold border border-white/10 px-2 py-0.5 rounded-lg uppercase font-mono tracking-wider">
-                      *{activeCoin.symbol}
-                    </span>
-                    <span className="px-2 py-0.5 rounded-full text-[8px] bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 font-extrabold flex items-center gap-1 uppercase tracking-widest animate-pulse">
-                      <span className="w-1 h-1 bg-emerald-400 rounded-full"></span>
-                      LIVE
-                    </span>
-                  </div>
-
-                  {/* Creator citation with public dossier card */}
-                  <span className="text-[11px] text-zinc-400 flex items-center gap-1">
-                    Created by{" "}
-                    <UserHoverCard userIdOrHandle={activeCoin.creatorId || activeCoin.creator}>
-                      <strong className="text-zinc-200 hover:text-rose-400 transition-colors cursor-pointer underline decoration-dotted decoration-zinc-600 underline-offset-2">
-                        {activeCoin.creatorName || activeCoin.creator}
-                      </strong>
-                    </UserHoverCard>
-                  </span>
-                </div>
+                  {(activeCoin?.change24h || 0) >= 0 ? "+" : ""}
+                  {Number(activeCoin?.change24h || 0).toFixed(2)}%
+                </span>
               </div>
 
-              <div className="flex flex-col sm:items-end">
-                <span className="text-[9px] text-zinc-400 uppercase tracking-widest font-black">
-                  INDEX DEGEN PRICE
-                </span>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-3xl font-black text-white tracking-widest font-mono">
-                    $
-                    {(activeCoin?.price || 0) >= 1000
-                      ? `${((activeCoin?.price || 0) / 1000).toFixed(2)}K`
-                      : (activeCoin?.price || 0) >= 1
-                      ? (activeCoin?.price || 0).toFixed(2)
-                      : (activeCoin?.price || 0).toFixed(4)}
-                  </span>
-
-                  {/* Colored Percentage momentum badge */}
-                  <span
-                    className={`px-2 py-1 rounded-xl text-xs font-black flex items-center gap-0.5 border select-none ${
-                      (activeCoin?.change24h || 0) >= 0
-                        ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-400"
-                        : "bg-rose-500/15 border-rose-500/40 text-rose-400"
+              <div className="flex items-center gap-1 bg-[#0e0e11] p-1 rounded-xl border border-white/[0.06]">
+                {["1m", "5m", "15m", "1h"].map((tf) => (
+                  <button
+                    key={tf}
+                    type="button"
+                    onClick={() => {
+                      playSound("click");
+                      setTimeframe(tf);
+                    }}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-mono font-semibold transition cursor-pointer ${
+                      timeframe === tf
+                        ? "bg-gradient-to-r from-orange-500 to-amber-500 text-zinc-950 font-bold"
+                        : "text-zinc-400 hover:text-white"
                     }`}
                   >
-                    {(activeCoin?.change24h || 0) >= 0 ? "▲" : "▼"}{" "}
-                    {Math.abs(activeCoin?.change24h || 0).toFixed(2)}%
-                  </span>
-                </div>
-                <span className="text-[10px] text-zinc-500 mt-1">
-                  Updated in real-time
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div
-            className="glass-panel border border-white/10 p-6 rounded-3xl flex flex-col gap-4 relative shadow-2xl"
-            id="charts-module-candlestick"
-          >
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-4">
-              <div className="flex items-center gap-2.5">
-                <div className="w-2.5 h-2.5 bg-rose-500 rounded-full animate-pulse shadow-md shadow-rose-950"></div>
-                <span className="text-xs font-black text-white tracking-wider uppercase font-mono">
-                  Price Chart ({timeframe})
-                </span>
-                <span className="text-[10px] text-zinc-400 font-semibold hidden md:inline">
-                  | REAL-TIME FEED
-                </span>
-              </div>
-
-              {/* Custom Interval Dropdown Selector */}
-              <div className="flex items-center gap-2.5">
-                <span className="text-[10px] text-zinc-400 uppercase">
-                  Interval:
-                </span>
-                <select
-                  value={timeframe}
-                  onChange={(e) => setTimeframe(e.target.value)}
-                  className="glass-input font-mono text-[11px] text-zinc-300 font-bold p-1 px-2.5 rounded-xl focus:outline-none focus:border-rose-500 cursor-pointer text-center"
-                >
-                  <option value="1m" className="bg-zinc-950 text-white">1 minute (preset)</option>
-                  <option value="5m" className="bg-zinc-950 text-white">5 minutes</option>
-                  <option value="15m" className="bg-zinc-950 text-white">15 minutes</option>
-                  <option value="1h" className="bg-zinc-950 text-white">1 hour</option>
-                </select>
+                    {tf}
+                  </button>
+                ))}
               </div>
             </div>
 
-            <div className="relative h-64 bg-black/40 backdrop-blur-md rounded-2xl border border-white/10 overflow-hidden flex flex-col justify-end p-4">
-              {/* Vertical Grid Lines Background overlay */}
-              <div className="absolute inset-0 flex flex-col justify-between pointer-events-none py-6 px-1 z-0">
-                <div className="border-b border-zinc-900 w-full flex justify-between text-[8px] text-zinc-650">
-                  <span>{formatPriceLabel(chartMax)}</span>
-                  <div className="border-l border-zinc-900/40 h-full"></div>
-                </div>
-                <div className="border-b border-zinc-900 w-full flex justify-between text-[8px] text-zinc-650">
-                  <span>{formatPriceLabel(chartMin + chartRange * 0.75)}</span>
-                  <div className="border-l border-zinc-900/40 h-full"></div>
-                </div>
-                <div className="border-b border-zinc-900 w-full flex justify-between text-[8px] text-zinc-650">
-                  <span>{formatPriceLabel(chartMin + chartRange * 0.50)}</span>
-                  <div className="border-l border-zinc-900/40 h-full"></div>
-                </div>
-                <div className="border-b border-zinc-900 w-full flex justify-between text-[8px] text-zinc-650">
-                  <span>{formatPriceLabel(chartMin + chartRange * 0.25)}</span>
-                  <div className="border-l border-zinc-900/40 h-full"></div>
-                </div>
-                <div className="w-full flex justify-between text-[8px] text-zinc-655 font-bold font-mono">
-                  <span>{formatPriceLabel(chartMin)}</span>
-                  <div className="border-l border-zinc-900/40 h-full"></div>
-                </div>
+            {/* Clean Candlestick Plot Box (No Overlapping Labels) */}
+            <div className="relative h-60 bg-[#0e0e11] rounded-xl border border-white/[0.05] p-3 flex flex-col justify-between overflow-hidden">
+              {/* Horizontal Price Grid Lines */}
+              <div className="absolute inset-x-3 top-3 bottom-3 flex flex-col justify-between pointer-events-none z-0">
+                {[1, 0.75, 0.5, 0.25, 0].map((ratio, i) => (
+                  <div
+                    key={i}
+                    className="border-b border-white/[0.04] w-full flex justify-between items-center"
+                  >
+                    <span className="text-[10px] font-mono text-zinc-500 bg-[#0e0e11]/80 pr-1.5 -mt-3">
+                      {formatPriceLabel(chartMin + chartRange * ratio)}
+                    </span>
+                  </div>
+                ))}
               </div>
 
-              {/* Candle layout block */}
-              <div className="relative z-10 w-full h-44 flex items-end justify-between px-2 gap-1.5 md:gap-3">
+              {/* Candlesticks Row */}
+              <div className="relative z-10 w-full h-full flex items-end justify-between pl-14 pr-2 py-2 gap-1.5 sm:gap-2">
                 {candlesData.map((candle, idx) => {
                   const bottomPercent = Math.min(
-                    95,
+                    92,
                     Math.max(
-                      0,
-                      ((Math.min(candle.open, candle.close) - chartMin) / chartRange) * 100,
+                      4,
+                      ((Math.min(candle.open, candle.close) - chartMin) /
+                        chartRange) *
+                        100,
                     ),
                   );
                   const topPercent = Math.min(
-                    100,
+                    96,
                     Math.max(
-                      bottomPercent + 2,
-                      ((Math.max(candle.open, candle.close) - chartMin) / chartRange) * 100,
+                      bottomPercent + 3,
+                      ((Math.max(candle.open, candle.close) - chartMin) /
+                        chartRange) *
+                        100,
                     ),
                   );
-                  const bodyHeight = Math.max(topPercent - bottomPercent, 4);
+                  const bodyHeight = Math.max(topPercent - bottomPercent, 5);
 
                   const wickBottomPercent = Math.min(
-                    95,
-                    Math.max(0, ((candle.low - chartMin) / chartRange) * 100),
+                    92,
+                    Math.max(2, ((candle.low - chartMin) / chartRange) * 100),
                   );
                   const wickTopPercent = Math.min(
-                    100,
+                    98,
                     Math.max(
-                      wickBottomPercent + 3,
+                      wickBottomPercent + 6,
                       ((candle.high - chartMin) / chartRange) * 100,
                     ),
                   );
-                  const wickHeight = Math.max(wickTopPercent - wickBottomPercent, 6);
+                  const wickHeight = Math.max(
+                    wickTopPercent - wickBottomPercent,
+                    8,
+                  );
 
                   const isHovered = hoveredCandle === idx;
 
                   return (
                     <div
                       key={candle.id}
-                      className="flex-1 flex flex-col justify-end items-center relative h-full cursor-pointer group"
+                      className="flex-1 max-w-[16px] flex flex-col justify-end items-center relative h-full cursor-pointer"
                       onMouseEnter={() => setHoveredCandle(idx)}
                       onMouseLeave={() => setHoveredCandle(null)}
+                      onClick={() => setHoveredCandle(idx)}
                     >
-                      {/* High-Low Wick Segment Line (Vertical wick) */}
+                      {/* High-Low Wick */}
                       <div
-                        className={`absolute w-[1.5px] transition-colors duration-200 z-0 ${
-                          candle.isUp
-                            ? isHovered
-                              ? "bg-emerald-400"
-                              : "bg-emerald-600/60"
-                            : isHovered
-                              ? "bg-rose-400"
-                              : "bg-rose-600/60"
+                        className={`absolute w-[1.5px] z-0 ${
+                          candle.isUp ? "bg-emerald-400/70" : "bg-rose-400/70"
                         }`}
                         style={{
                           bottom: `${wickBottomPercent}%`,
@@ -754,662 +719,560 @@ export default function CoinDetailsTab({
                         }}
                       />
 
-                      {/* Candlestick Box Segment (Body thickness) */}
+                      {/* Candle Body */}
                       <div
-                        className={`w-full rounded-sm relative z-10 transition-all duration-200 border ${
+                        className={`w-full rounded-[2px] relative z-10 transition-transform ${
                           candle.isUp
                             ? isHovered
-                              ? "bg-emerald-500 border-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.7)] scale-x-105"
-                              : "bg-emerald-600/85 border-emerald-500/70"
+                              ? "bg-emerald-400 scale-x-110"
+                              : "bg-emerald-500"
                             : isHovered
-                              ? "bg-rose-500 border-rose-400 shadow-[0_0_8px_rgba(244,63,94,0.7)] scale-x-105"
-                              : "bg-rose-600/85 border-rose-500/70"
+                              ? "bg-rose-400 scale-x-110"
+                              : "bg-rose-500"
                         }`}
                         style={{
                           bottom: `${bottomPercent}%`,
                           height: `${bodyHeight}%`,
                         }}
                       />
-
-                      {/* Volume Column Block (at the direct base) */}
-                      <div
-                        className={`w-full select-none opacity-45 group-hover:opacity-75 transition-opacity duration-200 rounded-t-[1px] ${
-                          candle.isUp ? "bg-emerald-600" : "bg-rose-600"
-                        }`}
-                        style={{
-                          height: `${(candle.volume / 60000) * 45}px`,
-                        }}
-                      />
                     </div>
                   );
                 })}
               </div>
-
-              <div className="h-7 w-full border-t border-zinc-900/60 mt-3 pt-2 flex items-center justify-between text-[9px] text-zinc-500 select-none">
-                {hoveredCandle !== null ? (
-                  <div className="flex items-center gap-3 w-full justify-between animate-fade-in font-mono text-zinc-300">
-                    <span className="font-extrabold text-white bg-zinc-900 px-1.5 py-0.5 rounded leading-none text-[8px] uppercase">
-                      CANDLE {hoveredCandle + 1} (
-                      {candlesData[hoveredCandle].time})
-                    </span>
-                    <div className="flex gap-3">
-                      <span>
-                        OPEN:{" "}
-                        <strong className="text-zinc-200">
-                          ${candlesData[hoveredCandle].open.toFixed(3)}
-                        </strong>
-                      </span>
-                      <span>
-                        HIGH:{" "}
-                        <strong className="text-emerald-400">
-                          ${candlesData[hoveredCandle].high.toFixed(3)}
-                        </strong>
-                      </span>
-                      <span>
-                        LOW:{" "}
-                        <strong className="text-rose-400">
-                          ${candlesData[hoveredCandle].low.toFixed(3)}
-                        </strong>
-                      </span>
-                      <span>
-                        CLOSE:{" "}
-                        <strong className="text-zinc-200">
-                          ${candlesData[hoveredCandle].close.toFixed(3)}
-                        </strong>
-                      </span>
-                      <span>
-                        VOL:{" "}
-                        <strong className="text-zinc-400">
-                          {candlesData[hoveredCandle].volume.toLocaleString()}
-                        </strong>
-                      </span>
-                    </div>
-                  </div>
-                ) : (
-                  <span className="text-zinc-550 italic mx-auto">
-                    Hover over wicks to load interactive tick indexes
-                  </span>
-                )}
-              </div>
             </div>
-          </div>
-        </div>
 
-        {/* Right Side: 5 Column Grid for Transaction Execution & Liquidity / Holder structures */}
-        <div className="lg:col-span-12 xl:col-span-4 flex flex-col gap-6">
-          <div
-            className="glass-panel border border-white/10 p-6 rounded-3xl flex flex-col gap-4 shadow-2xl select-none"
-            id="buy-sell-trade-dashboard"
-          >
-            <h3 className="text-xs font-black text-white uppercase tracking-widest flex items-center gap-2 mb-1">
-              <Zap className="w-3.5 h-3.5 text-rose-500 animate-pulse" />
-              TRANSACTION EXECUTION
-              {launchTimer > 0 && (
-                <span className="ml-auto text-[9px] bg-emerald-950/80 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/40 font-mono">
-                  ⚡ {launchTimer}s FAIR LAUNCH {isCreator ? "(OWNER)" : "OPEN"}
-                </span>
-              )}
-            </h3>
-
-            {/* If no trade mode selected, show stacked buttons */}
-            {activeTradeMode === "NONE" ? (
-              <div className="flex flex-col gap-3">
-                <button
-                  onClick={() => {
-                    setActiveTradeMode("BUY");
-                    setFeedback(null);
-                  }}
-                  className="w-full py-4 px-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-xl flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 active:scale-98 text-white shadow-emerald-950/30 border border-white/20 cursor-pointer"
-                  id="massive-buy-btn"
-                >
-                  ⚡ Buy ${activeCoin.symbol}
-                </button>
-                <button
-                  onClick={() => {
-                    setActiveTradeMode("SELL");
-                    setFeedback(null);
-                  }}
-                  className="w-full py-4 px-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all border flex items-center justify-center gap-2 glass-pill hover:bg-rose-950/40 active:scale-98 text-rose-300 hover:text-white border-rose-500/30 cursor-pointer shadow-lg"
-                  id="massive-sell-btn"
-                >
-                  ⚡ Sell ${activeCoin.symbol}
-                </button>
-                <p className="text-[9px] text-zinc-400 text-center leading-normal mt-1">
-                  Real market risk. Operations are mapped directly to
-                  Appwrite databases nodes securely.
-                </p>
-              </div>
-            ) : (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="glass-card border border-white/10 p-4 rounded-2xl flex flex-col gap-3.5"
-              >
-                {/* Form header toggle row */}
-                <div className="flex items-center justify-between border-b border-white/10 pb-2 mb-1">
-                  <span
-                    className={`text-[11px] font-black uppercase tracking-wider ${
-                      activeTradeMode === "BUY"
-                        ? "text-emerald-400"
-                        : "text-rose-400"
-                    }`}
-                  >
-                    EXECUTE {activeTradeMode} FOR *{activeCoin.symbol}
+            {/* Dedicated Non-Overlapping Candle Readout Footer */}
+            <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono text-zinc-400 px-1">
+              {hoveredCandle !== null && candlesData[hoveredCandle] ? (
+                <>
+                  <span className="text-orange-400 font-bold">
+                    {candlesData[hoveredCandle].time}
                   </span>
-                  <button
-                    onClick={() => {
-                      setActiveTradeMode("NONE");
-                      setFeedback(null);
-                    }}
-                    className="text-[10px] text-zinc-400 hover:text-white font-bold uppercase cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                </div>
-
-                <form
-                  onSubmit={handleExecuteTrade}
-                  className="flex flex-col gap-3"
-                >
-                  <div className="flex flex-col gap-1.5">
-                    <div className="flex items-center justify-between text-[10px] text-zinc-400 uppercase font-black">
-                      <span>Enter Amount *{activeCoin.symbol}</span>
-                      <span className="text-[9px] text-zinc-300">
-                        Avg. Estimate: $
-                        {(
-                          parseFloat(tradeAmountCoins || "0") * (activeCoin?.price || 0)
-                        ).toLocaleString(undefined, {
-                          maximumFractionDigits: 2,
-                        })}
-                      </span>
-                    </div>
-                    <div className="relative">
-                      <input
-                        type="number"
-                        step="any"
-                        min="0.01"
-                        required
-                        disabled={executingState}
-                        placeholder="0.00"
-                        value={tradeAmountCoins}
-                        onChange={(e) => setTradeAmountCoins(e.target.value)}
-                        className="glass-input rounded-xl w-full px-4 py-3 text-sm text-white focus:outline-none focus:border-rose-500 placeholder-zinc-500 font-bold font-mono"
-                      />
-                      <span className="absolute right-4 top-3.5 text-xs text-zinc-400 font-extrabold uppercase select-none">
-                        {activeCoin.symbol}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Percentage shortcuts */}
-                  <div className="grid grid-cols-4 gap-1.5 font-bold">
-                    {[10, 25, 50, 100].map((perc) => (
-                      <button
-                        key={perc}
-                        type="button"
-                        onClick={() => setPercentOfMax(perc)}
-                        className={`text-[10px] p-2 rounded-xl border text-center transition-all cursor-pointer ${
-                          tradePercentage === perc
-                            ? "bg-white/[0.15] border-rose-500/50 text-rose-400 font-extrabold shadow-sm"
-                            : "glass-pill border-white/10 text-zinc-400 hover:text-white"
-                        }`}
-                      >
-                        {perc}%
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Submit state indicators */}
-                  {feedback && (
-                    <div
-                      className={`p-3 rounded-xl text-[10px] border leading-normal ${
-                        feedback.type === "success"
-                          ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-400"
-                          : "bg-rose-500/15 border-rose-500/40 text-rose-400"
-                      }`}
-                    >
-                      {feedback.type === "success" ? "✨ " : "⚠️ "}{" "}
-                      {feedback.msg}
-                    </div>
-                  )}
-
-                  <button
-                    type="submit"
-                    disabled={executingState}
-                    className={`w-full py-3 rounded-xl font-black text-xs uppercase tracking-wider transition-all border flex items-center justify-center gap-1.5 cursor-pointer active:scale-98 shadow-xl ${
-                      activeTradeMode === "BUY"
-                        ? "bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 border-white/20 text-white"
-                        : "bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 border-white/20 text-white"
-                    }`}
-                  >
-                    {executingState ? (
-                      <span className="animate-pulse">
-                        Broadcasting execution...
-                      </span>
-                    ) : (
-                      <span>Complete {activeTradeMode}</span>
-                    )}
-                  </button>
-                </form>
-              </motion.div>
-            )}
-          </div>
-
-          <div
-            className="glass-panel border border-white/10 p-6 rounded-3xl flex flex-col gap-4 shadow-2xl"
-            id="pool-composition-stats"
-          >
-            <h3 className="text-xs font-black text-white uppercase tracking-widest flex items-center gap-2">
-              <Layers className="w-3.5 h-3.5 text-indigo-400" />
-              POOL COMPOSITION
-            </h3>
-
-            <div className="flex flex-col gap-3 font-mono">
-              {/* Token vs Base currency breakdown */}
-              <div className="glass-card p-4 rounded-2xl border border-white/10 flex flex-col gap-3">
-                {/* Visual meter alignment */}
-                <div className="flex items-center justify-between text-[10px] text-zinc-400 uppercase font-black leading-none mb-1">
-                  <span>Simulated Weights</span>
-                  <span className="text-indigo-400">1.2x Pool Lever</span>
-                </div>
-
-                <div className="w-full h-2.5 bg-white/10 rounded-full flex overflow-hidden border border-white/10">
-                  <div
-                    className="h-full bg-gradient-to-r from-emerald-500 to-indigo-500"
-                    style={{ width: "49.9%" }}
-                  ></div>
-                  <div
-                    className="h-full bg-gradient-to-r from-rose-500 to-orange-500"
-                    style={{ width: "50.1%" }}
-                  ></div>
-                </div>
-
-                {/* Token vs Base balances layout */}
-                <div className="flex justify-between items-center text-xs border-t border-white/10 pt-2 pb-0.5">
-                  <div className="flex flex-col">
-                    <span className="text-[9px] text-zinc-400">
-                      ROADREV Tokens
+                  <div className="flex flex-wrap gap-3">
+                    <span>
+                      O: <strong className="text-white">${candlesData[hoveredCandle].open.toFixed(4)}</strong>
                     </span>
-                    <strong className="text-zinc-200 font-black mt-0.5">
-                      5,730.00K
-                    </strong>
-                  </div>
-                  <div className="flex flex-col text-right">
-                    <span className="text-[9px] text-zinc-400">
-                      Base Currency
+                    <span>
+                      H: <strong className="text-emerald-400">${candlesData[hoveredCandle].high.toFixed(4)}</strong>
                     </span>
-                    <strong className="text-indigo-400 font-extrabold mt-0.5">
-                      $32,830.00
-                    </strong>
-                  </div>
-                </div>
-              </div>
-
-              {/* Pool stats matrix */}
-              <div className="p-3 glass-card border border-white/10 rounded-2xl flex flex-col gap-2 text-xs">
-                <div className="flex justify-between items-center py-0.5">
-                  <span className="text-zinc-400">Total Liquidity:</span>
-                  <span className="text-white font-extrabold">
-                    ${(activeCoin?.marketCap || 0).toLocaleString()} USD
-                  </span>
-                </div>
-                <div className="flex justify-between items-center py-0.5">
-                  <span className="text-zinc-400">Token Supply:</span>
-                  <span className="text-zinc-200 font-extrabold">
-                    {(activeCoin?.supply || 0).toLocaleString()}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center py-0.5">
-                  <span className="text-zinc-400">LP Status:</span>
-                  <span className="text-[9px] px-2 py-0.5 rounded-full font-bold uppercase bg-amber-500/15 text-amber-400 border border-amber-500/30">
-                    Locked (Permanent)
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div
-            className="glass-panel border border-white/10 p-6 rounded-3xl flex flex-col gap-4 shadow-2xl"
-            id="token-top-holders-panel"
-          >
-            <h3 className="text-xs font-black text-white uppercase tracking-widest flex items-center gap-2">
-              <Users className="w-3.5 h-3.5 text-zinc-300" />
-              TOP HOLDERS
-            </h3>
-
-            <div className="flex flex-col gap-2.5">
-              {(topHolders || []).length > 0 ? (
-                (topHolders || []).map((holder) => (
-                <div
-                  key={holder.rank}
-                  className="glass-card border border-white/10 p-3 rounded-2xl flex items-center justify-between gap-3 hover:bg-white/[0.06] transition-all"
-                >
-                  <div className="flex items-center gap-2.5">
-                    {/* Unique Profile Avatar */}
-                    <div
-                      className={`w-8 h-8 rounded-xl ${holder.bg} flex items-center justify-center text-xs font-black border border-white/10 shadow`}
-                    >
-                      {holder.emoji}
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-xs font-bold text-white leading-none mb-1">
-                        {holder.name}
-                      </span>
-                      <span className="text-[9px] text-zinc-400 leading-none">
-                        {holder.handle}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col text-right">
-                    <span className="text-xs font-bold text-teal-400">
-                      {holder.weight}
+                    <span>
+                      L: <strong className="text-rose-400">${candlesData[hoveredCandle].low.toFixed(4)}</strong>
                     </span>
-                    <span className="text-[9px] text-zinc-400">
-                      {holder.balance}
+                    <span>
+                      C: <strong className="text-white">${candlesData[hoveredCandle].close.toFixed(4)}</strong>
                     </span>
                   </div>
-                </div>
-              ))
+                </>
               ) : (
-                <div className="text-center font-mono text-zinc-400 text-xs py-4">No holders found.</div>
+                <span>Tap or hover any candle to inspect OHLCV values</span>
               )}
             </div>
           </div>
-        </div>
-      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mt-2">
-        {/* Left Col: Live Coin Trades Feed (7 cols) */}
-        <div className="lg:col-span-12 xl:col-span-7 flex flex-col gap-4">
-          <div className="glass-panel border border-white/10 p-6 rounded-3xl flex flex-col gap-4 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-white/10 pb-4">
-              <div className="flex items-center gap-2.5">
-                <Activity className="w-4 h-4 text-emerald-400 animate-pulse" />
-                <h3 className="text-xs font-black text-white uppercase tracking-widest font-mono">
-                  Live Coin Trades
-                </h3>
-                <span className="text-[9px] bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 px-2 py-0.5 rounded-full font-bold">
-                  {coinTrades.length} recorded
+          {/* Live Coin Trades Feed (Mobile-Friendly Cards/Rows) */}
+          <div className="bg-[#141417] border border-white/[0.07] p-4 sm:p-5 rounded-2xl flex flex-col gap-3.5">
+            <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
+              <div className="flex items-center gap-2">
+                <Activity className="w-4 h-4 text-orange-400" />
+                <h3 className="text-sm font-bold text-white">Recent Trades</h3>
+                <span className="text-[11px] bg-orange-500/15 border border-orange-500/30 text-orange-300 px-2 py-0.5 rounded-lg font-mono">
+                  {coinTrades.length}
                 </span>
               </div>
-              <span className="text-[10px] text-zinc-400 font-mono">
-                Trades &ge; $1K highlighted
+              <span className="text-[11px] text-zinc-500 font-mono">
+                *{activeCoin.symbol}
               </span>
             </div>
 
             {tradesLoading && coinTrades.length === 0 ? (
-              <div className="py-8 text-center text-xs text-zinc-400 font-mono flex items-center justify-center gap-2">
-                <RefreshCw className="w-4 h-4 animate-spin text-zinc-500" /> Loading trade order flow...
+              <div className="py-6 text-center text-xs text-zinc-500 flex items-center justify-center gap-2">
+                <RefreshCw className="w-4 h-4 animate-spin" /> Loading trades...
               </div>
             ) : coinTrades.length === 0 ? (
-              <div className="py-8 text-center text-xs text-zinc-400 font-mono">
-                No recent trades recorded for this asset yet. Be the first to execute!
+              <div className="py-6 text-center text-xs text-zinc-500">
+                No trades recorded for *{activeCoin.symbol} yet.
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left font-mono text-xs">
-                  <thead className="text-[9px] text-zinc-400 uppercase tracking-widest border-b border-white/10">
-                    <tr>
-                      <th className="pb-3">Trader</th>
-                      <th className="pb-3 text-center">Type</th>
-                      <th className="pb-3 text-right">Amount</th>
-                      <th className="pb-3 text-right">Price</th>
-                      <th className="pb-3 text-right">Total</th>
-                      <th className="pb-3 text-right">Time</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/5">
-                    {coinTrades.map((t, idx) => {
-                      const tokenQty = Number(t.amountCoins ?? t.amountTokens ?? t.amount ?? 0);
-                      const unitPrice = Number(t.pricePerCoin ?? t.price ?? activeCoin?.price ?? 0);
-                      const totalVal = Number(t.totalCash ?? t.total ?? t.amountUsd ?? tokenQty * unitPrice ?? 0);
-                      const isWhaleTrade = totalVal >= 1000;
-                      const isBuy = t.type === "BUY";
-                      const traderLabel = (t.userHandle || t.userName || (t.userId === "admin_realzekeee" ? "zeke" : t.userId) || "trader").replace(/^@/, "").slice(0, 12);
+              <div className="flex flex-col gap-2 max-h-[280px] overflow-y-auto custom-scrollbar">
+                {coinTrades.map((t, idx) => {
+                  const tokenQty = Number(
+                    t.amountCoins ?? t.amountTokens ?? t.amount ?? 0,
+                  );
+                  const unitPrice = Number(
+                    t.pricePerCoin ?? t.price ?? currentPrice,
+                  );
+                  const totalVal = Number(
+                    t.totalCash ?? t.total ?? t.amountUsd ?? tokenQty * unitPrice,
+                  );
+                  const isBuy = t.type === "BUY";
+                  const traderLabel = (
+                    t.userHandle ||
+                    t.userName ||
+                    (t.userId === "admin_realzekeee" ? "zeke" : t.userId) ||
+                    "trader"
+                  )
+                    .replace(/^@/, "")
+                    .slice(0, 14);
 
-                      return (
-                        <tr
-                          key={t.$id || t.id || `ct-${idx}`}
-                          className={`hover:bg-white/[0.03] transition-colors ${
-                            isWhaleTrade ? "bg-amber-500/10 border-l-2 border-amber-400" : ""
+                  return (
+                    <div
+                      key={t.$id || t.id || `ct-${idx}`}
+                      className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl bg-[#0e0e11] border border-white/[0.05] text-xs font-mono"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase shrink-0 ${
+                            isBuy
+                              ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
+                              : "bg-rose-500/15 text-rose-400 border border-rose-500/30"
                           }`}
                         >
-                          <td className="py-2.5 pr-2">
-                            <UserHoverCard userIdOrHandle={t.userId || t.userHandle || "user"}>
-                              <span className="text-zinc-200 hover:text-white cursor-pointer font-bold flex items-center gap-1">
-                                {isWhaleTrade && <span title="High-roller &ge; $1,000">💎</span>}
-                                @{traderLabel}
-                              </span>
-                            </UserHoverCard>
-                          </td>
-                          <td className="py-2.5 text-center">
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
-                                isBuy
-                                  ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40"
-                                  : "bg-rose-500/20 text-rose-400 border border-rose-500/40"
-                              }`}
-                            >
-                              {t.type}
-                            </span>
-                          </td>
-                          <td className="py-2.5 text-right text-zinc-300 font-semibold">
-                            {tokenQty.toLocaleString("en-US", { maximumFractionDigits: 2 })}
-                          </td>
-                          <td className="py-2.5 text-right text-zinc-400">
-                            ${unitPrice.toFixed(6)}
-                          </td>
-                          <td className="py-2.5 text-right font-black">
-                            <span className={isWhaleTrade ? "text-amber-400 font-black" : isBuy ? "text-emerald-400" : "text-rose-400"}>
-                              ${totalVal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </span>
-                          </td>
-                          <td className="py-2.5 text-right text-zinc-500 text-[10px]">
-                            {t.timestamp
-                              ? new Date(t.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-                              : "just now"}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                          {t.type}
+                        </span>
+                        <span className="text-zinc-200 font-semibold truncate">
+                          @{traderLabel}
+                        </span>
+                        <span className="text-zinc-500 truncate hidden sm:inline">
+                          {tokenQty.toLocaleString("en-US", {
+                            maximumFractionDigits: 2,
+                          })}{" "}
+                          *{activeCoin.symbol}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span
+                          className={`font-bold ${
+                            isBuy ? "text-emerald-400" : "text-rose-400"
+                          }`}
+                        >
+                          $
+                          {totalVal.toLocaleString("en-US", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </span>
+                        <span className="text-[10px] text-zinc-500">
+                          {t.timestamp
+                            ? new Date(t.timestamp).toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })
+                            : "Now"}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
         </div>
 
-        {/* Right Col: Community Comments & Discourse (5 cols) */}
-        <div className="lg:col-span-12 xl:col-span-5 flex flex-col gap-4">
-          <div className="glass-panel border border-white/10 p-6 rounded-3xl flex flex-col gap-4 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-white/10 pb-4">
-              <div className="flex items-center gap-2">
-                <MessageSquare className="w-4 h-4 text-cyan-400" />
-                <h3 className="text-xs font-black text-white uppercase tracking-widest font-mono">
-                  Community Discussion
-                </h3>
-              </div>
-              <span className="text-[10px] text-zinc-400 font-mono">
-                {comments.length} comments
-              </span>
+        {/* Right Column: Instant Buy/Sell Panel + Real Pool Stats + Top Holders */}
+        <div className="lg:col-span-5 xl:col-span-4 flex flex-col gap-5">
+          {/* Instant Trade Execution Card */}
+          <div
+            className="bg-[#141417] border border-white/[0.08] p-5 rounded-2xl flex flex-col gap-4 select-none"
+            id="buy-sell-trade-dashboard"
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <Zap className="w-4 h-4 text-orange-400" />
+                <span>Trade *{activeCoin.symbol}</span>
+              </h3>
+              {launchTimer > 0 && (
+                <span className="text-[10px] bg-orange-500/15 text-orange-300 px-2 py-0.5 rounded-lg border border-orange-500/30 font-mono">
+                  Fair Launch {isCreator ? "(Owner)" : "0% Fee"}
+                </span>
+              )}
             </div>
 
-            {/* Post comment input */}
-            <form onSubmit={handlePostComment} className="flex flex-col gap-2">
-              <div className="relative flex items-center">
-                <input
-                  type="text"
-                  value={commentText}
-                  onChange={(e) => setCommentText(e.target.value)}
-                  placeholder={currentUser ? "Share your thoughts on this token..." : "Sign in with Google to post comments"}
-                  disabled={!currentUser || submittingComment}
-                  maxLength={500}
-                  className="w-full bg-black/40 border border-white/15 rounded-2xl px-4 py-2.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-rose-500 font-mono disabled:opacity-50"
-                />
-                <button
-                  type="submit"
-                  disabled={!currentUser || submittingComment || !commentText.trim()}
-                  className="absolute right-2 p-2 bg-rose-600 hover:bg-rose-500 disabled:opacity-40 text-white rounded-xl transition-all cursor-pointer"
-                  title="Send comment"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                </button>
-              </div>
-              <span className="text-[9px] text-zinc-500 font-mono">
-                Respect community guidelines. Spam or harassment will be reported and moderated.
-              </span>
-            </form>
+            {/* Buy / Sell Mode Tabs */}
+            <div className="grid grid-cols-2 gap-1.5 bg-[#0e0e11] p-1 rounded-xl border border-white/[0.06] text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => {
+                  playSound("click");
+                  setActiveTradeMode("BUY");
+                  setTradeInput("");
+                  setTradePercentage(null);
+                  setFeedback(null);
+                }}
+                className={`py-2.5 rounded-lg transition-all cursor-pointer ${
+                  activeTradeMode === "BUY"
+                    ? "bg-gradient-to-r from-orange-500 to-amber-500 text-zinc-950 shadow-sm"
+                    : "text-zinc-400 hover:text-zinc-200"
+                }`}
+              >
+                Buy *{activeCoin.symbol}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  playSound("click");
+                  setActiveTradeMode("SELL");
+                  setTradeInput("");
+                  setTradePercentage(null);
+                  setFeedback(null);
+                }}
+                className={`py-2.5 rounded-lg transition-all cursor-pointer ${
+                  activeTradeMode === "SELL"
+                    ? "bg-rose-500 text-white shadow-sm"
+                    : "text-zinc-400 hover:text-zinc-200"
+                }`}
+              >
+                Sell *{activeCoin.symbol}
+              </button>
+            </div>
 
-            {/* Comments list */}
-            <div className="flex flex-col gap-2.5 max-h-80 overflow-y-auto pr-1">
-              {comments.length === 0 ? (
-                <div className="py-8 text-center text-xs text-zinc-400 font-mono">
-                  No comments yet. Start the conversation!
-                </div>
-              ) : (
-                comments.map((c) => {
-                  const isAuthor = currentUser && (currentUser.$id === c.userId || currentUser.uid === c.userId);
-
-                  return (
-                    <div
-                      key={c.id}
-                      className="glass-card border border-white/10 p-3 rounded-2xl flex flex-col gap-1.5 hover:bg-white/[0.04] transition-colors"
+            <form onSubmit={handleExecuteTrade} className="flex flex-col gap-3">
+              {/* Input Unit Toggle on BUY (USD vs Tokens) */}
+              {activeTradeMode === "BUY" && (
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-zinc-400">Amount in:</span>
+                  <div className="flex items-center gap-1 bg-[#0e0e11] p-0.5 rounded-lg border border-white/[0.06] font-mono text-[11px]">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBuyInputMode("USD");
+                        setTradeInput("");
+                        setTradePercentage(null);
+                      }}
+                      className={`px-2.5 py-1 rounded-md transition cursor-pointer ${
+                        buyInputMode === "USD"
+                          ? "bg-orange-500/20 text-orange-300 border border-orange-500/40 font-bold"
+                          : "text-zinc-400 hover:text-white"
+                      }`}
                     >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <UserHoverCard userIdOrHandle={c.handle || c.userId}>
-                            <span className="text-xs font-bold text-white hover:text-rose-400 cursor-pointer">
-                              {c.username || "Trader"}
-                            </span>
-                          </UserHoverCard>
-                          <span className="text-[9px] text-zinc-400 font-mono">
-                            {c.handle}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[9px] text-zinc-500 font-mono">
-                            {new Date(c.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                          </span>
-                          {isAuthor ? (
-                            <button
-                              onClick={() => handleDeleteComment(c.id)}
-                              className="text-zinc-500 hover:text-rose-400 transition-colors p-1"
-                              title="Delete comment"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => handleReportComment(c.id)}
-                              className="text-zinc-500 hover:text-amber-400 transition-colors p-1"
-                              title="Report comment"
-                            >
-                              <Flag className="w-3 h-3" />
-                            </button>
-                          )}
-                        </div>
+                      USD ($)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBuyInputMode("TOKENS");
+                        setTradeInput("");
+                        setTradePercentage(null);
+                      }}
+                      className={`px-2.5 py-1 rounded-md transition cursor-pointer ${
+                        buyInputMode === "TOKENS"
+                          ? "bg-orange-500/20 text-orange-300 border border-orange-500/40 font-bold"
+                          : "text-zinc-400 hover:text-white"
+                      }`}
+                    >
+                      *{activeCoin.symbol}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex flex-col gap-1.5">
+                <div className="relative">
+                  <input
+                    type="number"
+                    step="any"
+                    min="0.0001"
+                    required
+                    disabled={executingState}
+                    placeholder={
+                      activeTradeMode === "BUY" && buyInputMode === "USD"
+                        ? "Enter USD amount (e.g. 1000)..."
+                        : `Enter *${activeCoin.symbol} tokens...`
+                    }
+                    value={tradeInput}
+                    onChange={(e) => {
+                      setTradeInput(e.target.value);
+                      setTradePercentage(null);
+                      setFeedback(null);
+                    }}
+                    className="bg-[#0e0e11] border border-white/[0.08] rounded-xl w-full px-3.5 py-3 text-sm text-white focus:outline-none focus:border-orange-500/60 placeholder-zinc-500 font-bold font-mono"
+                  />
+                  <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs text-zinc-400 font-mono font-bold uppercase select-none">
+                    {activeTradeMode === "BUY" && buyInputMode === "USD"
+                      ? "USD"
+                      : activeCoin.symbol}
+                  </span>
+                </div>
+
+                {/* Live Conversion Preview */}
+                <div className="flex items-center justify-between text-[11px] font-mono text-zinc-400 px-1">
+                  {activeTradeMode === "BUY" && buyInputMode === "USD" ? (
+                    <>
+                      <span>You receive:</span>
+                      <span className="text-orange-300 font-bold">
+                        ~
+                        {effectiveTokens.toLocaleString("en-US", {
+                          maximumFractionDigits: 2,
+                        })}{" "}
+                        *{activeCoin.symbol}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Estimated Value:</span>
+                      <span className="text-orange-300 font-bold">
+                        $
+                        {effectiveUsd.toLocaleString("en-US", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Quick USD Presets when buying in USD */}
+              {activeTradeMode === "BUY" && buyInputMode === "USD" && (
+                <div className="grid grid-cols-4 gap-1.5 font-mono text-xs">
+                  {[100, 500, 1000, 5000].map((usdVal) => (
+                    <button
+                      key={usdVal}
+                      type="button"
+                      onClick={() => {
+                        playSound("click");
+                        setTradeInput(String(usdVal));
+                        setTradePercentage(null);
+                        setFeedback(null);
+                      }}
+                      className="py-1.5 rounded-lg bg-[#0e0e11] hover:bg-white/[0.06] border border-white/[0.06] text-zinc-300 hover:text-white transition cursor-pointer"
+                    >
+                      ${usdVal >= 1000 ? `${usdVal / 1000}K` : usdVal}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Percentage Shortcuts */}
+              <div className="grid grid-cols-4 gap-1.5 font-mono text-xs font-semibold">
+                {[10, 25, 50, 100].map((perc) => (
+                  <button
+                    key={perc}
+                    type="button"
+                    onClick={() => setPercentOfMax(perc)}
+                    className={`py-2 rounded-xl border text-center transition-all cursor-pointer ${
+                      tradePercentage === perc
+                        ? "bg-orange-500/20 border-orange-500/50 text-orange-300 font-bold"
+                        : "bg-[#0e0e11] border-white/[0.06] text-zinc-400 hover:text-white"
+                    }`}
+                  >
+                    {perc}%
+                  </button>
+                ))}
+              </div>
+
+              {feedback && (
+                <div
+                  className={`p-3 rounded-xl text-xs border leading-relaxed ${
+                    feedback.type === "success"
+                      ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
+                      : "bg-rose-500/10 border-rose-500/30 text-rose-300"
+                  }`}
+                >
+                  {feedback.msg}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={executingState}
+                className={`w-full py-3 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-[0.99] shadow-lg ${
+                  activeTradeMode === "BUY"
+                    ? "bg-gradient-to-r from-orange-500 via-amber-500 to-orange-600 hover:from-orange-400 hover:to-amber-500 text-zinc-950"
+                    : "bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white"
+                }`}
+              >
+                {executingState
+                  ? "Executing..."
+                  : activeTradeMode === "BUY"
+                  ? `Buy *${activeCoin.symbol}`
+                  : `Sell *${activeCoin.symbol}`}
+              </button>
+            </form>
+          </div>
+
+          {/* Accurate Dynamic Pool Metrics (Replaces Hardcoded ROADREV) */}
+          <div
+            className="bg-[#141417] border border-white/[0.07] p-5 rounded-2xl flex flex-col gap-3.5"
+            id="pool-composition-stats"
+          >
+            <h3 className="text-xs font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-2">
+              <Layers className="w-4 h-4 text-orange-400" />
+              <span>*{activeCoin.symbol} Pool Metrics</span>
+            </h3>
+
+            <div className="grid grid-cols-2 gap-2.5 font-mono text-xs">
+              <div className="bg-[#0e0e11] border border-white/[0.05] p-3 rounded-xl flex flex-col gap-0.5">
+                <span className="text-[10px] text-zinc-500">Market Cap</span>
+                <span className="text-white font-bold">
+                  ${computedMarketCap.toLocaleString()}
+                </span>
+              </div>
+              <div className="bg-[#0e0e11] border border-white/[0.05] p-3 rounded-xl flex flex-col gap-0.5">
+                <span className="text-[10px] text-zinc-500">Liquidity Pool</span>
+                <span className="text-orange-400 font-bold">
+                  ${computedLiquidity.toLocaleString()}
+                </span>
+              </div>
+              <div className="bg-[#0e0e11] border border-white/[0.05] p-3 rounded-xl flex flex-col gap-0.5">
+                <span className="text-[10px] text-zinc-500">
+                  *{activeCoin.symbol} Supply
+                </span>
+                <span className="text-zinc-200 font-bold">
+                  {totalSupply.toLocaleString()}
+                </span>
+              </div>
+              <div className="bg-[#0e0e11] border border-white/[0.05] p-3 rounded-xl flex flex-col gap-0.5">
+                <span className="text-[10px] text-zinc-500">24h Volume</span>
+                <span className="text-emerald-400 font-bold">
+                  ${Number(activeCoin?.volume24h || 0).toLocaleString()}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Top Holders (Always includes your live position) */}
+          <div
+            className="bg-[#141417] border border-white/[0.07] p-5 rounded-2xl flex flex-col gap-3.5"
+            id="token-top-holders-panel"
+          >
+            <h3 className="text-xs font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-2">
+              <Users className="w-4 h-4 text-orange-400" />
+              <span>Top Holders</span>
+            </h3>
+
+            <div className="flex flex-col gap-2">
+              {topHolders.length > 0 ? (
+                topHolders.map((holder) => (
+                  <div
+                    key={holder.rank + "-" + holder.handle}
+                    className="bg-[#0e0e11] border border-white/[0.05] p-3 rounded-xl flex items-center justify-between gap-3"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-7 h-7 rounded-lg bg-orange-500/15 border border-orange-500/30 text-orange-400 flex items-center justify-center text-xs font-bold font-mono shrink-0">
+                        #{holder.rank}
                       </div>
-                      <p className="text-xs text-zinc-200 font-mono break-words leading-relaxed">
-                        {c.text}
-                      </p>
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-xs font-bold text-white truncate">
+                          {holder.name}
+                        </span>
+                        <span className="text-[11px] text-zinc-400 font-mono truncate">
+                          {holder.handle} • {holder.tokensFormatted} *{activeCoin.symbol}
+                        </span>
+                      </div>
                     </div>
-                  );
-                })
+
+                    <div className="flex flex-col text-right font-mono shrink-0">
+                      <span className="text-xs font-bold text-orange-400">
+                        {holder.balance}
+                      </span>
+                      <span className="text-[10px] text-zinc-500">
+                        {holder.weight}
+                      </span>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center text-zinc-500 text-xs py-3">
+                  No holders yet. Buy *{activeCoin.symbol} to claim #1!
+                </div>
               )}
             </div>
           </div>
         </div>
       </div>
 
-      <div
-        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-2"
-        id="bottom-stats-matrix-layout-grid"
-      >
-        <div className="glass-panel border border-white/10 p-5 rounded-3xl flex flex-col gap-1 shadow-xl hover:border-white/20 transition-colors">
-          <span className="text-[9px] text-zinc-400 uppercase tracking-widest font-black leading-none mb-1">
-            MARKET CAP VALUATION
-          </span>
-          <strong className="text-lg font-black text-white">
-            $
-            {(activeCoin?.marketCap || 0) >= 1000
-              ? ((activeCoin?.marketCap || 0) / 1000).toFixed(2) + "K"
-              : (activeCoin?.marketCap || 0).toFixed(0)}
-          </strong>
-          <span className="text-[10px] text-zinc-400 flex items-center gap-1">
-            <Activity className="w-3 h-3 text-emerald-400" /> Fully diluted
-            stats
-          </span>
-        </div>
-
-        <div className="glass-panel border border-white/10 p-5 rounded-3xl flex flex-col gap-1 shadow-xl hover:border-white/20 transition-colors">
-          <span className="text-[9px] text-zinc-400 uppercase tracking-widest font-black leading-none mb-1">
-            24H TRADING VOLUME
-          </span>
-          <strong className="text-lg font-black text-white">
-            $
-            {(activeCoin?.volume24h || 0) >= 1000
-              ? `${((activeCoin?.volume24h || 0) / 1000).toFixed(1)}K`
-              : (activeCoin?.volume24h || 0).toFixed(0)}
-          </strong>
-          <span className="text-[10px] text-zinc-400 flex items-center gap-1">
-            <Clock className="w-3 h-3 text-cyan-400" /> Volume over last 24h
-          </span>
-        </div>
-
-        <div className="glass-panel border border-white/10 p-5 rounded-3xl flex flex-col gap-1 shadow-xl hover:border-white/20 transition-colors">
-          <div className="flex justify-between items-center text-[9px] text-zinc-400 uppercase tracking-widest font-black leading-none mb-1">
-            <span>CIRCULATING SUPPLY</span>
-            <span className="text-[8px] text-zinc-300">HARD CAP</span>
-          </div>
-          <strong className="text-lg font-black text-zinc-200">
-            {(activeCoin?.supply || 0).toLocaleString()} TON
-          </strong>
-          <div className="w-full bg-white/10 h-1 rounded-full overflow-hidden mt-0.5">
-            <div
-              className="h-full bg-indigo-500"
-              style={{ width: "73%" }}
-            ></div>
-          </div>
-          <span className="text-[9px] text-zinc-400 block">
-            730K circulating / 1.0M max Cap
-          </span>
-        </div>
-
-        <div className="glass-panel border border-white/10 p-5 rounded-3xl flex flex-col gap-1 shadow-xl hover:border-white/20 transition-colors">
-          <span className="text-[9px] text-zinc-400 uppercase tracking-widest font-black leading-none mb-1">
-            24H TRAJECTORY TICKER
-          </span>
+      {/* Community Discussion */}
+      <div className="bg-[#141417] border border-white/[0.07] p-5 rounded-2xl flex flex-col gap-4">
+        <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
           <div className="flex items-center gap-2">
-            <strong
-              className={`text-lg font-black ${
-                (activeCoin?.change24h || 0) >= 0
-                  ? "text-emerald-400 animate-pulse"
-                  : "text-rose-400"
-              }`}
-            >
-              {(activeCoin?.change24h || 0) >= 0 ? "+" : ""}
-              {(activeCoin?.change24h || 0).toFixed(2)}%
-            </strong>
-            <span
-              className={`p-1 rounded-full text-[8.5px] scale-90 ${
-                (activeCoin?.change24h || 0) >= 0
-                  ? "bg-emerald-500/20 text-emerald-400"
-                  : "bg-rose-500/20 text-rose-400"
-              }`}
-            >
-              {(activeCoin?.change24h || 0) >= 0 ? (
-                <TrendingUp className="w-3.5 h-3.5" />
-              ) : (
-                <TrendingDown className="w-3.5 h-3.5" />
-              )}
-            </span>
+            <MessageSquare className="w-4 h-4 text-orange-400" />
+            <h3 className="text-sm font-bold text-white">
+              Community Discussion
+            </h3>
           </div>
-          <span className="text-[10px] text-zinc-400 flex items-center gap-1">
-            <Sparkles className="w-3 h-3 text-yellow-400 animate-spin" />{" "}
-            High-frequency index ticks
+          <span className="text-xs text-zinc-500 font-mono">
+            {comments.length} comments
           </span>
+        </div>
+
+        <form onSubmit={handlePostComment} className="flex gap-2">
+          <input
+            type="text"
+            value={commentText}
+            onChange={(e) => setCommentText(e.target.value)}
+            maxLength={500}
+            placeholder={
+              currentUser
+                ? `Share your thoughts on *${activeCoin.symbol}...`
+                : "Sign in with Google to comment"
+            }
+            disabled={!currentUser || submittingComment}
+            className="flex-1 bg-[#0e0e11] border border-white/[0.08] rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-orange-500/50 disabled:opacity-50"
+          />
+          <button
+            type="submit"
+            disabled={!currentUser || submittingComment || !commentText.trim()}
+            className="px-4 py-2.5 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 disabled:opacity-40 text-zinc-950 font-bold text-xs rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+          >
+            <Send className="w-3.5 h-3.5" />
+            <span>Post</span>
+          </button>
+        </form>
+
+        <div className="flex flex-col gap-2.5 max-h-72 overflow-y-auto custom-scrollbar">
+          {comments.length === 0 ? (
+            <div className="py-4 text-center text-xs text-zinc-500">
+              No comments yet.
+            </div>
+          ) : (
+            comments.map((c) => {
+              const isOwn =
+                currentUser &&
+                (currentUser.$id === c.userId || currentUser.uid === c.userId);
+              const isAdmin =
+                currentUser?.email === "realzekeee@gmail.com" ||
+                userStats?.title?.toLowerCase().includes("owner");
+              return (
+                <div
+                  key={c.id}
+                  className="bg-[#0e0e11] border border-white/[0.05] p-3 rounded-xl flex flex-col gap-1"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-white">
+                        {c.username}
+                      </span>
+                      <span className="text-[11px] font-mono text-zinc-500">
+                        {c.handle}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {(isOwn || isAdmin) && (
+                        <button
+                          onClick={() => handleDeleteComment(c.id)}
+                          className="text-zinc-500 hover:text-rose-400 transition-colors cursor-pointer"
+                          title="Delete comment"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleReportComment(c.id)}
+                        className="text-zinc-500 hover:text-amber-400 transition-colors cursor-pointer"
+                        title="Report comment"
+                      >
+                        <Flag className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-xs text-zinc-300 leading-relaxed break-words">
+                    {c.text}
+                  </p>
+                </div>
+              );
+            })
+          )}
         </div>
       </div>
     </div>

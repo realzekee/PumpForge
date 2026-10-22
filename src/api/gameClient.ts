@@ -153,7 +153,7 @@ function getCachedUserIdentity(): {
         if (typeof stats.tradesCount === "number" && !isNaN(stats.tradesCount)) trades = String(stats.tradesCount);
       }
     }
-    const updatedAt = localStorage.getItem("pf_stats_updated_at") || undefined;
+    const updatedAt = localStorage.getItem("pf_stats_updated_at") || (cash !== undefined ? String(Date.now()) : undefined);
 
     return { userId, email, name, cash, gems, profit, trades, updatedAt };
   } catch {}
@@ -257,14 +257,7 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     throw new Error(formatErrorMessage(data.error, "Requested action was rejected by the server."));
   }
 
-  // Automatically record authoritative server balance updates
-  if (data && typeof data === "object") {
-    if (data.userStats) {
-      persistServerUserStats(data.userStats);
-    } else if (data.stats && method !== "GET") {
-      persistServerUserStats(data.stats);
-    }
-  }
+  // Balance persistence is handled deterministically by the state committers
 
   return (data ?? {}) as T;
 }

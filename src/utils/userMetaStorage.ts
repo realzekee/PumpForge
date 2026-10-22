@@ -133,7 +133,7 @@ export const clearStoredUserMeta = (key: string) => {
   }
 };
 
-const COIN_OVERRIDES_KEY = "pf_global_coin_overrides";
+const COIN_OVERRIDES_KEY = "pf_global_coin_overrides_v2";
 
 export interface StoredCoinOverride {
   price?: number;

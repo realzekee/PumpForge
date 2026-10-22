@@ -98,10 +98,10 @@ export default function PolymarketTab({
       <div className="bg-[#141417] border border-white/[0.07] p-5 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight flex items-center gap-2.5">
-            <Activity className="w-5 h-5 text-emerald-400" /> Hopium &amp; Predictions
+            <Activity className="w-5 h-5 text-orange-400" /> Polycast Prediction Markets
           </h2>
           <p className="text-zinc-400 text-xs mt-0.5">
-            Predict market outcomes and earn proportional pool payouts when resolved.
+            Trade YES or NO shares on live event outcomes and earn proportional pool payouts when resolved.
           </p>
         </div>
         <button
@@ -110,9 +110,9 @@ export default function PolymarketTab({
             setNewMarket({ question: "", description: "", endTime: getDefaultDateIso() });
             setShowCreateModal(true);
           }}
-          className="bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 self-start sm:self-auto transition cursor-pointer"
+          className="bg-gradient-to-r from-orange-500 via-amber-500 to-orange-600 hover:from-orange-400 hover:to-amber-400 text-zinc-950 px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 self-start sm:self-auto transition cursor-pointer shadow-md shadow-orange-950/30"
         >
-          <Plus className="w-4 h-4" /> Create Question
+          <Plus className="w-4 h-4" /> Create Market
         </button>
       </div>
 
@@ -138,15 +138,15 @@ export default function PolymarketTab({
               return (
                 <div
                   key={market.id}
-                  className="bg-[#141417] border border-white/[0.07] rounded-2xl p-5 flex flex-col gap-4 hover:border-white/[0.12] transition"
+                  className="bg-[#141417] border border-white/[0.07] rounded-2xl p-5 flex flex-col gap-4 hover:border-orange-500/25 transition"
                 >
                   <div>
                     <div className="flex items-center justify-between gap-2 mb-2">
                       <span className="text-[11px] text-zinc-400 flex items-center gap-1">
-                        <Clock className="w-3 h-3 text-zinc-500 shrink-0" />
+                        <Clock className="w-3 h-3 text-orange-400 shrink-0" />
                         <span>{countdown.text}</span>
                       </span>
-                      <span className="text-[11px] font-mono text-zinc-400">
+                      <span className="text-[11px] font-mono text-orange-300 font-semibold">
                         Pool: ${totalPool.toLocaleString()}
                       </span>
                     </div>
@@ -172,7 +172,7 @@ export default function PolymarketTab({
 
                     <div className="w-full h-2 bg-rose-500/20 rounded-full overflow-hidden flex">
                       <div
-                        className="h-full bg-emerald-500 transition-all duration-300"
+                        className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-300"
                         style={{ width: `${Math.max(4, Math.min(96, yesPct))}%` }}
                       />
                     </div>
@@ -182,7 +182,7 @@ export default function PolymarketTab({
                   <div className="border-t border-white/[0.06] pt-3.5 flex flex-col gap-2.5">
                     {market.userBetSide && (
                       <div className="flex items-center justify-between bg-[#0e0e11] rounded-xl px-3 py-2 border border-white/[0.05] text-xs">
-                        <span className="text-zinc-400">Your Wager</span>
+                        <span className="text-zinc-400">Your Position</span>
                         <span className="font-bold text-white font-mono">
                           <span
                             className={
@@ -202,7 +202,7 @@ export default function PolymarketTab({
                       type="number"
                       min="1"
                       placeholder="Bet amount ($)"
-                      className="bg-[#0e0e11] border border-white/[0.08] rounded-xl px-3 py-2 text-xs text-white w-full focus:border-emerald-500/50 outline-none font-mono"
+                      className="bg-[#0e0e11] border border-white/[0.08] rounded-xl px-3 py-2 text-xs text-white w-full focus:border-orange-500/50 outline-none font-mono"
                       value={betAmounts[market.id] || ""}
                       onChange={(e) =>
                         setBetAmounts({ ...betAmounts, [market.id]: e.target.value })
@@ -215,7 +215,7 @@ export default function PolymarketTab({
                           key={preset}
                           type="button"
                           onClick={() => setPresetAmount(market.id, preset)}
-                          className="py-1 text-[11px] font-mono rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-zinc-300 border border-white/[0.05] transition cursor-pointer"
+                          className="py-1 text-[11px] font-mono rounded-lg bg-white/[0.04] hover:bg-orange-500/15 hover:text-orange-300 text-zinc-300 border border-white/[0.05] hover:border-orange-500/30 transition cursor-pointer"
                         >
                           ${preset}
                         </button>
@@ -228,14 +228,14 @@ export default function PolymarketTab({
                         onClick={() => handleBet(market.id, "YES")}
                         className="bg-emerald-500/15 hover:bg-emerald-500/25 disabled:opacity-50 text-emerald-300 font-semibold py-2 rounded-xl text-xs border border-emerald-500/30 transition active:scale-[0.99] cursor-pointer"
                       >
-                        {submittingMarketId === market.id ? "..." : "Bet YES"}
+                        {submittingMarketId === market.id ? "..." : "Buy YES"}
                       </button>
                       <button
                         disabled={submittingMarketId === market.id}
                         onClick={() => handleBet(market.id, "NO")}
                         className="bg-rose-500/15 hover:bg-rose-500/25 disabled:opacity-50 text-rose-300 font-semibold py-2 rounded-xl text-xs border border-rose-500/30 transition active:scale-[0.99] cursor-pointer"
                       >
-                        {submittingMarketId === market.id ? "..." : "Bet NO"}
+                        {submittingMarketId === market.id ? "..." : "Buy NO"}
                       </button>
                     </div>
                   </div>
@@ -250,7 +250,7 @@ export default function PolymarketTab({
       {resolvedMarkets.length > 0 && (
         <div className="flex flex-col gap-3 mt-2">
           <h3 className="text-sm font-semibold text-zinc-400 px-1 flex items-center gap-2">
-            <CheckCircle className="w-4 h-4 text-zinc-500" /> Resolved ({resolvedMarkets.length})
+            <CheckCircle className="w-4 h-4 text-orange-400" /> Resolved ({resolvedMarkets.length})
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {resolvedMarkets.map((market) => {
@@ -296,7 +296,7 @@ export default function PolymarketTab({
           <div className="bg-[#141417] border border-white/[0.08] rounded-2xl w-full max-w-md p-6 flex flex-col gap-4 shadow-2xl my-8">
             <div className="border-b border-white/[0.07] pb-3 flex items-center justify-between">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <Plus className="w-4 h-4 text-emerald-400" /> New Prediction Question
+                <Plus className="w-4 h-4 text-orange-400" /> New Prediction Market
               </h3>
             </div>
             <form onSubmit={handleCreate} className="flex flex-col gap-4">
@@ -308,7 +308,7 @@ export default function PolymarketTab({
                   type="text"
                   required
                   placeholder="e.g. Will *ROAD hit $150K market cap this week?"
-                  className="bg-[#0e0e11] border border-white/[0.08] rounded-xl px-3.5 py-2.5 text-white text-xs outline-none focus:border-emerald-500/50"
+                  className="bg-[#0e0e11] border border-white/[0.08] rounded-xl px-3.5 py-2.5 text-white text-xs outline-none focus:border-orange-500/50"
                   value={newMarket.question}
                   onChange={(e) => setNewMarket({ ...newMarket, question: e.target.value })}
                 />
@@ -320,8 +320,8 @@ export default function PolymarketTab({
                 <input
                   type="text"
                   required
-                  placeholder="How this question will be resolved..."
-                  className="bg-[#0e0e11] border border-white/[0.08] rounded-xl px-3.5 py-2.5 text-white text-xs outline-none focus:border-emerald-500/50"
+                  placeholder="How this market will be resolved..."
+                  className="bg-[#0e0e11] border border-white/[0.08] rounded-xl px-3.5 py-2.5 text-white text-xs outline-none focus:border-orange-500/50"
                   value={newMarket.description}
                   onChange={(e) => setNewMarket({ ...newMarket, description: e.target.value })}
                 />
@@ -348,9 +348,9 @@ export default function PolymarketTab({
                 <button
                   type="submit"
                   disabled={isCreating}
-                  className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-zinc-950 text-xs font-bold rounded-xl transition cursor-pointer"
+                  className="px-5 py-2 bg-gradient-to-r from-orange-500 via-amber-500 to-orange-600 hover:from-orange-400 hover:to-amber-400 disabled:opacity-50 text-zinc-950 font-bold rounded-xl text-xs transition cursor-pointer"
                 >
-                  {isCreating ? "Creating..." : "Create"}
+                  {isCreating ? "Creating..." : "Publish Market"}
                 </button>
               </div>
             </form>

@@ -72,8 +72,6 @@ export default function Sidebar({
   currentUser,
   onGoogleSignIn,
   onSignOut,
-  coins = [],
-  holdings = [],
   onOpenBugReportModal,
   registeredUsers = [],
   onUpdateStats,
@@ -109,7 +107,7 @@ export default function Sidebar({
   const menuItems: MenuItem[] = [
     { id: "home", label: "Home", icon: Home },
     { id: "market", label: "Market", icon: Store },
-    { id: "polymarket", label: "Hopium", icon: ArrowUpDown },
+    { id: "polymarket", label: "Predictions", icon: ArrowUpDown },
     { id: "arcade", label: "Arcade", icon: Gamepad2 },
     { id: "leaderboard", label: "Leaderboard", icon: Trophy },
     { id: "shop", label: "Shop", icon: ShoppingBag },
@@ -218,7 +216,9 @@ export default function Sidebar({
             onClick={() => navigate("/")}
             className="flex items-center gap-2 cursor-pointer select-none"
           >
-            <span className="text-base">🪙</span>
+            <span className="w-6 h-6 rounded-lg bg-gradient-to-br from-orange-500 via-amber-500 to-orange-600 flex items-center justify-center text-xs shadow-sm">
+              🪙
+            </span>
             <span className="font-bold text-white tracking-tight text-base">
               PumpForge
             </span>
@@ -227,7 +227,7 @@ export default function Sidebar({
 
         {/* Always-visible Cash & Gems on Mobile */}
         <div className="flex items-center gap-2 font-mono text-xs">
-          <div className="px-2.5 py-1 rounded-lg bg-[#18181c] border border-white/[0.06] text-emerald-400 font-bold">
+          <div className="px-2.5 py-1 rounded-lg bg-[#18181c] border border-orange-500/20 text-emerald-400 font-bold">
             $
             {safeCash >= 1000000
               ? `${(safeCash / 1000000).toFixed(2)}M`
@@ -236,7 +236,7 @@ export default function Sidebar({
                   maximumFractionDigits: 2,
                 })}
           </div>
-          <div className="px-2 py-1 rounded-lg bg-[#18181c] border border-white/[0.06] text-cyan-400 font-bold flex items-center gap-1">
+          <div className="px-2 py-1 rounded-lg bg-[#18181c] border border-white/[0.06] text-amber-400 font-bold flex items-center gap-1">
             <span>💎</span>
             <span>{safeGems}</span>
           </div>
@@ -251,9 +251,9 @@ export default function Sidebar({
         />
       )}
 
-      {/* Calm Rugplay-Style Sidebar Drawer */}
+      {/* Calm Rugplay-Style Sidebar Drawer with Gradient Orange Accents */}
       <aside
-        className={`w-64 bg-[#121215] border-r border-white/[0.06] flex flex-col justify-between transition-transform duration-200 fixed inset-y-0 left-0 z-50 transform md:sticky md:top-0 md:h-screen md:translate-x-0 ${
+        className={`w-64 bg-[#121215] border-r border-white/[0.06] flex flex-col justify-between transition-transform duration-150 fixed inset-y-0 left-0 z-50 transform md:sticky md:top-0 md:h-screen md:translate-x-0 ${
           isOpen ? "translate-x-0" : "-translate-x-full"
         }`}
         id="app-sidebar"
@@ -267,7 +267,9 @@ export default function Sidebar({
             }}
             className="flex items-center gap-2.5 cursor-pointer select-none"
           >
-            <span className="text-lg">🪙</span>
+            <span className="w-7 h-7 rounded-lg bg-gradient-to-br from-orange-500 via-amber-500 to-orange-600 flex items-center justify-center text-sm shadow-md shadow-orange-950/40">
+              🪙
+            </span>
             <span className="font-bold text-white text-base tracking-tight">
               PumpForge
             </span>
@@ -283,7 +285,7 @@ export default function Sidebar({
               {muted ? (
                 <VolumeX className="w-4 h-4 text-zinc-500" />
               ) : (
-                <Volume2 className="w-4 h-4 text-emerald-400" />
+                <Volume2 className="w-4 h-4 text-orange-400" />
               )}
             </button>
             <button
@@ -313,13 +315,13 @@ export default function Sidebar({
                   }}
                   className={`flex items-center gap-3.5 px-3 py-2.5 rounded-xl text-[13.5px] transition-colors select-none cursor-pointer ${
                     isSelected
-                      ? "bg-white/[0.08] text-white font-semibold"
-                      : "text-zinc-300 hover:text-white hover:bg-white/[0.04] font-normal"
+                      ? "bg-gradient-to-r from-orange-500/20 via-amber-500/15 to-transparent text-white font-semibold border border-orange-500/30"
+                      : "text-zinc-300 hover:text-white hover:bg-white/[0.04] font-normal border border-transparent"
                   }`}
                 >
                   <IconComp
                     className={`w-4 h-4 shrink-0 ${
-                      isSelected ? "text-emerald-400" : "text-zinc-400"
+                      isSelected ? "text-orange-400" : "text-zinc-400"
                     }`}
                   />
                   <span className="flex-1 text-left truncate">{item.label}</span>
@@ -332,13 +334,13 @@ export default function Sidebar({
           <div className="mt-5 pt-4 border-t border-white/[0.05] px-1">
             <div className="flex items-center justify-between mb-2.5">
               <span className="text-xs text-zinc-400 font-medium flex items-center gap-2">
-                <Activity className="w-3.5 h-3.5 text-zinc-500" />
+                <Activity className="w-3.5 h-3.5 text-orange-400" />
                 <span>Live Trades</span>
               </span>
               <Link
                 to="/trades"
                 onClick={() => setIsOpen(false)}
-                className="text-xs text-zinc-400 hover:text-white transition-colors"
+                className="text-xs text-orange-400/90 hover:text-orange-300 transition-colors"
               >
                 View All
               </Link>
@@ -415,20 +417,20 @@ export default function Sidebar({
               </div>
               <div className="flex flex-col px-1 border-l border-white/[0.06]">
                 <span className="text-[10px] text-zinc-500">Gems</span>
-                <span className="text-cyan-400 font-bold">💎 {safeGems}</span>
+                <span className="text-amber-400 font-bold">💎 {safeGems}</span>
               </div>
             </div>
 
-            {/* Daily Reward Button */}
+            {/* Daily Reward Button (Gradient Orange when available) */}
             <button
               onClick={() => {
                 playSound("click");
                 onClaimDailyReward();
               }}
               disabled={!isDailyRewardAvailable}
-              className={`w-full py-2 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-colors border cursor-pointer ${
+              className={`w-full py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all border cursor-pointer ${
                 isDailyRewardAvailable
-                  ? "bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/30"
+                  ? "bg-gradient-to-r from-orange-500 via-amber-500 to-orange-600 hover:from-orange-400 hover:to-amber-400 text-zinc-950 border-orange-400/40 shadow-md shadow-orange-950/30"
                   : "bg-white/[0.03] text-zinc-500 cursor-not-allowed border-white/[0.05]"
               }`}
               id="claim-daily-btn"
@@ -444,7 +446,7 @@ export default function Sidebar({
                 </div>
               ) : (
                 <div className="flex items-center justify-center gap-1.5">
-                  <Gift className="w-3.5 h-3.5 text-emerald-400" />
+                  <Gift className="w-3.5 h-3.5" />
                   <span>Claim Daily (${claimYield.toLocaleString()})</span>
                 </div>
               )}
@@ -465,7 +467,7 @@ export default function Sidebar({
                     }}
                     className="w-full text-left px-3 py-2 text-xs hover:bg-white/[0.06] text-zinc-300 hover:text-white flex items-center gap-2.5 rounded-lg transition-colors cursor-pointer"
                   >
-                    <User className="w-3.5 h-3.5 text-zinc-400" />
+                    <User className="w-3.5 h-3.5 text-orange-400" />
                     <span>Profile</span>
                   </button>
 
@@ -501,7 +503,7 @@ export default function Sidebar({
                     }}
                     className="w-full text-left px-3 py-2 text-xs hover:bg-white/[0.06] text-zinc-300 hover:text-white flex items-center gap-2.5 rounded-lg transition-colors cursor-pointer"
                   >
-                    <Hash className="w-3.5 h-3.5 text-emerald-400" />
+                    <Hash className="w-3.5 h-3.5 text-orange-400" />
                     <span>Promo Code</span>
                   </button>
 
@@ -539,7 +541,7 @@ export default function Sidebar({
                     playSound("click");
                     onGoogleSignIn();
                   }}
-                  className="w-full bg-white hover:bg-zinc-100 text-zinc-900 font-bold py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-all text-xs"
+                  className="w-full bg-gradient-to-r from-orange-500 via-amber-500 to-orange-600 hover:from-orange-400 hover:to-amber-400 text-zinc-950 font-bold py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-all text-xs shadow-md shadow-orange-950/30"
                   id="sidebar-google-signin-btn"
                 >
                   <LogIn className="w-4 h-4" />
@@ -552,7 +554,7 @@ export default function Sidebar({
                   id="avatar-profile-footer"
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-8 h-8 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 flex items-center justify-center text-xs font-bold shrink-0 uppercase">
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-orange-500/25 to-amber-500/20 border border-orange-500/35 text-orange-300 flex items-center justify-center text-xs font-bold shrink-0 uppercase">
                       {userStats.username
                         ? userStats.username.trim().charAt(0)
                         : "Z"}
@@ -593,7 +595,7 @@ export default function Sidebar({
               <X className="w-4 h-4" />
             </button>
             <h3 className="text-sm font-bold text-white mb-1.5 flex items-center justify-center gap-1.5">
-              <Gift className="w-4 h-4 text-emerald-400" /> Promo Code
+              <Gift className="w-4 h-4 text-orange-400" /> Promo Code
             </h3>
             <p className="text-xs text-zinc-400 mb-4">
               Enter a voucher code to claim bonus cash or gems.
@@ -604,7 +606,7 @@ export default function Sidebar({
                 placeholder="ENTER CODE"
                 value={promoCode}
                 onChange={(e) => setPromoCode(e.target.value)}
-                className="bg-[#0e0e11] border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm text-center text-white font-mono focus:outline-none focus:border-emerald-500/50 uppercase"
+                className="bg-[#0e0e11] border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm text-center text-white font-mono focus:outline-none focus:border-orange-500/50 uppercase"
               />
               {promoError && (
                 <span className="text-xs text-rose-400">{promoError}</span>
@@ -614,7 +616,7 @@ export default function Sidebar({
               )}
               <button
                 type="submit"
-                className="w-full bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold py-2.5 rounded-xl text-xs transition-all cursor-pointer"
+                className="w-full bg-gradient-to-r from-orange-500 via-amber-500 to-orange-600 hover:from-orange-400 hover:to-amber-400 text-zinc-950 font-bold py-2.5 rounded-xl text-xs transition-all cursor-pointer"
                 id="apply-voucher-btn"
               >
                 Redeem
